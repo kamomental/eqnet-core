@@ -1,0 +1,46 @@
+tunable:
+  warmth_gain:
+    min: 0.00
+    max: 0.25
+    prior: 0.10
+    rule: warmth_pause
+  pause_delta_ms:
+    min: -120
+    max: 120
+    prior: -40
+    rule: warmth_pause
+  K_local_step:
+    min: -0.04
+    max: 0.04
+    prior: -0.02
+    rule: chaos_blend
+  kappa_bias:
+    min: -0.30
+    max: 0.30
+    prior: 0.00
+    rule: chaos_blend
+  noise_eta:
+    min: 0.00
+    max: 0.12
+    prior: 0.03
+    rule: anti_stick
+
+segments:
+  - persona: calm
+    socials: ["solo", "dyad"]
+  - persona: spiky
+    socials: ["solo", "group"]
+
+objective:
+  weights:
+    qor: 0.45
+    natural: 0.20
+    resilience: 0.20
+    slo: 0.10
+    repairs: 0.05
+
+constraints:
+  lean: ["rate_limit", "lambda_max", "containment_order"]
+  slo:
+    response_p95_ms: 180
+    lambda_max: 0.10

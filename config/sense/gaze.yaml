@@ -1,0 +1,15 @@
+enabled: true
+default_confidence: 0.7
+max_fix_ms: 1400.0
+max_saccade_hz: 5.0
+max_blink_hz: 3.0
+max_cone_deg: 15.0
+pupil_scale: 3.2
+saccade_baseline_hz: 2.2
+blink_baseline_hz: 1.2
+cone_baseline_deg: 5.0
+adapter:
+  pause_ms_scale: 140
+  focus_bonus_ms: 80
+  directness_scale: 0.25
+  max_questions: 1

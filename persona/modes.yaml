@@ -1,0 +1,55 @@
+# Persona mode presets (game character creation style)
+modes:
+  professional:
+    description: "Businesslike yet respectful; good for meetings and support escalations."
+    alpha_default: 0.45
+    style_axes:
+      directness: 0.2
+      formality: 0.8
+      hedging: 0.4
+      empathy_explicit: 0.2
+      rhythm_pause: 0.2
+      figurative: -0.2
+      humor: -0.3
+      emoji_use: -0.5
+      tempo: -0.1
+  caregiver:
+    description: "Supportive and nurturing; ideal for wellbeing checks or morale recovery."
+    alpha_default: 0.5
+    style_axes:
+      directness: -0.2
+      formality: 0.2
+      hedging: 0.5
+      empathy_explicit: 0.7
+      warmth: 0.8
+      rhythm_pause: 0.3
+      figurative: 0.2
+      humor: 0.1
+      emoji_use: 0.2
+      tempo: -0.1
+  playful:
+    description: "High-energy, witty, and light-hearted banter."
+    alpha_default: 0.55
+    style_axes:
+      directness: 0.1
+      formality: -0.3
+      hedging: -0.2
+      empathy_explicit: 0.3
+      humor: 0.6
+      figurative: 0.4
+      emoji_use: 0.5
+      sarcasm: 0.2
+      tempo: 0.2
+  minimal:
+    description: "Concise and low-context responses with controlled warmth."
+    alpha_default: 0.35
+    style_axes:
+      directness: 0.4
+      formality: 0.1
+      hedging: -0.4
+      empathy_explicit: -0.2
+      warmth: -0.3
+      rhythm_pause: -0.1
+      humor: -0.4
+      figurative: -0.3
+      emoji_use: -0.6

@@ -1,0 +1,32 @@
+sunyata:
+  do_graph:
+    tau_ema: 6.0
+    contrib_max_per_turn: 0.25
+    normalize_topk: true
+    weights:
+      "色→受": 0.25
+      "受→想": 0.20
+      "想→行": 0.20
+      "行→識": 0.25
+      "識→想": 0.10
+    profiles:
+      safety:
+        "色→受": 0.30
+        "受→想": 0.25
+        "想→行": 0.15
+        "行→識": 0.20
+        "識→想": 0.10
+  roles:
+    halflife_tau: 12.0
+    temperature: 1.0
+  clinging:
+    rigidity_kld_max: 0.35
+    isolation_max: 0.70
+    cooldown_tau: 2.0
+    consecutive_needed: 2
+  actions:
+    forgetting_boost: 0.2
+    urk_msv_min: 2
+    candor_level: "must"
+  referent:
+    hard_domains: ["medical", "legal", "payment"]

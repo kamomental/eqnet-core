@@ -1,0 +1,36 @@
+# Opt-in prosody mapping from acoustic features to the latent emotion axes.
+# Set `enabled: true` only after ensuring consent is granted.
+enabled: false
+
+# How strongly to blend prosody-derived axes with the text-derived emotion
+# vector. 0.0 keeps text-only, 1.0 overwrites with prosody projection.
+blend_weight: 0.35
+
+# Number of latent dimensions used for intermediate projections.
+latent_dim: 7
+
+# Normalisation denominators for each feature (values are divided by these
+# numbers before applying weight vectors). Adjust to match your capture range.
+feature_scales:
+  tempo: 240.0     # beats per minute
+  pitch: 600.0     # fundamental frequency in Hz
+  energy: 1.0      # RMS normalised 0-1
+
+# Weight vectors (length == latent_dim) for each feature. The mapper sums
+# (value/scale) * weight_vector across all provided features.
+feature_weights:
+  tempo: [0.6, 0.1, 0.0, 0.2, 0.0, 0.3, 0.0]
+  pitch: [0.1, 0.5, 0.2, 0.1, 0.1, 0.0, 0.2]
+  energy: [0.2, 0.0, 0.5, 0.1, 0.2, 0.1, 0.0]
+
+# Optional projection matrix (latent_dim x 9) to map the latent vector onto the
+# system axes (`terrain.emotion.AXES`). If omitted, an identity-on-the-first-N
+# scheme is used automatically.
+projection:
+  - [0.9, 0.0, 0.0, 0.1, 0.0, 0.1, 0.0, 0.0, 0.0]   # sensory-aligned
+  - [0.0, 0.8, 0.1, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0]   # temporal pacing
+  - [0.0, 0.1, 0.7, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0]   # spatial spread
+  - [0.0, 0.1, 0.1, 0.8, 0.2, 0.0, 0.0, 0.0, 0.0]   # affective coloration
+  - [0.0, 0.0, 0.0, 0.2, 0.8, 0.1, 0.0, 0.0, 0.0]   # cognitive resonance
+  - [0.0, 0.0, 0.0, 0.2, 0.1, 0.7, 0.1, 0.0, 0.0]   # social synchrony
+  - [0.0, 0.0, 0.0, 0.2, 0.1, 0.1, 0.7, 0.0, 0.0]   # meta/self-agency feel

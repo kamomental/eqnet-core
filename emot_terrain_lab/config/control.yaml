@@ -1,0 +1,64 @@
+# Core control and telemetry settings for EQNet.
+
+calibration:
+  zscore_baseline_s: 120
+
+field_norm:
+  E_range: [-1.0, 1.0]
+  G_l1: 1.0
+
+chaos_metrics:
+  window_s: 1.5
+  hop_s: 0.75
+  lyapunov:
+    target:
+      min: 0.02
+      max: 0.10
+  aperiodic:
+    method: irasa
+    beta_star: 1.60
+    band: [0.5, 30.0]
+  rqa:
+    m: 4
+    tau: ami
+    stuck:
+      DET: ">0.8"
+      LAM: ">0.7"
+      TT: ">50"
+
+policy_mpc:
+  enabled: false
+  horizon: 10
+  step_ms: 600
+  weights:
+    E: 1.0
+    Sigma: 0.7
+    Psi: 0.8
+  targets:
+    E: 0.0
+    Sigma: 0.75
+    Psi: 0.0
+  regularisation_alpha: 0.15
+  input_limits:
+    kappa: [-0.5, 0.5]
+    lambda_global: [-0.2, 0.2]
+    K_local: [0.02, 0.25]
+    W_low_high: [-0.3, 0.3]
+    temp: [0.0, 0.25]
+    top_p: [0.70, 0.95]
+    pause_ms: [0, 400]
+  rate_limit:
+    kappa: 0.05
+    pause_ms: 40
+    top_p: 0.02
+
+slo:
+  recovery_s: 60
+  entropy_floor_violation_pct: 1.0
+  response_p95_ms: 180
+  kuramoto_duty_pct_per_min: 30
+
+telemetry:
+  update_interval_s: 2.0
+  metrics: ["H", "R", "lambda_max", "beta", "DET", "Sigma", "Psi", "gamma"]
+  log_path: data/state/telemetry.jsonl

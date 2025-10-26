@@ -1,0 +1,20 @@
+presets:
+  default:
+    greeting:
+      high: "{speaker}さん、今日もテンション高めでいきましょう！"
+      neutral: "{speaker}さん、ちょうどいいリズムで話せていますよ。"
+      low: "{speaker}さん、落ち着いて一緒に考えてみましょうね。"
+    topic: "今の話題は「{topic}」。"
+    no_topic: ""
+    advice: "設定メモ：{reference}"
+    no_advice: ""
+    spoiler: "重要な展開に触れるときは合図をお願いしますね。"
+  senpai_polite:
+    greeting:
+      high: "{speaker}さん、張り切っていますね。ご一緒しますよ。"
+      neutral: "{speaker}さん、ほどよい呼吸で語れています。"
+      low: "{speaker}さん、肩の力を抜いて、ゆっくり歩きましょう。"
+    topic: "ただいまの話題は「{topic}」です。"
+    no_topic: "今日は穏やかな雑談が続いています。"
+    advice: "参考ノート：{reference}"
+    spoiler: "重大な展開に触れる際は、ひとこと前置きをお願いしますね。"

@@ -1,0 +1,64 @@
+version: 1
+locale: ja-JP
+register:
+  professional:
+    soft:
+      - "少し整理しますね。"
+      - "確認させてください。"
+    filler:
+      - "では…"
+      - "まず…"
+  caregiver:
+    soft:
+      - "うん…"
+      - "なるほど…"
+    filler:
+      - "えっと"
+      - "その…"
+      - "うーん"
+  playful:
+    soft:
+      - "えへへ"
+      - "たしかに！"
+    filler:
+      - "えっとね"
+      - "うーんと"
+      - "あのね"
+rules:
+  sentence_start_ok: true
+  clause_boundary_ok: true
+  max_per_utterance: 2
+  cooldown_tau: 0.8
+  ssml_break_ms:
+    soft: 200
+    filler: 120
+  max_ssml_break_ms: 260
+  max_added_chars: 40
+hard_off_domains:
+  - medical
+  - legal
+  - industrial
+  - robot_control
+  - payment
+  - announcement
+  - safety_notice
+allow_modes:
+  - caregiver
+  - playful
+  - professional
+mode_overrides:
+  professional:
+    prob_scale: 0.6
+    allow_positions:
+      - sentence_start
+    max_per_utterance: 1
+    max_ssml_break_ms: 200
+    max_added_chars: 30
+  caregiver:
+    prob_scale: 1.2
+    allow_positions:
+      - sentence_start
+      - clause
+    max_per_utterance: 2
+    max_ssml_break_ms: 250
+    max_added_chars: 45

@@ -1,0 +1,42 @@
+﻿when kpi.reconstruction_error > 0.12 for 20 steps -> action "increase_encoder_capacity"
+when kpi.self_other_mis > 0.25 for 50 steps -> action "raise_self_other_training"
+when kpi.meta_brier > 0.08 for 50 steps -> action "calibrate_meta_conf"
+when kpi.taste_violation > 0.05 for 10 steps -> action "tighten_taste_guard"
+when kpi.mood_total_var > 0.30 for 30 steps -> action "smooth_mood_integrator"
+when broadcast.delta_R > 0.12 and entropy_z < -1.0 -> ignite 250ms
+when ignite_ms > 500 and ignite_ms <= 800 -> inhibit 2s
+when ignite_ms > 800 and ignite_ms <= 1200 -> inhibit 5s
+when ignite_ms > 1200 -> inhibit 10s
+when tom.intent_trust_smoothed < 0.3 or ignite_ms > 1200 -> autonomy.downshift()
+
+# EQNet KPI guardrails (cooldown / inhibit / halt-learning)
+# R, ρ thresholds (chaos / safety bands)
+when field.R > 0.85 or field.rho > 0.80 for 20 steps -> cooldown 2s
+when field.R > 0.92 and ignite_count > 3 in 60s -> inhibit 10s
+
+# ignition timing and safety
+when ignite_ms > 600 -> cooldown 3s
+when ignite_ms > 1200 -> inhibit 8s
+
+# learning safety valves
+when kpi.tension > 0.50 for 50 steps -> halt_learning 60s
+when kpi.suffering > 0.35 for 30 steps -> halt_learning 120s
+
+# mood-driven cooldown (high arousal sustained)
+when mood.mood_a > 0.70 for 20 steps -> cooldown 2s; temperature -= 0.05
+
+# foregrounding control: allow deep reasoning only at high G
+when foreground.G > 0.60 for 10 steps -> thought_budget += 1
+
+# balance: H4/self_ratio/leak proxies (placeholders for future wiring)
+when field.H4 > 0.70 and field.self_ratio > 0.65 -> cooldown 1s
+when field.leak > 0.20 -> inhibit 5s
+
+rule "replay_memory_enable":
+  when latency.p95_delta <= 0.10 and kpi.replay_freq_per_episode between [0.5, 4.0]
+  then feature.replay_memory = "on"
+
+rule "replay_memory_degrade":
+  when kpi.replay_freq_per_episode > 6.0 for 2 nights
+    or filesystem.state_replay_memory_bytes > 200MB
+  then feature.replay_memory = "off"

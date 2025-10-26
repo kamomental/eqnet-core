@@ -1,0 +1,24 @@
+value_weights:
+  extrinsic: 0.40
+  novelty: 0.08
+  social: 0.18
+  coherence: 0.12
+  homeostasis: 0.15
+  qualia_fit: 0.07
+  norm_penalty: 0.55
+
+critical:
+  lambda1_target: 0.05
+  r_max: 0.78
+
+visualization:
+  radar_hz: 1.5
+  qualia_refresh_seconds: 15
+
+safety:
+  hard_constraints:
+    - payment
+    - robot_control
+    - medical
+    - industrial
+    - physical_intervention

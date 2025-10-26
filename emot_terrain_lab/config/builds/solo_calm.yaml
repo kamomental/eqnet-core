@@ -1,0 +1,29 @@
+build: Solo-Calm
+description: "Single-node calm loop with bud-triggered soothing."
+wires:
+  - from: SENSE.Sigma
+    to: PHASE.input
+  - from: SENSE.Psi
+    to: POLICY.ctx
+  - from: BUD.event
+    to: FIELD.bump
+  - from: FIELD.W
+    to: MEMORY.record
+  - from: PHASE.theta
+    to: POLICY.ctx
+  - from: PHASE.R
+    to: SAFETY.guard
+  - from: FIELD.rho
+    to: SAFETY.guard
+  - from: POLICY.act
+    to: SAFETY.check
+  - from: SAFETY.act
+    to: OUTPUT.audio
+guards:
+  R_max: 0.78
+  rho_max: 1.8
+policy:
+  - when: "bud == 1"
+    action: "play_sonic_calm"
+  - when: "R > 0.78"
+    action: "inhibit 8s; warmth -= 0.1"

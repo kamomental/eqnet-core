@@ -1,0 +1,42 @@
+version: 1
+enabled: true
+nodes:
+  - sensory
+  - hippo
+  - pfc
+  - policy
+adjacency:
+  hippo->pfc: 0.05
+  pfc->policy: 0.03
+  hippo->sensory: 0.02
+decay:
+  alpha: 0.30
+  beta_inject: 0.20
+coupling:
+  inflammation_global:
+    pause_ms: 120
+    directness: -0.04
+    steps_bias: -0.6
+  energy:
+    temp_mul: -0.06
+  uncertainty:
+    temp_mul: 0.08
+    directness: -0.02
+limits:
+  pause_ms: [0, 400]
+  temp_mul: [0.6, 1.2]
+  directness: [-0.2, 0.2]
+  top_p_mul: [0.5, 1.5]
+  steps: [1, 6]
+  jerk:
+    pause_ms: 40
+    directness: 0.03
+    temp_mul: 0.06
+state_path: state/biofield.json
+
+metrics:
+  assoc_defect_threshold: 0.15
+  naturality_weights: {U: 1.0, coh: 0.5, mis: 0.7}
+  sensitivity_eps: {temp_mul: 0.02, directness: 0.01, pause_ms: 20}
+  jerk_rate_max: 0.10
+  naturality_warn_threshold: 0.35

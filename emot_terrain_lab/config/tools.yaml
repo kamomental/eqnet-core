@@ -1,0 +1,22 @@
+skills:
+  - id: "chitchat_basic"
+    name: "Basic Chitchat"
+    intent: "chitchat"
+    description: "Default conversational skill for casual interactions."
+    llm: "llm-fast"
+    context_sources: []
+    priority: 1
+  - id: "qa_general"
+    name: "Knowledge QA"
+    intent: "qa"
+    description: "General knowledge question answering with RAG assistance."
+    llm: "llm-know"
+    context_sources: ["rag"]
+    priority: 5
+  - id: "deepresearch"
+    name: "Deep Research"
+    intent: "research"
+    description: "Multi-step deep research mode combining retrieval and synthesis."
+    llm: "llm-know"
+    context_sources: ["rag", "longform"]
+    priority: 8

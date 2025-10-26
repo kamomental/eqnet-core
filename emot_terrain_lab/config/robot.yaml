@@ -1,0 +1,8 @@
+# Robot bridge defaults
+bridge:
+  enabled: false
+  kind: "mock"     # "mock", "ros2", "isaac"
+  params:
+    cmd_topic: "/cmd_vel"
+    gaze_topic: "/gaze_target"
+    publish_hz: 15

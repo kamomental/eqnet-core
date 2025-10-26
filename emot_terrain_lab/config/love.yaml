@@ -1,0 +1,99 @@
+# Love & Affection control layer for EQNet.
+# This configuration translates research-backed observations into
+# measurable indicators and gentle control adjustments.
+
+enabled: false
+
+observations:
+  sync_metrics:
+    sources: ["respiration_phase", "gaze_lock", "motion_phase"]
+    method: "entrainment"
+    window_ms: 6000
+    hop_ms: 500
+  jerk_smoothness:
+    source: "motion.jerk_norm"
+    smoothing_ms: 250
+  novelty_7d:
+    source: "scenario.novelty_score"
+    window_days: 7
+    decay: 0.85
+  self_disclosure:
+    protocol: "aron_36"
+    track: "dialogue.self_disclosure_level"
+  threat_signals:
+    keys: ["tone.negative_spike", "safety.escalation_flag"]
+    half_life_steps: 8
+
+fusion:
+  weights:
+    entrain: 0.30
+    smooth: 0.20
+    novelty7d: 0.25
+    disclosure: 0.20
+    threat: 0.15
+  equation: |
+    love_mode = w1*entrain + w2*(1-jerk) + w3*novelty7d
+              + w4*self_disclosure - w5*threat
+  thresholds:
+    warm: 0.55
+    intimate: 0.72
+    cooldown: 0.40
+
+attachment:
+  lattice: ["secure", "anxious", "avoidant"]
+  default: "secure"
+  kappa_adjust:
+    anxious: {preview_next: true, proxemics_delta: +0.20, directness_delta: -0.05}
+    avoidant: {pause_ms_delta: +120, self_disclosure_gate: "slow"}
+    secure: {}
+
+targets:
+  care_ratio: 5.0
+  lambda_range: [0.02, 0.10]
+  phase_snr_db_min: 6.0
+
+actions:
+  warmup:
+    apply_when: "love_mode >= warm"
+    adjustments:
+      warmth: +0.10
+      prosody_energy: +0.05
+      gaze_hold: +0.20
+      pause_ms: -60
+  intimate:
+    apply_when: "love_mode >= intimate"
+    adjustments:
+      warmth: +0.15
+      prosody_f0: +0.08
+      gesture_amp: +0.1
+      disclosure_prompt: "next_step"
+  reassure:
+    apply_when: "attachment == 'anxious'"
+    adjustments:
+      preview_next: true
+      reaffirmation_rate: +0.15
+      proxemics_dist: +0.20
+  micro_affirm:
+    apply_when: "care_ratio < 5.0"
+    adjustments:
+      backchannel_rate: +0.15
+      lexicon_pack: "soft_affirm"
+  rqa_relief:
+    apply_when: "DET > 0.75"
+    adjustments:
+      K_local: -0.03
+      prosody_variation: +0.05
+
+safety:
+  cooldown:
+    apply_when: "love_mode < cooldown or Psi > 0.65"
+    adjustments:
+      pause_ms: +120
+      prosody_energy: -0.10
+      gesture_amp: -0.1
+  immutable_guards: ["hate", "harassment", "self-harm", "explicit_erotica", "pii_leak"]
+
+logging:
+  path: "data/state/love_mode.jsonl"
+  fields: ["love_mode", "entrain", "jerk", "novelty7d", "self_disclosure", "threat", "care_ratio"]
+  emit_events: ["love.warm", "love.intimate", "love.cooldown"]

@@ -1,0 +1,38 @@
+server:
+  host: "127.0.0.1"
+  port: 8765
+
+channels:
+  metrics:
+    cache: true
+    tail: "metrics_tail.json"
+  controls:
+    cache: true
+    tail: "controls_tail.json"
+  events:
+    cache: false
+
+logging:
+  dir: "logs/bus"
+  ensure_ascii: false
+
+safety:
+  containment_event: "containment_triggered"
+  degraded_overrides:
+    webcam_enabled: false
+    audio_capture: false
+  broadcast_health: true
+
+dependencies:
+  - name: "webcam"
+    kind: "module"
+    value: "cv2"
+    optional: true
+  - name: "microphone"
+    kind: "module"
+    value: "sounddevice"
+    optional: true
+
+health:
+  default: "ok"
+  degraded_if_missing_dependency: true

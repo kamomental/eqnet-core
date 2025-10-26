@@ -1,0 +1,20 @@
+# Plugin toggles and configuration entries for EQNet.
+
+formal_reasoning:
+  enabled: true                   # Toggle to activate the Litex ↔ Lean pipeline.
+  root: plugins/formal_reasoning  # Relative path from project root.
+  rewrite_rules: plugins/formal_reasoning/rewrite_rules
+  proofs_dir: plugins/formal_reasoning/proofs
+  logs_dir: plugins/formal_reasoning/logs
+  litex:
+    entrypoint: plugins/formal_reasoning/litex_demo.py
+    pylitex_required: true
+    max_steps: 8
+    trace: true
+  lean:
+    lake_project: plugins/formal_reasoning
+    template_script: plugins/formal_reasoning/prove_controls.py
+    enforce: true
+    repair_on_fail: true
+
+# Add future plugins below with the same pattern.

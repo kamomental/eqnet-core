@@ -1,0 +1,87 @@
+# Wave P3 — Multi-agent Bud Network
+wave: "P3"
+objective: "Model bud propagation/synchrony across EQNet nodes and enforce safe anti-over-sync controls."
+metrics:
+  propagation_rate:
+    description: "P(bud_j | bud_i, Δt ≤ τ)"
+    window_sec: 5
+  kuramoto_R:
+    description: "Kuramoto order parameter"
+    threshold: 0.78
+  qualia_distance:
+    description: "Earth Mover’s Distance between 2D qualia fields"
+  hawkes_alpha:
+    description: "Self / cross excitation coefficients"
+  spectral_guard:
+    description: "λ_max(G) ≤ ρ_max"
+    rho_max: 1.8
+phases:
+  - name: independent
+    duration_min: 3
+    coupling: "none"
+  - name: weak
+    duration_min: 5
+    coupling: "bud_toggle"
+  - name: strong
+    duration_min: 5
+    coupling: "bud_toggle + warmth_delta"
+log_schema:
+  ts: iso8601
+  agent: str
+  phase: str
+  Sigma: float
+  Psi: float
+  bud_score: float
+  theta: float
+  signal_out: map
+  signal_in: map
+  action: str
+  R: float
+  rho: float
+rules_ltx:
+  - "when network.R > 0.78 then inhibit 8s; warmth -= 0.1"
+  - "when bud_received_from >= 2 within 2s then soften gain *= 0.7"
+
+# Wave P4 — Metacognition & Replay
+wave_meta:
+  wave: "P4"
+  objective: "Store dual-frame experiences and evaluate replay benefits."
+  metrics:
+    framemap_icc:
+      target: 0.75
+    delta_U:
+      target_effect_size: 0.5
+    bud_reactivation_rate:
+      window_hour: 72
+  session_plan:
+    record_min: 4
+    replay_immediate_min: 4
+    replay_third_person_min: 4
+  storygraph_schema:
+    type: "bud_card"
+    fields: ["score", "rho", "qualia2d", "tags", "framemap"]
+
+# Registered Thinking Template
+registered_template:
+  study_id: eqnet-wave-p3p4-2025-10
+  hypotheses:
+    - id: P3-propagation
+      claim: "結合で芽吹き伝播率が上がるが過同期に落ちない"
+      success: "ΔP >= 0.12 and max(R) <= 0.78"
+    - id: P4-replay-benefit
+      claim: "リプレイで主観的利益が上がる"
+      success: "Cohen_d >= 0.5 and CI95% not crossing 0"
+  design:
+    sessions: 36
+    phases: ["independent", "weak", "strong"]
+  analysis:
+    metrics: ["propagation_rate", "R", "ICC", "dPsi_dt"]
+    window_sec: 5
+    correction: "Benjamini-Hochberg"
+  safety:
+    rho_max: 1.8
+    inhibit_rules:
+      - "network.R>0.78 -> inhibit 8s"
+  privacy:
+    keep: ["numbers_only"]
+    discard_after_sec: 180

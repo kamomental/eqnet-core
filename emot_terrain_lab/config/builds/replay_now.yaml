@@ -1,0 +1,12 @@
+build: Replay-Now
+description: "Immediate replay of bud cards with evaluation targets."
+wires:
+  - from: MEMORY.card
+    to: POLICY.ctx
+  - from: POLICY.act
+    to: OUTPUT.audio_ui
+eval:
+  framemap_icc:
+    target: ">= 0.75"
+  delta_U:
+    target: "d >= 0.5 (CI95% not crossing 0)"

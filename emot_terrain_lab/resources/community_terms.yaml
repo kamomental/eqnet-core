@@ -1,0 +1,31 @@
+﻿# Example community-specific lexicon
+# Each entry maps a slang or coined term to metadata used by the emotion system.
+# Fields: sentiment (positive/neutral/negative), notes, period, created_at, updated_at (ISO 8601 timestamps).
+
+communities:
+  default:
+    afterparty:
+      sentiment: positive
+      notes: "post-event celebration"
+      period: "2015-"
+      created_at: "2025-10-14T00:00:00Z"
+      updated_at: "2025-10-14T00:00:00Z"
+    oshi:
+      sentiment: positive
+      notes: "favourite performer"
+      period: "2000-"
+      created_at: "2025-10-14T00:00:00Z"
+      updated_at: "2025-10-14T00:00:00Z"
+  vtuber_fandom:
+    yakkai:
+      sentiment: negative
+      notes: "overbearing / clingy behaviour"
+      period: "2010-"
+      created_at: "2025-10-14T00:00:00Z"
+      updated_at: "2025-10-14T00:00:00Z"
+    kami:
+      sentiment: positive
+      notes: "divine-level performance"
+      period: "2018-"
+      created_at: "2025-10-14T00:00:00Z"
+      updated_at: "2025-10-14T00:00:00Z"

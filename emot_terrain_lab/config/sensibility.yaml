@@ -1,0 +1,94 @@
+# Sensibility (Σ) channel configuration for EQNet.
+# Switch `enabled` to true after beat entrainment, jerk, and RQA pipelines
+# are calibrated and consent is confirmed.
+enabled: false
+
+sampling:
+  window_ms: 6000         # analysis window for Σ metrics
+  hop_ms: 500             # stride between successive evaluations
+
+preprocess:
+  detrend_ms: 1200        # remove slow drift from motion signals
+  smoothing_ms: 250       # EMA smoothing for beat + jerk streams
+  jerk_filter: savgol(7,3)
+  rqa_window_cycles: 4    # recurrence analysis over N beat cycles
+
+features:
+  beat_entrain:
+    source: audio.beat_phase
+    method: circular_kuramoto
+    min_confidence: 0.55
+    clip: [0.0, 1.0]
+  beta_slope:
+    source: motion.fractal_beta
+    target: 1.60
+    clip: [0.8, 2.4]
+  jerk_norm:
+    source: motion.jerk_norm
+    target: 0.80
+    clip: [0.0, 1.5]
+  det_clamp:
+    source: rqa.det
+    target: 0.75
+    clip: [0.0, 1.0]
+  lam_guard:
+    source: rqa.lam
+    thresholds:
+      low: 0.35
+      high: 0.85
+
+scoring:
+  weights:
+    entrain: 0.35
+    beta: 0.25
+    smooth: 0.25
+    novelty: 0.15
+  targets:
+    beta_star: 1.60
+    jerk_max: 0.80
+    det_max: 0.75
+  clamps:
+    sigma_floor: 0.15
+    sigma_ceiling: 0.92
+  rate_limit: 0.10          # limit Σ change to ±10% per update
+  dwell_steps: 5            # minimum steps before switching high/low modes
+  smoothing:
+    half_life_steps: 12
+    short_term_mix: 0.55
+
+policy_bind:
+  high_sigma:
+    gesture_amp: +0.10
+    motion_speed: +0.05
+    pause_ms: -60
+  low_sigma:
+    pause_ms: +80
+    prosody_energy: -0.10
+    K_local: -0.02
+    exploration_top_p: +0.03
+  stuck_guard:
+    det_threshold: 0.80
+    lam_threshold: 0.70
+    hold_ms: 600
+    remediate: ["viewpoint_shift", "eta_ou", "short_walk"]
+
+reward_adapter:
+  sigma_weight: 0.25
+  social_weight: 0.15
+  affect_weight: 0.45
+  decay: 0.10
+
+telemetry:
+  log_path: data/state/sensibility.jsonl
+  dump_interval_steps: 20
+  include_components: true
+  emit_events: ["sigma.high", "sigma.low", "sigma.stuck"]
+
+text:
+  enable: true
+  bud_thresh: 0.42
+  decay_sec: 180
+
+notes:
+  - enable after beat tracker and motion pipeline are calibrated.
+  - adjust weights per deployment; values assume human dancer capture with IMU + audio beat tracking.

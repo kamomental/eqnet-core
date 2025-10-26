@@ -1,0 +1,22 @@
+ja:
+  warn: "ここは、ぜんぶを同じには伝えきれないところが少しあります。"
+  must: "正直に言うね。ここは共有がむずかしい感覚（{targets}）が残っています。"
+  ask: "正確さのために、{ask} を一つだけ教えてくれる？（すぐ終わるよ）"
+  persona_overrides:
+    calm_candor:
+      warn: "落ち着いて伝えると、ここはまだ共有しづらい感覚（{targets}）が残っています。"
+      must: "ごめんね、慎重に言うと（{targets}）の部分はまだ同じにはできないかも。"
+      ask: "丁寧に仕上げたいので、{ask} を一つだけ聞かせてもらえますか。"
+    bold_resolver:
+      warn: "ちょっと曖昧だけど、この（{targets}）は狙って埋めにいくよ。"
+      must: "まだ掴みきれてない感覚（{targets}）があるけど、攻めで補ってみる。"
+      ask: "やり切りたいから、{ask} をパッと教えて？すぐに活かす！"
+targets_map:
+  aftertaste: "後味"
+  temp_curve: "温度の移ろい"
+  firmness: "かたさ"
+asks:
+  aftertaste:
+    - "カラメルの香りは強め？やさしめ？"
+  firmness:
+    - "スプーンはすっと入る？少し抵抗がある？"

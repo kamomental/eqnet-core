@@ -1,0 +1,4 @@
+peers:
+  default:
+    accept_kinds: ["hypothesis", "constraint", "uncertainty"]
+    accept_uncertainty: true

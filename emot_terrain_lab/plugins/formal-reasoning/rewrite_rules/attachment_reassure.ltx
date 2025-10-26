@@ -1,0 +1,6 @@
+rule ReassureIfAnxiousAttachment:
+  when  attachment == "anxious"  and  Psi in [55, 70]
+  then  preview_next := true,
+        proxemics_dist := proxemics_dist + 0.2,
+        backchannel_rate := backchannel_rate + 0.10
+

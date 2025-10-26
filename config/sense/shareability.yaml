@@ -1,0 +1,16 @@
+weights:
+  jiggle_hz: 0.25
+  gloss: 0.20
+  firmness: 0.30
+  aftertaste: 0.35
+  temp_curve: 0.25
+shareability:
+  jiggle_hz: 0.9
+  gloss: 0.8
+  firmness: 0.6
+  aftertaste: 0.3
+  temp_curve: 0.4
+thresholds:
+  warn: 0.25
+  must: 0.45
+  ask: 0.60

@@ -1,0 +1,29 @@
+thought_bus:
+  enable: true
+  channels:
+    - hypothesis
+    - constraint
+    - uncertainty
+  gain_max: 0.1
+  risk_enter: 0.4
+  r_max: 0.78
+  assoc_defect_th: 0.15
+  naturality_th: 0.25
+  entropy_th: 0.75
+  junk_th: 0.4
+  rate_limit_per_turn: 6
+  ttl_tau_default: 2.0
+  ttl_tau_uncertainty: 2.0
+  tags_default: []
+  per_channel:
+    hypothesis:
+      gain: 0.1
+      ttl_tau: 2.0
+    constraint:
+      gain: 0.08
+      ttl_tau: 1.5
+    uncertainty:
+      gain: 0.05
+      ttl_tau: 1.0
+  sim_threshold: 0.75
+  dim: 128

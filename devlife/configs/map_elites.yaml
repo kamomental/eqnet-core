@@ -1,0 +1,24 @@
+version: 0
+metadata:
+  description: "MAP-Elites configuration for EQNet developmental agents."
+  grid: [16, 16]
+
+descriptors:
+  - name: morphology_basis
+    range: [1, 8]
+  - name: rhythm_freq
+    range: [0.1, 1.2]
+
+fitness:
+  weights:
+    success: 1.0
+    over_R: -1.0
+    over_rho: -1.0
+    mean_dpsi_dt: 0.5
+  constraints:
+    R_max: 0.78
+    rho_max: 1.8
+
+log:
+  archive_path: logs/map_elites/archive.jsonl
+  events_path: logs/map_elites/events.jsonl

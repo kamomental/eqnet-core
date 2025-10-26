@@ -1,0 +1,49 @@
+banned_global:
+  - "まとめると"
+  - "要するに"
+  - "総括すると"
+  - "結論として"
+  - "以上です"
+  - "了解しました"
+banned_by_stance:
+  listen:
+    - "合意"
+    - "まとめ"
+    - "約束"
+  soften:
+    - "合意"
+    - "断言"
+    - "解決済み"
+  guide:
+    - "放置"
+    - "後で対応"
+endings:
+  listen:
+    - "ね…"
+    - "ね。"
+    - "ね"
+  soften:
+    - "よ…"
+    - "よ。"
+    - "よ"
+  guide:
+    - "。"
+pauses:
+  listen:
+    min_count: 1
+    tokens:
+      - "…"
+      - "、"
+  soften:
+    min_count: 1
+    tokens:
+      - "…"
+      - "、"
+max_length:
+  listen: 120
+  soften: 140
+  guide: 220
+narrator:
+  prefix: "ここからの進み方をいったん整えます。"
+  agreement_line: "ここまでの共有内容でいいですか。"
+fallback_pause: "…"

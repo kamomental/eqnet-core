@@ -1,0 +1,94 @@
+# Developmental curriculum across fetal → infant → toddler → child stages.
+
+version: 0
+metadata:
+  description: "Staged training protocol for developmental EQ organisms."
+  author: "devlife-research"
+  created: "2025-10-20"
+
+stages:
+  - name: fetal
+    duration_steps: 2000
+    objectives:
+      - id: homeostasis
+        loss: L_homeo      # ‖μ(st) - μ*‖² + λ Var(st)
+        target_mean: 0.0
+        weight: 1.0
+      - id: rhythm_sync
+        loss: L_sync       # MSE(φ_body, φ_stim)
+        target_mean: 0.0
+        weight: 0.6
+      - id: suffering_guard
+        loss: L_suf        # max(0, -κ(V(x_t)))
+        weight: 0.8
+    stimuli:
+      audio: ["pink_noise", "heartbeat", "breathing"]
+      vestibular: ["sway_lowfreq", "rotation_slow"]
+      tactile: ["pressure_random"]
+    checkpoints: true
+
+  - name: infant
+    duration_steps: 4000
+    objectives:
+      - id: imitation_contrast
+        loss: L_ctr        # InfoNCE(f(y), f(ŷ))
+        weight: 1.0
+      - id: imitation_traj
+        loss: L_traj       # DTW(y, ŷ)
+        weight: 0.7
+      - id: metabolic_cost
+        loss: L_met        # Σ‖a_t‖²
+        weight: 0.3
+    tasks:
+      - pattern: "wave_hand"
+      - pattern: "reach_object"
+      - pattern: "rhythm_clap"
+    checkpoints: true
+
+  - name: toddler
+    duration_steps: 6000
+    objectives:
+      - id: phoneme_semantic
+        loss: L_sem        # CE(ŷ_sem, y_sem)
+        weight: 1.0
+      - id: affect_alignment
+        loss: L_aff        # MSE(Ĥ, H)
+        weight: 0.6
+      - id: lexicon_sparsity
+        loss: L_lex        # β‖vocab‖₀
+        weight: 0.2
+    tasks:
+      - dataset: "phoneme_toyset"
+      - dataset: "phoneme_foodset"
+      - dataset: "phoneme_danger"
+    checkpoints: true
+
+  - name: child
+    duration_steps: 8000
+    objectives:
+      - id: social_rules
+        loss: L_soc        # violations / min
+        weight: 1.0
+      - id: self_report_alignment
+        loss: L_repr       # CE(r̂, r)
+        weight: 0.5
+      - id: preference_stability
+        metric: preference_stability
+        target: ">=0.85"
+    scenarios:
+      - name: turn_taking
+        participants: 2
+      - name: collaborative_goal
+        participants: 3
+    checkpoints: true
+
+sleep_phase:
+  interval_steps: 2000
+  operations:
+    - name: reversible_distillation
+      method: "elastic_sde"
+      keep_history: true
+    - name: archive_flush
+      targets:
+        - logs/episodes
+        - logs/affect_metrics

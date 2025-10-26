@@ -1,0 +1,19 @@
+build: Duet-Weak
+description: "Two-node weak coupling with bud propagation sharing."
+nodes: ["A", "B"]
+wires:
+  - from: A.BUD.event
+    to: SOCIAL.A
+  - from: B.BUD.event
+    to: SOCIAL.B
+  - from: SOCIAL.P_AtoB
+    to: POLICY_B.ctx
+  - from: SOCIAL.P_BtoA
+    to: POLICY_A.ctx
+guards:
+  R_max: 0.78
+policy:
+  - when: "P_peer > 0.2 and bud == 1"
+    action: "warmth += 0.05"
+  - when: "network.R > 0.78"
+    action: "inhibit 8s; warmth -= 0.1"

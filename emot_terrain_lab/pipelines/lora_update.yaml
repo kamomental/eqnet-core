@@ -1,0 +1,122 @@
+pipeline:
+  name: lora_update
+  description: >
+    Nightly LoRA continual-learning pipeline.
+    Harvests fresh conversational data, performs contamination guards,
+    evolves candidate adapters, and promotes the winning adapter through
+    gated evaluation and staged deployment.
+  run_at: "03:20"
+  timezone: "Asia/Tokyo"
+
+defaults:
+  dataset_root: data/continual
+  adapter_dir: exports/adapters
+  logs_dir: logs/continual
+
+bricks:
+  learner:
+    module: emot_terrain_lab.bricks.learners.continuous:ContinuousLearner
+    params:
+      replay_ratio: 0.3        # 30% past data for catastrophic forgetting guard
+      self_ratio_max: 0.4      # self-generated fraction upper bound
+      batch_size: 64
+      seed: 42
+
+  guard:
+    module: emot_terrain_lab.bricks.guard.contamination:ContaminationGuard
+    params:
+      sim_threshold: 0.92      # embedding cosine similarity upper bound
+      ngram_size: 5
+      max_overlap: 0.25
+      leak_checks:
+        - eval/p3_gold.jsonl
+        - eval/p4_gold.jsonl
+      block_self_ratio: 0.4
+
+  trainer:
+    module: emot_terrain_lab.bricks.trainer.lora_evo:LoRAEvolutionTrainer
+    params:
+      rank: 8
+      population: 6
+      generations: 3
+      steps_per_candidate: 2000
+      ewc_lambda: 0.1
+      weight_decay: 0.01
+      learning_rate: 2.0e-4
+      gradient_clip: 1.0
+
+  evaluator:
+    module: emot_terrain_lab.bricks.eval.regression:AdapterRegressionGate
+    params:
+      max_regress_main: 0.5        # ΔGold ≥ -0.5pt
+      max_regress_ood: 0.0         # ΔOOD ≤ 0
+      min_entropy: 3.2             # H₄ ≥ 3.2
+      safety_slo:
+        rho_max: 1.8
+        synchrony_max: 0.78
+      committee:
+        members:
+          - emot_terrain_lab.bricks.prm.reasoning:ReasoningPRM
+          - emot_terrain_lab.bricks.prm.dialogue:DialoguePRM
+          - emot_terrain_lab.bricks.prm.code:CodePRM
+        min_vote_ratio: 0.34
+
+  deployer:
+    module: emot_terrain_lab.bricks.deploy.canary:CanaryDeployer
+    params:
+      stages:
+        - percentage: 0.10
+          duration_hours: 24
+        - percentage: 0.50
+          duration_hours: 24
+        - percentage: 1.00
+      rollback_on:
+        - slo_violation
+        - regression_detected
+        - anomaly_rate_spike
+
+flow:
+  - from: learner.out
+    to: guard.in
+  - from: guard.clean
+    to: trainer.training_data
+  - from: trainer.candidates
+    to: evaluator.candidates
+  - from: evaluator.promoted
+    to: deployer.adapter
+
+artifacts:
+  - name: continual_batches
+    path: ${defaults.logs_dir}/batches.jsonl
+  - name: guard_report
+    path: ${defaults.logs_dir}/guard_report.json
+  - name: candidate_metrics
+    path: ${defaults.logs_dir}/candidate_metrics.jsonl
+  - name: deployment_status
+    path: ${defaults.logs_dir}/deployment_status.json
+
+metrics:
+  dashboard:
+    - SelfRatio
+    - LeakScore
+    - DeltaGold
+    - DeltaOOD
+    - EntropyH4
+    - CanaryIncidents
+    - R
+    - rho
+
+notifications:
+  on_success:
+    - channel: slack
+      target: "#eqnet-continual"
+      message: "LoRA continual update completed (adapter: ${deployer.current_adapter})."
+  on_failure:
+    - channel: slack
+      target: "#eqnet-continual"
+      message: "LoRA continual update FAILED. Check guard and evaluation reports."
+
+notes:
+  - Ensure all modules referenced above export callable bricks.
+  - This YAML assumes UTF-8 encoding; avoid Shift_JIS sources when editing.
+  - Run `scripts/run_pipeline.py --config pipelines/lora_update.yaml` to dry-run once bricks are in place.

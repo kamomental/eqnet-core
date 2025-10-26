@@ -1,0 +1,10 @@
+rule AntiStickiness:
+  when  RQA.DET > 0.8  and  RQA.LAM > 0.7  and  hold_ms >= 600
+  then  K_local := max(K_local - 0.02, 0.02),
+        prosody_energy := prosody_energy - 0.08
+
+rule LyapunovUnstable:
+  when  lambda > 0.10
+  then  lambda_diss := lambda_diss + 0.02,
+        kappa := kappa - 0.20
+

@@ -1,0 +1,36 @@
+{
+  "entropy_to_rest": {
+    "error": "The Granger causality test statistic cannot be computed because the VAR has a perfect fit of the data."
+  },
+  "enthalpy_to_rest": {
+    "error": "The Granger causality test statistic cannot be computed because the VAR has a perfect fit of the data."
+  },
+  "rest_to_entropy": {
+    "lag_1": {
+      "ssr_ftest_pvalue": 0.7769297911341759,
+      "params_ftest_pvalue": 0.7769004838483942
+    },
+    "lag_2": {
+      "ssr_ftest_pvalue": 0.15700724092468843,
+      "params_ftest_pvalue": 0.16930516035943854
+    },
+    "lag_3": {
+      "ssr_ftest_pvalue": 1.0,
+      "params_ftest_pvalue": 0.9990180537553455
+    }
+  },
+  "rest_to_enthalpy": {
+    "lag_1": {
+      "ssr_ftest_pvalue": 0.04601478162037583,
+      "params_ftest_pvalue": 0.04601478162032033
+    },
+    "lag_2": {
+      "ssr_ftest_pvalue": 0.21339611047264065,
+      "params_ftest_pvalue": 0.21339611038631925
+    },
+    "lag_3": {
+      "ssr_ftest_pvalue": 0.5009773970077592,
+      "params_ftest_pvalue": 0.13722613889456955
+    }
+  }
+}

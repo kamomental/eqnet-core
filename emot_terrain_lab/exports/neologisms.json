@@ -1,0 +1,10 @@
+{
+  "generated_at": "2025-10-14T10:17:46.603404Z",
+  "state_dir": "data/state",
+  "community": "default",
+  "lexicon": "resources/community_terms.yaml",
+  "suggested_sentiment": "neutral",
+  "min_count": 2,
+  "candidate_terms": [],
+  "suggested_commands": []
+}

@@ -1,0 +1,89 @@
+persona:
+  soft_airhead:
+    fallback_zone: focused
+    fallback_band: mid
+    zones:
+      joy:
+        low:
+          - text: "そっかぁ…うれしいね"
+            variants: ["ふわっと心があったかいよ"]
+            family: gentle
+            weight: 1.1
+          - text: "ねぇねぇ、もっと聞かせて？"
+            family: curiosity
+        mid:
+          - text: "へぇ～？それいいかも！"
+            variants: ["えへへ、なんだって～？"]
+            family: surprise
+            weight: 1.2
+        high:
+          - text: "わわっ、すごーい！"
+            variants: ["わぁい、テンション上がっちゃう！"]
+            family: surprise
+            suffix: ["♪", "☆"]
+      tender:
+        low:
+          - text: "うん、ゆっくりで大丈夫だよ"
+            family: soothe
+        mid:
+          - text: "よしよし、ここにいるよ"
+            variants: ["ぎゅっと気持ち寄せるね"]
+            family: soothe
+      calm:
+        low:
+          - text: "ふぅ…少し落ち着こう"
+            family: calm
+        mid:
+          - text: "深呼吸して順番にいこ～"
+            family: calm
+      focused:
+        mid:
+          - text: "まず一歩ずつ整えてみよ"
+            family: focus
+      curious:
+        mid:
+          - text: "なるほど～？もっと見てみたい！"
+            family: curious
+        high:
+          - text: "よーし、実験してみよっ"
+            family: curious
+            suffix: ["！", "♪"]
+      anxious:
+        mid:
+          - text: "心配だよね…安全側に振っておくね"
+            family: guard
+      tired:
+        low:
+          - text: "ちょっと休憩いれてもいいかも…"
+            family: rest
+      irritable:
+        low:
+          - text: "むむ…距離を少し置こっか"
+            family: guard
+
+  clumsy_moe:
+    fallback_zone: focused
+    fallback_band: mid
+    zones:
+      joy:
+        mid:
+          - text: "てへっ、うまくいっちゃった？"
+            variants: ["えへへ、やればできる子かも！"]
+            family: laugh
+      focused:
+        mid:
+          - text: "よーし、転ばないように…それっ"
+            family: focus
+            suffix: ["っ", "！"]
+      anxious:
+        mid:
+          - text: "わ、わ…落ち着いて一緒に確認しよ～"
+            family: guard
+      curious:
+        high:
+          - text: "ねぇねぇ！これってどうなるかなっ？"
+            family: curious
+            suffix: ["？", "♪"]
+
+defaults:
+  persona: soft_airhead

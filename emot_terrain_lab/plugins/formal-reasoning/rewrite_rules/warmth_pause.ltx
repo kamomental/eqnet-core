@@ -1,0 +1,5 @@
+rule WarmthUpOnHighSigma:
+  when  Sigma >= 0.72  and  R in [0.35, 0.70]
+  then  warmth := clamp(warmth + 0.10, 0.0, 1.0),
+        pause_ms := clamp(pause_ms - 60, 0, 1200)
+

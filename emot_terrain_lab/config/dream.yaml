@@ -1,0 +1,37 @@
+# DreamLink default parameters
+g2l:
+  latent_dim: 1024
+  rank: 32
+  msfft_bins: 256
+  tau_ou:
+    base_ms: 0.8
+    hard_sync_ms: 0.35    # when R is high
+    soft_sync_ms: 1.5     # when R is low
+  scale_sem: 1.0
+  scale_noise: 0.25
+  clamp_sigma: 1.6
+
+rae_decoder:
+  checkpoint: "models/rae_decoder_v015.ckpt"
+  dtype: "fp16"
+  resolution: [640, 360]
+  fps: 12
+
+micro_noise:
+  enabled: true
+  kind: "vq-vae"
+  strength: 0.15
+
+seed_encoder:
+  model: "clip-vit-l-14"
+  device: "auto"
+
+safety:
+  h_min: 0.40
+  r_max: 0.75
+  soften_kappa_on_violation: true
+  spoiler_gate: "warn"
+
+output:
+  max_seconds: 20
+  save_storyline: true

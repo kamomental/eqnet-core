@@ -1,0 +1,37 @@
+hub:
+  default_style: "senpai_polite"
+  llms:
+    - name: "llm-fast"
+      kind: "chat"
+      latency_ms: 80
+      cost: low
+      max_ctx: 64000
+    - name: "llm-know"
+      kind: "chat"
+      latency_ms: 150
+      cost: medium
+      max_ctx: 200000
+      plugins: ["rag"]
+    - name: "llm-code"
+      kind: "code"
+      latency_ms: 180
+      cost: medium
+      max_ctx: 128000
+      safety: "strict"
+  router:
+    intents:
+      qa:
+        primary: "llm-know"
+        backup: ["llm-fast"]
+        tools: ["rag"]
+      summary:
+        primary: "llm-fast"
+      code:
+        primary: "llm-code"
+      chitchat:
+        primary: "llm-fast"
+  guard:
+    rating: "G"
+    spoiler_mode: "warn"
+    pii_block: true
+    source_limit: 5

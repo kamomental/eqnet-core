@@ -1,0 +1,14 @@
+-- Sample Litex rule set for EQNet affect/control adjustments.
+-- This is illustrative; refine once pylitex rules are authored.
+
+rule pause_relax:
+  sigma.high + love_mode.warm -> pause_down + warmth_up
+
+rule warmth_soften:
+  sigma.low + anxiety_flag -> warmth_down + pause_up
+
+rule micro_affirmation:
+  care_ratio.low -> backchannel_rate_up + lexicon_soft
+
+rule sigma_dwell:
+  sigma.switch_fast -> dwell_guard

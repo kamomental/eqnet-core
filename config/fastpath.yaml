@@ -1,0 +1,13 @@
+fastpath:
+  enable: true
+  enforce_actions: record_only
+  profiles:
+    - cleanup
+    - rescue_prep
+  ab_test_fraction: 0.15
+  ab_test_ttl_scale: 1.15
+  ab_test_seed: 2025
+  fail_safe:
+    override_rate_threshold: 0.2
+    fallback_mode: soft_hint
+    lookback_days: 7

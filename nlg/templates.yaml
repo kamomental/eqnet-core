@@ -1,0 +1,57 @@
+openers:
+  listen:
+    - "そっと伺います、"
+    - "静かに寄り添います、"
+    - "いまここで聞こえてくるのは、"
+  soften:
+    - "ここでひと呼吸おきましょう。"
+    - "肩の力をそっと抜いてみましょう。"
+  guide:
+    - "ここで歩みを整えましょう。"
+    - "一緒に次の足場を確認します。"
+breath_prompts:
+  slow: "息をゆっくり吸って、長めに吐いてみましょう。"
+  settle: "吸うとき胸に、吐くとき地面に意識を置いてみて。"
+care_prompts:
+  soft: "自分へのやわらかさを一つだけ拾ってみましょう。"
+  steady: "支えになりそうなものをそばに置いておきましょう。"
+safety_defaults:
+  anchor: "いつでもこの場に戻れる合図を決めておきましょう。"
+  spare: "違和感が出たら合図をくれて大丈夫です。"
+stances:
+  listen:
+    mirror:
+      lines:
+        - "{opener}{present_frame}{pause}"
+        - "その{feeling}さを、ここではそのまま抱えていられます{pause}"
+    hold_space:
+      lines:
+        - "静かに{breath_hint}{pause}"
+        - "いまは決めなくていい、ただ一緒にいる時間です{pause}"
+  soften:
+    breathe:
+      lines:
+        - "{opener}{breath_hint}{pause}"
+        - "胸の{feeling}さを、吐く息と一緒にほんの少しずつ手放してみましょう{pause}"
+    lighten:
+      lines:
+        - "いま触れているのは{present_frame}{pause}"
+        - "小さな{care_hint}をここに置いて、少しだけ明かりを足してみます{pause}"
+  guide:
+    orient:
+      lines:
+        - "① いま聞こえたのは {present_frame} 。"
+        - "② 次に試せそうなのは {guide_option} 。"
+        - "③ 安心のために {safety_hint} を残しておきます。"
+    invite:
+      lines:
+        - "① さきほどの声では {present_frame} と感じました。"
+        - "② このあと {guide_option} を少しだけ扱ってみませんか。"
+        - "③ 違ったら {safety_hint} を合図に戻しましょう。"
+narrator:
+  guide_summary:
+    lines:
+      - "{prefix}"
+      - "・共有したこと: {present_frame}"
+      - "・次の一歩: {guide_option}"
+      - "{agreement_line}"

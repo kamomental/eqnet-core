@@ -1,0 +1,72 @@
+# Minimal genome schema for developmental EQNet bodies.
+
+version: 0
+metadata:
+  description: "Prototype genome for NCA/GRN/NEAT integrated organism."
+  author: "devlife-research"
+  created: "2025-10-20"
+
+genotype:
+  morphology:
+    engine: "lenia"        # options: lenia | nca
+    grid_size: [64, 64]
+    channels: 6            # [shape, metabolite, hormone, memory...]
+    kernels:
+      - name: "morphogenesis"
+        sigma: 1.6
+        weight: 0.8
+      - name: "repair"
+        sigma: 3.2
+        weight: 0.5
+    activation: "softplus"
+    thresholds:
+      birth: 0.27
+      sustain: 0.21
+      apoptosis: 0.05
+  grn:
+    genes:
+      - id: "G_aff"
+        class: "regulator"
+        targets: ["H_valence", "H_arousal"]
+        logic: "AND"
+      - id: "G_homeo"
+        class: "regulator"
+        targets: ["metabolism"]
+        logic: "NOT"
+      - id: "G_novel"
+        class: "sensor"
+        targets: ["H_novelty"]
+        logic: "OR"
+    params:
+      decay: 0.08
+      noise_std: 0.02
+      basal_expression: 0.1
+  hormones:
+    H_valence: { baseline: 0.1, gain: 0.8, clamp: [-1.0, 1.0] }
+    H_arousal: { baseline: 0.2, gain: 0.6, clamp: [0.0, 1.5] }
+    H_novelty: { baseline: 0.05, gain: 1.0, clamp: [0.0, 2.0] }
+  policy:
+    encoding: "neat"
+    neat:
+      init_nodes: 8
+      max_nodes: 64
+      mutate_prob: 0.05
+      add_conn_prob: 0.03
+      del_conn_prob: 0.01
+  epigenetics:
+    marks:
+      - "methyl:G_aff"
+      - "acetyl:G_homeo"
+    plasticity:
+      learning_rate: 0.001
+      rollback: true
+  mutation:
+    per_gene: 0.02
+    structural:
+      add_gene: 0.005
+      add_conn: 0.01
+      del_conn: 0.005
+
+heritage:
+  inherit_fraction: 0.25
+  recombination: "uniform"

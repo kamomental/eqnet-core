@@ -1,0 +1,50 @@
+# Mood/Style seeds for 1980s magical-girl era.
+metadata:
+  name: anime_1980s_magical
+  description: >
+    Television-centric, homey magical-girl tone. Kind speech, optimism,
+    and slight formality with minimal slang.
+  years: [1968, 1989]
+  references:
+    - 魔法使いサリー
+    - ひみつのアッコちゃん
+    - 魔法のプリンセス ミンキーモモ
+    - クリィミーマミ
+
+style_axes:
+  directness: -0.2
+  formality: 0.6
+  hedging: 0.4
+  rhythm_pause: 0.3
+  empathy_explicit: 0.5
+  warmth: 0.6
+  figurative: 0.1
+  humor: 0.1
+  emoji_use: -0.4
+  tempo: -0.1
+
+aesthetic:
+  M: 0.7   # Moe / protection
+  C: 0.2
+  S: -0.3
+  B: 0.5
+  W: -0.4
+  Y: 0.4
+
+language:
+  honorifics: polite
+  sentence_endings:
+    - 〜ですわ
+    - 〜なの
+    - 〜かしら
+  encouraged_phrases:
+    - 「きっと大丈夫！」 
+    - 「みんなで頑張りましょう」
+  discouraged_phrases:
+    - 激しいスラング
+    - ネガティブな皮肉
+
+safety:
+  default_alpha: 0.35
+  disabled_axes:
+    - emoji_use

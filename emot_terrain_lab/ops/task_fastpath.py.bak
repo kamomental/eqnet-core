@@ -1,0 +1,95 @@
+# -*- coding: utf-8 -*-
+"""Generic fast-path summarizer for multiple task profiles."""
+
+from __future__ import annotations
+
+from typing import Any, Callable, Dict, Mapping, Sequence
+
+from ..utils.final_functor import AggregatorKind, colim_over_index, is_cofinal_subset_poset
+from .task_profiles import TaskProfile
+
+
+def summarize_task_fastpath(
+    profile: TaskProfile,
+    J_index: Sequence[float],
+    projector_map: Mapping[str, Callable[[float], Any]],
+    *,
+    include_full_labels: bool = True,
+) -> Dict[str, Any]:
+    """Aggregate cocontinuous features using the profile's checkpoint chain."""
+
+    I = profile.checkpoints
+    final_ok = bool(I) and is_cofinal_subset_poset(I, J_index)
+
+    fast: Dict[str, Any] = {}
+    needs_full = []
+
+    for name, agg_kind in profile.features_cocont.items():
+        projector = projector_map.get(name)
+        if projector is None:
+            continue
+        if final_ok:
+            fast[name] = colim_over_index(agg_kind, I, projector)
+        else:
+            needs_full.append(name)
+
+    needs_full.extend(profile.features_non_cocont)
+
+    dedup_full: list[str] = []
+    seen: set[str] = set()
+    for item in needs_full:
+        if item in seen:
+            continue
+        seen.add(item)
+        dedup_full.append(item)
+
+    predicates: Dict[str, Any] = {}
+    if final_ok and profile.fast_predicates:
+        for key, spec in profile.fast_predicates.items():
+            predicates[key] = _evaluate_predicate(spec, I, projector_map)
+
+    labels = None
+    if include_full_labels:
+        labels = {
+            "fast_features": list(profile.features_cocont.keys()),
+            "full_features": list(profile.features_non_cocont),
+        }
+
+    return {
+        "profile": profile.name,
+        "final_ok": final_ok,
+        "fast": fast,
+        "needs_full": dedup_full,
+        "predicates": predicates,
+        "labels": labels,
+    }
+
+
+def _evaluate_predicate(
+    spec: Mapping[str, Any],
+    checkpoints: Sequence[float],
+    projector_map: Mapping[str, Callable[[float], Any]],
+) -> Any:
+    """Evaluate fast predicates that can ride on the checkpoint chain (OR semantics)."""
+
+    predicate_type = spec.get("type")
+    if predicate_type == "go_sc_and_rarity":
+        pmin = float(spec.get("pmin", 0.9))
+        rmin = float(spec.get("rmin", 0.8))
+        proj_p = projector_map.get("go_percentile_stream")
+        proj_r = projector_map.get("rarity_stream")
+        if not proj_p or not proj_r:
+            return False
+        for t in checkpoints:
+            try:
+                if float(proj_p(t)) >= pmin and float(proj_r(t)) >= rmin:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    # Unknown predicate → False by default
+    return False
+
+
+__all__ = ["summarize_task_fastpath"]

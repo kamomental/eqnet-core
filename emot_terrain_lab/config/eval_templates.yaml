@@ -1,0 +1,10 @@
+p3:
+  delta_p_min: 0.12
+  R_max: 0.78
+  bud_threshold: 0.42
+  field_tau_beta: 0.1
+  phase_band_low: 0.3
+  phase_band_high: 0.6
+p4:
+  framemap_icc_min: 0.75
+  delta_u_min: 0.5
