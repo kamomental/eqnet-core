@@ -42,3 +42,5 @@ reports/plots/*.json
 memory/affective_log.jsonl
 reports/resonance_history.jsonl
 reports/culture_history.jsonl
+reports/plots/
+reports/policy_feedback_history.jsonl

@@ -30,7 +30,10 @@
         "affective_map": { "type": "string" },
         "culture_resonance": { "type": "string" },
         "culture_trend": { "type": "string" },
-        "resonance_objective": { "type": "string" }
+        "resonance_objective": { "type": "string" },
+        "resonance_bayes_trace": { "type": "string" },
+        "vision_counts": { "type": "string" },
+        "vision_pose": { "type": "string" }
       },
       "additionalProperties": { "type": "string" }
     },
@@ -41,7 +44,29 @@
         "arousal": { "type": "object" }
       }
     },
+    "vision_snapshot": {
+      "type": "object",
+      "properties": {
+        "events": { "type": "number" },
+        "detections_total": { "type": "number" },
+        "counts_by_kind": {
+          "type": "object",
+          "additionalProperties": { "type": "number" }
+        },
+        "mean_valence": { "type": "number" },
+        "mean_arousal": { "type": "number" },
+        "mean_dominance": { "type": "number" },
+        "pose_mean": {
+          "type": "object",
+          "additionalProperties": { "type": "number" }
+        },
+        "fps_mean": { "type": "number" },
+        "ts_last": { "type": "number" },
+        "last_event": { "type": "object" }
+      }
+    },
     "resonance_history_path": { "type": "string" },
+    "resonance_bayes_trace_path": { "type": "string" },
     "culture_history_path": { "type": "string" },
     "policy_feedback": {
       "type": "object",
@@ -50,9 +75,51 @@
         "politeness_before": { "type": "number" },
         "politeness_after": { "type": "number" },
         "delta": { "type": "number" },
+        "intimacy_before": { "type": "number" },
+        "intimacy_after": { "type": "number" },
+        "intimacy_delta": { "type": "number" },
         "corr": { "type": "number" },
         "corr_source": { "type": ["string", "null"] },
-        "reason": { "type": "string" }
+        "reason": { "type": "string" },
+        "reference_tag": { "type": "string" },
+        "reference_rho": { "type": "number" },
+        "reference_valence": { "type": "number" },
+        "alerts": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "vision_adjustment": {
+          "type": "object",
+          "properties": {
+            "politeness_delta": { "type": "number" },
+            "intimacy_delta": { "type": "number" },
+            "details": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": { "type": "string" },
+                  "count": { "type": "number" },
+                  "effective": { "type": "number" },
+                  "normalize": { "type": "string" },
+                  "politeness_delta": { "type": "number" },
+                  "intimacy_delta": { "type": "number" }
+                }
+              }
+            },
+            "counts_by_kind": {
+              "type": "object",
+              "additionalProperties": { "type": "number" }
+            },
+            "normalisers": {
+              "type": "object",
+              "properties": {
+                "events": { "type": "number" },
+                "detections": { "type": "number" }
+              }
+            }
+          }
+        }
       }
     },
     "culture_stats": {
@@ -80,9 +147,19 @@
         "lag_refined": { "type": "number" },
         "energy": { "type": "number" },
         "n_eff": { "type": "number" },
-        "objective": { "type": "number" }
+        "objective": { "type": "number" },
+        "partial_corr": { "type": "number" },
+        "granger": {
+          "type": "object",
+          "properties": {
+            "lag": { "type": "integer" },
+            "a_to_b_f": { "type": "number" },
+            "b_to_a_f": { "type": "number" }
+          }
+        }
       }
     },
+    "policy_feedback_history_path": { "type": "string" },
     "alerts": {
       "type": "array",
       "items": { "type": "string" }

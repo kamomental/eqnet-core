@@ -47,6 +47,10 @@ def test_resonance_corr_and_lag(tmp_path):
     assert pair["rho_cross_corr_peak"] > 0.8
     lag_est = pair.get("rho_cross_corr_lag")
     assert math.isfinite(lag_est)
+    assert math.isfinite(pair.get("partial_corr", float("nan")))
+    granger = pair.get("granger", {})
+    assert isinstance(granger, dict)
+    assert granger.get("lag") == 1
 
 
 def test_resonance_cli(tmp_path):
@@ -79,6 +83,8 @@ def test_resonance_cli(tmp_path):
     payload = json.loads(out_path.read_text(encoding="utf-8"))
     assert payload["schema"] == "resonance.v1"
     assert payload["pairs"][0]["agents"] == ["A", "B"]
+    assert "partial_corr" in payload["pairs"][0]
+    assert "granger" in payload["pairs"][0]
     assert out_path.with_suffix(".matrix.json").exists()
     assert (tmp_path / "plots").exists()
 
@@ -102,6 +108,8 @@ def test_resonance_with_options(tmp_path):
     )
     pair = metrics["pairs"][0]
     assert "objective" in pair
+    assert "partial_corr" in pair
+    assert "granger" in pair
     assert pair["n_eff"] >= 2.0
 
 
@@ -118,5 +126,4 @@ def test_objective_history_plot(tmp_path):
     assert out_png.exists()
     assert out_png.stat().st_size > 0
 
-from telemetry import plot_resonance
 

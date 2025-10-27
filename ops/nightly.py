@@ -171,7 +171,17 @@ def run(hub, cfg: Dict[str, Any] | None = None) -> Dict[str, Any]:
     telemetry_log = Path(cfg.get("telemetry_log", "logs/telemetry_events.jsonl"))
     plots_dir = Path(cfg.get("plots_dir", "reports/plots"))
     md_path = Path(cfg.get("markdown_path", "reports/nightly.md"))
-    _generate_telemetry_section(report, telemetry_log, plots_dir, md_path)
+    culture_feedback_enabled = bool(
+        cfg.get("culture_feedback_enabled", False)
+        or nightly_cfg.get("enable_culture_feedback", False)
+    )
+    _generate_telemetry_section(
+        report,
+        telemetry_log,
+        plots_dir,
+        md_path,
+        culture_feedback_enabled=culture_feedback_enabled,
+    )
     json_path = _write_json_summary(report, out_dir="reports")
     print(f"[nightly] JSON summary -> {json_path}")
 
@@ -779,6 +789,188 @@ def _summarize_field_telemetry(path: Path) -> Optional[Dict[str, float]]:
     }
 
 
+def _summarize_vision_metrics(path: Path) -> Optional[Dict[str, Any]]:
+    if not path.exists():
+        return None
+    events = 0
+    total_detections = 0
+    counts_by_kind: Dict[str, int] = defaultdict(int)
+    valences: List[float] = []
+    arousals: List[float] = []
+    dominances: List[float] = []
+    fps_values: List[float] = []
+    pose_keys = ("yaw_mean", "pitch_mean", "roll_mean", "score_mean")
+    pose_sum: Dict[str, float] = defaultdict(float)
+    pose_count: Dict[str, int] = defaultdict(int)
+    ts_last: Optional[float] = None
+    last_event: Optional[Dict[str, Any]] = None
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if row.get("event") != "vision.metrics":
+                continue
+            data = row.get("data") or {}
+            events += 1
+            ts = data.get("ts_ms") or data.get("ts") or row.get("ts")
+            try:
+                ts_last = float(ts)
+            except (TypeError, ValueError):
+                ts_last = ts_last
+            total = data.get("detections_total")
+            try:
+                total_detections += int(total)
+            except (TypeError, ValueError):
+                detections = data.get("detections")
+                if isinstance(detections, list):
+                    total_detections += len(detections)
+            by_kind = data.get("counts_by_kind") or data.get("detections_by_class") or {}
+            if isinstance(by_kind, dict):
+                for kind, count in by_kind.items():
+                    try:
+                        counts_by_kind[str(kind)] += int(count)
+                    except (TypeError, ValueError):
+                        continue
+            val = data.get("valence")
+            if isinstance(val, (int, float)) and math.isfinite(val):
+                valences.append(float(val))
+            aro = data.get("arousal")
+            if isinstance(aro, (int, float)) and math.isfinite(aro):
+                arousals.append(float(aro))
+            dom = data.get("dominance")
+            if isinstance(dom, (int, float)) and math.isfinite(dom):
+                dominances.append(float(dom))
+            features = data.get("features")
+            if isinstance(features, dict):
+                fps = features.get("fps")
+                if isinstance(fps, (int, float)) and math.isfinite(fps):
+                    fps_values.append(float(fps))
+            pose = data.get("pose_summary") or data.get("pose")
+            if isinstance(pose, dict):
+                for key in pose_keys:
+                    val_pose = pose.get(key)
+                    if isinstance(val_pose, (int, float)) and math.isfinite(val_pose):
+                        pose_sum[key] += float(val_pose)
+                        pose_count[key] += 1
+            last_event = {
+                "ts_ms": ts_last,
+                "detections_total": total,
+                "counts_by_kind": by_kind,
+                "valence": val,
+                "arousal": aro,
+            }
+    except Exception:
+        return None
+    if events == 0:
+        return None
+
+    def _mean(values: List[float]) -> Optional[float]:
+        return float(sum(values) / len(values)) if values else None
+
+    pose_mean: Dict[str, float] = {}
+    for key in pose_keys:
+        if pose_count.get(key):
+            pose_mean[key] = pose_sum[key] / pose_count[key]
+
+    return {
+        "events": events,
+        "detections_total": total_detections,
+        "counts_by_kind": dict(counts_by_kind),
+        "mean_valence": _mean(valences),
+        "mean_arousal": _mean(arousals),
+        "mean_dominance": _mean(dominances),
+        "pose_mean": pose_mean or None,
+        "fps_mean": _mean(fps_values),
+        "ts_last": ts_last,
+        "last_event": last_event,
+    }
+
+
+def _render_vision_plots(snapshot: Mapping[str, Any], plots_dir: Path) -> Dict[str, Path]:
+    if plt is None or not isinstance(snapshot, Mapping):
+        return {}
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    created: Dict[str, Path] = {}
+    counts = snapshot.get("counts_by_kind")
+    if isinstance(counts, Mapping) and counts:
+        items = sorted(
+            ((str(k), float(v)) for k, v in counts.items() if isinstance(v, (int, float))),
+            key=lambda kv: kv[1],
+            reverse=True,
+        )[:12]
+        if items:
+            labels, values = zip(*items)
+            fig, ax = plt.subplots(figsize=(6, 3))
+            ax.bar(labels, values, color="#1f77b4")
+            ax.set_ylabel("count")
+            ax.set_title("Vision detection counts (top)")
+            ax.tick_params(axis="x", rotation=35, labelsize=8)
+            ax.grid(axis="y", alpha=0.2)
+            fig.tight_layout()
+            out_path = plots_dir / "vision_counts.png"
+            fig.savefig(out_path, dpi=160)
+            plt.close(fig)
+            if out_path.exists():
+                created["vision_counts"] = out_path
+    pose_mean = snapshot.get("pose_mean")
+    if isinstance(pose_mean, Mapping):
+        pose_items = [
+            (key, float(val))
+            for key, val in pose_mean.items()
+            if isinstance(val, (int, float)) and math.isfinite(float(val))
+        ]
+        if pose_items:
+            labels, values = zip(*pose_items)
+            fig, ax = plt.subplots(figsize=(4, 2.8))
+            ax.barh(labels, values, color="#ff7f0e")
+            ax.set_xlabel("mean")
+            ax.set_title("Pose summary (mean)")
+            ax.grid(axis="x", alpha=0.2)
+            fig.tight_layout()
+            out_path = plots_dir / "vision_pose.png"
+            fig.savefig(out_path, dpi=160)
+            plt.close(fig)
+            if out_path.exists():
+                created["vision_pose"] = out_path
+    return created
+
+
+def _render_vision_narrative(snapshot: Mapping[str, Any], *, top_k: int = 3) -> List[str]:
+    if not isinstance(snapshot, Mapping):
+        return []
+    counts = snapshot.get("counts_by_kind")
+    if not isinstance(counts, Mapping) or not counts:
+        return []
+    try:
+        events = float(snapshot.get("events", 0.0))
+    except (TypeError, ValueError):
+        events = 0.0
+    detections_total = snapshot.get("detections_total")
+    try:
+        detections_total_f = float(detections_total)
+    except (TypeError, ValueError):
+        detections_total_f = 0.0
+    denom = events if events > 0 else detections_total_f if detections_total_f > 0 else 1.0
+    ranked = sorted(
+        ((str(k), float(v)) for k, v in counts.items() if isinstance(v, (int, float))),
+        key=lambda kv: kv[1],
+        reverse=True,
+    )
+    if not ranked:
+        return []
+    lines = ["", "**Vision quick notes**"]
+    for label, count in ranked[: max(1, top_k)]:
+        rate = count / denom if denom else 0.0
+        lines.append(f"- {label}: count={count:.1f}, share={rate:.2%}")
+    lines.append("")
+    return lines
+
+
 def _mean_clean(arr: np.ndarray) -> float:
     mask = np.isfinite(arr)
     if not mask.any():
@@ -1022,10 +1214,15 @@ def _generate_telemetry_section(
     telemetry_log: Path,
     plots_dir: Path,
     md_path: Path,
+    *,
+    culture_feedback_enabled: bool = False,
 ) -> None:
     field_state = _summarize_field_telemetry(telemetry_log)
     if field_state:
         report["field_state"] = field_state
+    vision_summary = _summarize_vision_metrics(telemetry_log)
+    if vision_summary:
+        report["vision_snapshot"] = vision_summary
     cfg_dict = _load_runtime_cfg_dict(Path("config/runtime.yaml"))
     report["config_snapshot"] = cfg_dict
     tuning = _derive_tuning_suggestion(field_state, cfg_dict)
@@ -1045,6 +1242,15 @@ def _generate_telemetry_section(
     report["plots"] = report.get("plots", {})
     plot_info: Dict[str, Path] = {}
     plot_error: Optional[str] = None
+
+    if vision_summary:
+        vision_plot_paths = _render_vision_plots(vision_summary, plots_dir)
+        if vision_plot_paths:
+            vision_artifacts = report.setdefault("artifacts", {}).setdefault("vision_plots", {})
+            for key, path in vision_plot_paths.items():
+                report["plots"][key] = str(path)
+                plot_info.setdefault(key, path)
+                vision_artifacts[key] = str(path)
 
     expected_plot_paths = {
         "ignition_timeseries": plots_dir / "ignition_timeseries.png",
@@ -1204,8 +1410,12 @@ def _generate_telemetry_section(
                     "energy": best.get("energy"),
                     "objective": best.get("objective"),
                     "n_eff": best.get("n_eff"),
+                    "partial_corr": best.get("partial_corr"),
+                    "granger": best.get("granger"),
                 }
                 resonance_metrics_result["summary"] = resonance_summary
+                resonance_metrics_result["partial_corr"] = resonance_summary.get("partial_corr")
+                resonance_metrics_result["granger"] = resonance_summary.get("granger")
                 try:
                     history_path.parent.mkdir(parents=True, exist_ok=True)
                     history_entry = {
@@ -1224,15 +1434,59 @@ def _generate_telemetry_section(
                     if objective_plot.exists():
                         report["plots"]["resonance_objective"] = str(objective_plot)
                         plot_info.setdefault("resonance_objective", objective_plot)
+                    trace_path = Path("reports/resonance_bayes_trace.jsonl")
+                    trace_plot = plots_dir / "resonance_bayes_trace.png"
+                    try:
+                        plot_resonance.plot_bayes_trace(trace_path, trace_plot)
+                    except Exception as trace_exc:
+                        report.setdefault("warnings", []).append(f"resonance_bayes_trace_failed: {trace_exc}")
+                    else:
+                        if trace_plot.exists():
+                            if trace_path.exists():
+                                report["resonance_bayes_trace_path"] = str(trace_path)
+                            report.setdefault("plots", {})["resonance_bayes_trace"] = str(trace_plot)
+                            plot_info.setdefault("resonance_bayes_trace", trace_plot)
+                            report.setdefault("artifacts", {}).setdefault("field_plots", {})["resonance_bayes_trace"] = str(trace_plot)
                 except Exception as exc:
                     report.setdefault("warnings", []).append(f"resonance_history_failed: {exc}")
         except Exception as exc:
             report.setdefault("warnings", []).append(f"resonance_failed: {exc}")
 
-    feedback_cfg = culture_cfg_snapshot.get("feedback", {}) if isinstance(culture_cfg_snapshot, dict) else {}
+    default_tag = "default"
+    baseline_politeness = 0.5
+    baseline_intimacy = 0.5
+    if isinstance(culture_cfg_snapshot, dict):
+        default_tag = culture_cfg_snapshot.get("tag", default_tag)
+        try:
+            baseline_politeness = float(culture_cfg_snapshot.get("politeness", baseline_politeness))
+        except (TypeError, ValueError):
+            baseline_politeness = 0.5
+        try:
+            baseline_intimacy = float(culture_cfg_snapshot.get("intimacy", baseline_intimacy))
+        except (TypeError, ValueError):
+            baseline_intimacy = 0.5
+    feedback_cfg = (
+        culture_cfg_snapshot.get("feedback", {}) if isinstance(culture_cfg_snapshot, dict) else {}
+    )
+    vision_snapshot = report.get("vision_snapshot") if isinstance(report.get("vision_snapshot"), dict) else {}
+    vision_counts = vision_snapshot.get("counts_by_kind") if isinstance(vision_snapshot, dict) else {}
+    try:
+        vision_events_total = float(vision_snapshot.get("events", 0.0))
+    except (TypeError, ValueError):
+        vision_events_total = 0.0
+    try:
+        vision_detections_total = float(vision_snapshot.get("detections_total", 0.0))
+    except (TypeError, ValueError):
+        vision_detections_total = 0.0
+    vision_normalisers = {
+        "events": vision_events_total,
+        "detections": vision_detections_total,
+    }
     if isinstance(feedback_cfg, dict):
-        if feedback_cfg.get("enabled"):
-            politeness_before = float(culture_cfg_snapshot.get("politeness", 0.5))
+        vision_coeffs = feedback_cfg.get("vision_coefficients") if isinstance(feedback_cfg.get("vision_coefficients"), dict) else {}
+        if feedback_cfg.get("enabled") and culture_feedback_enabled:
+            politeness_before = baseline_politeness
+            intimacy_before = baseline_intimacy
             corr_high = float(feedback_cfg.get("corr_high", 0.65))
             corr_low = float(feedback_cfg.get("corr_low", 0.35))
             delta = float(feedback_cfg.get("delta", 0.02))
@@ -1249,7 +1503,6 @@ def _generate_telemetry_section(
                     corr_value = corr_candidate
                     corr_source = "resonance_summary"
             if corr_value is None and culture_stats:
-                default_tag = culture_cfg_snapshot.get("tag", "default")
                 tag_stats = culture_stats.get(default_tag)
                 if tag_stats and tag_stats.get("mean_rho") is not None:
                     try:
@@ -1261,29 +1514,178 @@ def _generate_telemetry_section(
                         corr_source = f"culture_stats[{default_tag}]"
             reason = "insufficient_data"
             politeness_after = politeness_before
-            applied_delta = 0.0
+            intimacy_after = intimacy_before
             if corr_value is not None:
                 if corr_value >= corr_high:
                     politeness_after = min(clamp_max, politeness_before + delta)
-                    applied_delta = politeness_after - politeness_before
                     reason = "resonance_high"
                 elif corr_value <= corr_low:
                     politeness_after = max(clamp_min, politeness_before - delta)
-                    applied_delta = politeness_after - politeness_before
                     reason = "resonance_low"
                 else:
                     reason = "resonance_mid"
+            vision_pol_delta = 0.0
+            vision_int_delta = 0.0
+            vision_details: List[Dict[str, Any]] = []
+            if isinstance(vision_counts, dict) and vision_coeffs:
+                for kind, coeff in vision_coeffs.items():
+                    if not isinstance(coeff, Mapping):
+                        continue
+                    try:
+                        count_val = float(vision_counts.get(kind, 0.0))
+                    except (TypeError, ValueError):
+                        continue
+                    if count_val <= 0.0:
+                        continue
+                    normalize = str(coeff.get("normalize", "events")).lower()
+                    try:
+                        scale = float(coeff.get("scale", 1.0))
+                    except (TypeError, ValueError):
+                        scale = 1.0
+                    if normalize == "detections":
+                        base = vision_detections_total if vision_detections_total > 0 else 1.0
+                    elif normalize in ("none", "raw"):
+                        base = 1.0
+                    else:
+                        base = vision_events_total if vision_events_total > 0 else 1.0
+                        normalize = "events"
+                    effective = (count_val / base) * scale
+                    pol_unit = float(coeff.get("politeness_delta", 0.0))
+                    pol_delta = pol_unit * effective
+                    intim_unit = float(coeff.get("intimacy_delta", 0.0))
+                    int_delta = intim_unit * effective
+                    max_abs = coeff.get("max_abs")
+                    try:
+                        max_abs_val = abs(float(max_abs)) if max_abs is not None else None
+                    except (TypeError, ValueError):
+                        max_abs_val = None
+                    if max_abs_val:
+                        pol_delta = max(-max_abs_val, min(max_abs_val, pol_delta))
+                        int_delta = max(-max_abs_val, min(max_abs_val, int_delta))
+                    vision_pol_delta += pol_delta
+                    vision_int_delta += int_delta
+                    detail: Dict[str, Any] = {
+                        "kind": kind,
+                        "count": count_val,
+                        "effective": effective,
+                        "normalize": normalize,
+                    }
+                    if pol_unit:
+                        detail["politeness_delta"] = pol_delta
+                    if intim_unit:
+                        detail["intimacy_delta"] = int_delta
+                    vision_details.append(detail)
+            if vision_pol_delta != 0.0:
+                politeness_after = min(clamp_max, max(clamp_min, politeness_after + vision_pol_delta))
+            if vision_int_delta != 0.0:
+                intimacy_after = min(clamp_max, max(clamp_min, intimacy_after + vision_int_delta))
+            applied_delta = politeness_after - politeness_before
+            applied_int_delta = intimacy_after - intimacy_before
             report["policy_feedback"] = {
                 "enabled": True,
                 "politeness_before": politeness_before,
                 "politeness_after": politeness_after,
                 "delta": applied_delta,
+                "intimacy_before": intimacy_before,
+                "intimacy_after": intimacy_after,
+                "intimacy_delta": applied_int_delta,
                 "corr": corr_value,
                 "corr_source": corr_source,
                 "reason": reason,
+                "vision_adjustment": {
+                    "politeness_delta": vision_pol_delta,
+                    "intimacy_delta": vision_int_delta,
+                    "details": vision_details,
+                    "counts_by_kind": dict(vision_counts or {}),
+                    "normalisers": vision_normalisers,
+                },
             }
-        else:
-            report["policy_feedback"] = {"enabled": False}
+        elif feedback_cfg.get("enabled"):
+            report["policy_feedback"] = {
+                "enabled": False,
+                "reason": "disabled_by_cli",
+                "politeness_before": baseline_politeness,
+                "politeness_after": baseline_politeness,
+                "delta": 0.0,
+                "intimacy_before": baseline_intimacy,
+                "intimacy_after": baseline_intimacy,
+                "intimacy_delta": 0.0,
+                "corr": None,
+                "corr_source": None,
+                "vision_adjustment": {
+                    "politeness_delta": 0.0,
+                    "intimacy_delta": 0.0,
+                    "details": [],
+                    "counts_by_kind": dict(vision_counts or {}),
+                    "normalisers": vision_normalisers,
+                },
+            }
+        elif feedback_cfg:
+            report["policy_feedback"] = {
+                "enabled": False,
+                "reason": "disabled_in_config",
+                "politeness_before": baseline_politeness,
+                "politeness_after": baseline_politeness,
+                "delta": 0.0,
+                "intimacy_before": baseline_intimacy,
+                "intimacy_after": baseline_intimacy,
+                "intimacy_delta": 0.0,
+                "corr": None,
+                "corr_source": None,
+                "vision_adjustment": {
+                    "politeness_delta": 0.0,
+                    "intimacy_delta": 0.0,
+                    "details": [],
+                    "counts_by_kind": dict(vision_counts or {}),
+                    "normalisers": vision_normalisers,
+                },
+            }
+
+    policy_feedback = report.get("policy_feedback")
+    if isinstance(policy_feedback, dict):
+        policy_feedback.setdefault("reference_tag", default_tag)
+        ref_stats = (culture_stats or {}).get(default_tag, {}) if culture_stats else {}
+        policy_feedback.setdefault("reference_rho", ref_stats.get("mean_rho"))
+        policy_feedback.setdefault("reference_valence", ref_stats.get("mean_valence"))
+        policy_feedback.setdefault("alerts", list(report.get("alerts", [])))
+        policy_feedback.setdefault("intimacy_before", baseline_intimacy)
+        policy_feedback.setdefault("intimacy_after", baseline_intimacy)
+        policy_feedback.setdefault("intimacy_delta", 0.0)
+        policy_feedback.setdefault(
+            "vision_adjustment",
+            {
+                "politeness_delta": 0.0,
+                "intimacy_delta": 0.0,
+                "details": [],
+                "counts_by_kind": dict(vision_counts or {}),
+                "normalisers": vision_normalisers,
+            },
+        )
+        history_entry = {
+            "ts": report.get("ts"),
+            "enabled": bool(policy_feedback.get("enabled")),
+            "politeness_before": policy_feedback.get("politeness_before"),
+            "politeness_after": policy_feedback.get("politeness_after"),
+            "delta": policy_feedback.get("delta"),
+            "intimacy_before": policy_feedback.get("intimacy_before"),
+            "intimacy_after": policy_feedback.get("intimacy_after"),
+            "intimacy_delta": policy_feedback.get("intimacy_delta"),
+            "corr": policy_feedback.get("corr"),
+            "reason": policy_feedback.get("reason"),
+            "reference_tag": policy_feedback.get("reference_tag"),
+            "reference_rho": policy_feedback.get("reference_rho"),
+            "reference_valence": policy_feedback.get("reference_valence"),
+            "alerts": policy_feedback.get("alerts", []),
+            "vision_adjustment": policy_feedback.get("vision_adjustment"),
+        }
+        history_path = Path("reports/policy_feedback_history.jsonl")
+        try:
+            history_path.parent.mkdir(parents=True, exist_ok=True)
+            with history_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(history_entry, ensure_ascii=False) + "\n")
+            report["policy_feedback_history_path"] = str(history_path)
+        except Exception as exc:
+            report.setdefault("warnings", []).append(f"policy_feedback_history_failed: {exc}")
 
     alerts, alert_details = _compute_alerts(
         field_state or {},
@@ -1432,6 +1834,45 @@ def _write_markdown_summary(
         lines.append(f"- corr(valence, I): {_fmt_float(field_state.get('valence_I_corr'))}")
         lines.append(f"- corr(arousal, I): {_fmt_float(field_state.get('arousal_I_corr'))}")
 
+    vision_summary = report.get("vision_snapshot")
+    if isinstance(vision_summary, dict):
+        lines.append("")
+        lines.append("## Vision Snapshot")
+        try:
+            events_val = float(vision_summary.get("events", 0.0))
+        except (TypeError, ValueError):
+            events_val = 0.0
+        try:
+            detections_val = float(vision_summary.get("detections_total", 0.0))
+        except (TypeError, ValueError):
+            detections_val = 0.0
+        lines.append(f"- events: {int(events_val)}")
+        lines.append(f"- detections_total: {int(detections_val)}")
+        if events_val > 0:
+            lines.append(f"- detections_per_event: {_fmt_float(detections_val / max(events_val, 1.0))}")
+        counts = vision_summary.get("counts_by_kind") or {}
+        if counts:
+            counts_str = ", ".join(f"{k}={v}" for k, v in counts.items())
+            lines.append(f"- counts_by_kind: {counts_str}")
+        mean_valence = vision_summary.get("mean_valence")
+        mean_arousal = vision_summary.get("mean_arousal")
+        mean_dominance = vision_summary.get("mean_dominance")
+        if mean_valence is not None or mean_arousal is not None or mean_dominance is not None:
+            lines.append(
+                "- mean valence/arousal/dominance: {} / {} / {}".format(
+                    _fmt_float(mean_valence),
+                    _fmt_float(mean_arousal),
+                    _fmt_float(mean_dominance),
+                )
+            )
+        fps_mean = vision_summary.get("fps_mean")
+        if fps_mean is not None:
+            lines.append(f"- fps_mean: {_fmt_float(fps_mean)}")
+        pose_mean = vision_summary.get("pose_mean")
+        if isinstance(pose_mean, dict) and pose_mean:
+            pose_str = ", ".join(f"{k}={_fmt_float(v)}" for k, v in pose_mean.items())
+            lines.append(f"- pose_mean: {pose_str}")
+        lines.extend(_render_vision_narrative(vision_summary))
     affective_stats = report.get("affective_stats")
     if isinstance(affective_stats, dict):
         lines.append("")
@@ -1496,6 +1937,7 @@ def _write_markdown_summary(
             source = policy_feedback.get("corr_source") or "n/a"
             lines.append(f"- corr reference: {_fmt_float(corr_val)} ({source})")
         lines.append(f"- politeness: {_fmt_float(policy_feedback.get('politeness_before'))} -> {_fmt_float(policy_feedback.get('politeness_after'))} (delta={_fmt_float(policy_feedback.get('delta'))})")
+        lines.append(f"- intimacy: {_fmt_float(policy_feedback.get('intimacy_before'))} -> {_fmt_float(policy_feedback.get('intimacy_after'))} (delta={_fmt_float(policy_feedback.get('intimacy_delta'))})")
     resonance_section = (report.get("resonance") or {}).get("summary")
     if isinstance(resonance_section, dict):
         lines.append("")
@@ -1505,16 +1947,27 @@ def _write_markdown_summary(
         lines.append(f"- energy: {_fmt_float(resonance_section.get('energy'))}")
         lines.append(f"- objective: {_fmt_float(resonance_section.get('objective'))}")
         lines.append(f"- n_eff: {_fmt_float(resonance_section.get('n_eff'))}")
+        lines.append(f"- partial_corr: {_fmt_float(resonance_section.get('partial_corr'))}")
+        granger_section = resonance_section.get("granger")
+        if isinstance(granger_section, dict):
+            lines.append(
+                f"- granger F(a->b)={_fmt_float(granger_section.get('a_to_b_f'))} "
+                f"F(b->a)={_fmt_float(granger_section.get('b_to_a_f'))} "
+                f"(lag={granger_section.get('lag')})"
+            )
 
     if plot_info:
         titles = {
-            "timeseries": "Ignition / S/H/rho Timeseries",
-            "scatter": "rho vs Ignition Scatter",
+            "ignition_timeseries": "Ignition / S/H/rho Timeseries",
+            "rho_vs_I_scatter": "rho vs Ignition Scatter",
             "affective_map": "Valence vs Arousal Scatter",
             "memory_graph": "Memory Graph",
             "resonance_objective": "Resonance Objective History",
+            "resonance_bayes_trace": "Resonance Bayesian Trace",
             "culture_resonance": "Culture Resonance Summary",
             "culture_trend": "Culture Trend (multi-day)",
+            "vision_counts": "Vision Detection Counts",
+            "vision_pose": "Vision Pose Summary",
         }
         lines.append("")
         lines.append("## Visuals")
@@ -1635,8 +2088,14 @@ def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Pat
         payload["culture_stats"] = report["culture_stats"]
     if report.get("culture_history_path"):
         payload["culture_history_path"] = report["culture_history_path"]
+    if report.get("vision_snapshot"):
+        payload["vision_snapshot"] = report["vision_snapshot"]
     if report.get("policy_feedback"):
         payload["policy_feedback"] = report["policy_feedback"]
+    if report.get("policy_feedback_history_path"):
+        payload["policy_feedback_history_path"] = report["policy_feedback_history_path"]
+    if report.get("resonance_bayes_trace_path"):
+        payload["resonance_bayes_trace_path"] = report["resonance_bayes_trace_path"]
     json_path = out_path / "nightly.json"
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return json_path
@@ -1647,9 +2106,20 @@ def main() -> None:
     parser.add_argument("--telemetry_log", default="logs/telemetry_events.jsonl")
     parser.add_argument("--plots_dir", default="reports/plots")
     parser.add_argument("--markdown_path", default="reports/nightly.md")
+    parser.add_argument(
+        "--enable-culture-feedback",
+        action="store_true",
+        help="Allow policy feedback adjustments when culture feedback config is enabled.",
+    )
     args = parser.parse_args()
     report: Dict[str, Any] = {"ts": time.time()}
-    _generate_telemetry_section(report, Path(args.telemetry_log), Path(args.plots_dir), Path(args.markdown_path))
+    _generate_telemetry_section(
+        report,
+        Path(args.telemetry_log),
+        Path(args.plots_dir),
+        Path(args.markdown_path),
+        culture_feedback_enabled=bool(args.enable_culture_feedback),
+    )
     json_path = _write_json_summary(report, out_dir="reports")
     if report.get("alerts"):
         print("[nightly] alerts:", ", ".join(report["alerts"]))

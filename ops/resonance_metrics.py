@@ -109,6 +109,81 @@ def _safe_corr(a: np.ndarray, b: np.ndarray) -> float:
         return float("nan")
 
 
+def _residual(series: np.ndarray, controls: np.ndarray) -> np.ndarray:
+    if controls.size == 0:
+        return series - np.mean(series)
+    X = np.column_stack([np.ones(series.size), controls])
+    try:
+        beta, _, _, _ = np.linalg.lstsq(X, series, rcond=None)
+        pred = X @ beta
+    except np.linalg.LinAlgError:
+        pred = np.zeros_like(series)
+    return series - pred
+
+
+def _partial_corr(series_a: np.ndarray, series_b: np.ndarray, controls: Optional[np.ndarray]) -> float:
+    if controls is None or controls.size == 0:
+        return _safe_corr(series_a, series_b)
+    if controls.ndim == 1:
+        controls = controls.reshape(-1, 1)
+    if controls.shape[0] != series_a.size:
+        return _safe_corr(series_a, series_b)
+    residual_a = _residual(series_a, controls)
+    residual_b = _residual(series_b, controls)
+    return _safe_corr(residual_a, residual_b)
+
+
+def _lag_matrix(values: np.ndarray, lag: int) -> np.ndarray:
+    n = values.size
+    if lag < 1 or n <= lag:
+        return np.empty((0, lag), dtype=float)
+    rows = n - lag
+    mat = np.empty((rows, lag), dtype=float)
+    for j in range(lag):
+        mat[:, j] = values[lag - j - 1 : n - j - 1]
+    return mat
+
+
+def _ols_sse(y: np.ndarray, X: np.ndarray) -> Optional[float]:
+    if X.size == 0 or y.size == 0 or X.shape[0] != y.size:
+        return None
+    try:
+        beta, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+    except np.linalg.LinAlgError:
+        return None
+    resid = y - X @ beta
+    return float(np.dot(resid, resid))
+
+
+def _granger_f(predictor: np.ndarray, target: np.ndarray, lag: int) -> float:
+    if lag < 1 or predictor.size <= lag or target.size <= lag:
+        return float("nan")
+    Y = target[lag:]
+    X_y = _lag_matrix(target, lag)
+    X_x = _lag_matrix(predictor, lag)
+    if X_y.size == 0 or X_x.size == 0 or X_y.shape[0] != Y.size:
+        return float("nan")
+    X_restricted = np.column_stack([np.ones(Y.size), X_y])
+    sse_r = _ols_sse(Y, X_restricted)
+    if sse_r is None:
+        return float("nan")
+    X_full = np.column_stack([X_restricted, X_x])
+    sse_f = _ols_sse(Y, X_full)
+    if sse_f is None:
+        return float("nan")
+    if sse_r <= sse_f:
+        return 0.0
+    d = X_full.shape[1] - X_restricted.shape[1]
+    n_obs = Y.size
+    if d <= 0 or n_obs <= X_full.shape[1]:
+        return float("nan")
+    denom = sse_f / max(n_obs - X_full.shape[1], 1)
+    if denom <= 1e-12:
+        return float("nan")
+    num = (sse_r - sse_f) / d
+    return float(max(num / denom, 0.0))
+
+
 def _max_cross_correlation(a: np.ndarray, b: np.ndarray, dt: float) -> Tuple[float, int, float]:
     """Return (peak_correlation, lag_samples, lag_refined_time)."""
     mask = np.isfinite(a) & np.isfinite(b)
@@ -207,11 +282,13 @@ def compute_resonance_metrics(
     window: str = "none",
     alpha: float = 0.0,
     beta: float = 0.0,
+    granger_lag: int = 1,
     return_series: bool = False,
 ) -> Dict[str, object]:
     """Compute pairwise resonance metrics with advanced options."""
     if window not in WINDOW_FUNCTIONS:
         raise ValueError(f"window must be one of {WINDOW_FUNCTIONS}")
+    granger_lag = max(int(granger_lag), 0)
     series_map: Dict[str, SeriesData] = {}
     for label, path in logs:
         series_map[label] = _load_rho_series(label, path)
@@ -264,6 +341,30 @@ def compute_resonance_metrics(
                 - float(alpha) * abs(lag_refined if math.isfinite(lag_refined) else 0.0)
                 - float(beta) * energy
             )
+            controls_matrix = None
+            if len(labels) > 2:
+                control_series = []
+                start = grid[0]
+                stop = grid[-1]
+                for other_label in labels:
+                    if other_label in (a_label, b_label):
+                        continue
+                    other_data = series_map[other_label]
+                    _, series_c = _resample_series(other_data, start, stop, dt)
+                    if series_c.size != grid.size:
+                        continue
+                    if detrend:
+                        series_c = _detrend(series_c)
+                    if zscore:
+                        series_c = _zscore(series_c)
+                    if window and window != "none":
+                        series_c = _apply_window(series_c, window)
+                    control_series.append(series_c)
+                if control_series:
+                    controls_matrix = np.column_stack([c[mask] for c in control_series])
+            partial_corr = _partial_corr(series_a, series_b, controls_matrix)
+            granger_ab = _granger_f(series_a, series_b, granger_lag)
+            granger_ba = _granger_f(series_b, series_a, granger_lag)
             pair_entry = {
                 "agents": [a_label, b_label],
                 "rho_corr": corr_rho,
@@ -274,6 +375,12 @@ def compute_resonance_metrics(
                 "energy": energy,
                 "n_eff": n_eff,
                 "objective": objective,
+                "partial_corr": partial_corr,
+                "granger": {
+                    "lag": int(granger_lag),
+                    "a_to_b_f": granger_ab,
+                    "b_to_a_f": granger_ba,
+                },
                 "lengths": [int(data_a.values.size), int(data_b.values.size)],
             }
             if return_series:
@@ -307,6 +414,7 @@ def _parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--window", choices=sorted(WINDOW_FUNCTIONS), default="none", help="Window function.")
     parser.add_argument("--alpha", type=float, default=0.0, help="Objective coefficient for |lag|.")
     parser.add_argument("--beta", type=float, default=0.0, help="Objective coefficient for energy term.")
+    parser.add_argument("--granger-lag", type=int, default=1, help="Lag (in samples) for Granger causality F-stat.")
     parser.add_argument("--matrix", action="store_true", help="Emit correlation matrix for all agents.")
     return parser.parse_args(argv)
 
@@ -339,6 +447,7 @@ def main(argv: Iterable[str] | None = None) -> None:
         window=args.window,
         alpha=args.alpha,
         beta=args.beta,
+        granger_lag=args.granger_lag,
         return_series=bool(args.plots_dir),
     )
     out_path = Path(args.out)

@@ -127,6 +127,7 @@ class CultureFeedbackCfg:
     delta: float = field(default=0.02)
     clamp_min: float = field(default=0.0)
     clamp_max: float = field(default=1.0)
+    vision_coefficients: dict[str, dict[str, float]] = field(default_factory=dict)
 
 
 __all__ = [

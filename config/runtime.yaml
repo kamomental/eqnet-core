@@ -23,6 +23,24 @@ culture:
     delta: 0.02
     clamp_min: 0.0
     clamp_max: 1.0
+    vision_coefficients:
+      handshake:
+        normalize: "events"
+        scale: 0.08
+        politeness_delta: 0.05
+        intimacy_delta: 0.03
+        max_abs: 0.1
+      bow:
+        normalize: "events"
+        scale: 0.05
+        politeness_delta: 0.04
+        intimacy_delta: 0.02
+      anomaly:
+        normalize: "detections"
+        scale: 0.12
+        politeness_delta: -0.08
+        intimacy_delta: -0.05
+        max_abs: 0.12
 alerts:
   max_abs_valence_mean: 0.6
   min_corr_rho_I: 0.2

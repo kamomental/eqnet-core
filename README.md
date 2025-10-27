@@ -1,4 +1,4 @@
-# Emotional Terrain Lab — Emotional, Empathic, and Culturally Attuned AI for Symbiotic Coexistence
+﻿# Emotional Terrain Lab — Emotional, Empathic, and Culturally Attuned AI for Symbiotic Coexistence
 
 > *“An AI that feels before it speaks.”*  
 > *Not text-driven, but emotion-driven.*
@@ -178,18 +178,30 @@ and the beginning of **a symbiotic intelligence that circulates with life.**
 ```bash
 pip install -r requirements-dev.txt
 python scripts/run_quick_loop.py --field_metrics_log data/field_metrics.jsonl --steps 200 [--seed 20251027]
-python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMMDD.jsonl
+python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMMDD.jsonl [--enable-culture-feedback]
 ```
 
-生成される主要成果物:
+主要成果物:
 
-- `telemetry/ignition-YYYYMMDD.jsonl`（実録のシード付きテレメトリ）
+- `telemetry/ignition-YYYYMMDD.jsonl`（シード付きテレメトリ）
 - `reports/nightly.md`（テキストサマリ + プロットリンク）
-- `reports/nightly.json`（JSONスキーマ `nightly.v1` 準拠の機械可読レポート）
+- `reports/nightly.json`（JSON スキーマ `nightly.v1` 準拠の機械可読レポート）
 - `reports/plots/ignition_timeseries.png`
 - `reports/plots/rho_vs_I_scatter.png`
 - `reports/plots/memory_graph.png`
 - `reports/plots/affective_map.png`
+- `reports/plots/culture_resonance.png`
+- `reports/plots/culture_trend.png`
+- `reports/policy_feedback_history.jsonl`
+
+### Nightly レポートのおすすめ読解順
+
+1. **Alerts / alerts_detail**  E 臨界イベントや逸脱の有無を確認  
+2. **Culture Alerts (summary)**  E タグ別の警告を把握  
+3. **日次プロット**  E Resonance / Culture / Ignition のスナップショット  
+4. **Culture Trend (multi-day)**  E 直近の変動傾向を可視的にチェック  
+5. **Culture quick notes**  E 自然言語ノートで主要タグのサマリを読む  
+6. **Policy Feedback (experimental)**  E フィードバック提案がある場合は before/after と根拠を確認  
 
 この 3 コマンドだけで **S/H/ρ → Ignition → Telemetry → Nightly** のループをいつでも再現し、ログ／可視化／JSON を同時に確保できます。
 
@@ -210,12 +222,29 @@ python -m ops.resonance_metrics \
 ### k_res チューニング
 
 ```bash
-python scripts/tune_resonance.py \
-  --mode grid \
-  --run-cmd "python scripts/run_quick_loop.py --steps {steps} --seed {seed}" \
-  --nightly-cmd "python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-*.jsonl" \
-  --logs telemetry/ignition-*.jsonl
+python scripts/tune_resonance.py   --mode grid   --run-cmd "python scripts/run_quick_loop.py --steps {steps} --seed {seed}"   --nightly-cmd "python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-*.jsonl"   --logs telemetry/ignition-*.jsonl
 ```
+
+Bayesian search は `--mode bayes --bayes-trials 12 --init-samples 3 --candidate-points 200` のように指定できます（scikit-learn が必要です）。
 
 試行ごとの objective は `reports/resonance_history.jsonl` に追記され、`reports/plots/resonance_objective.png` に履歴グラフが生成されます。ベスト値は Nightly の `tuning_suggestion.k_res` に書き込まれるため、`scripts/apply_nightly_tuning.py --apply` を実行すれば runtime.yaml を更新できます。
 
+### Vision-Agents と EQNet の連携
+
+1. Vision-Agents を起動し、WebRTC あるいは Webhook でイベントを出力します。
+```bash
+npm install
+npm run dev
+```
+Webhook の送信先を `http://localhost:8000/vision-webhook` に設定してください。
+2. EQNet 側で Webhook ブリッジを起動します（FastAPI / uvicorn が必要です）。
+```bash
+uvicorn scripts.vision_bridge:app --host 0.0.0.0 --port 8000
+```
+受信した JSON から valence / arousal、検出カウント、ポーズ要約を `telemetry.event("vision.metrics", ...)` に転送します。
+3. Nightly は vision.metrics を取り込み、以下の成果物に反映します。
+- culture_stats / policy_feedback に vision 指標を結合し、politeness / intimacy の補正係数を適用
+- Vision Counts / Pose のプロットと “Vision quick notes” を Markdown レポートへ追加
+- `reports/resonance_bayes_trace.jsonl` が存在する場合は Bayes トレースを描画し、plots に添付します。
+
+- 追加資料: [FastMCP / Agent-to-Agent ブリッジ](docs/fastmcp_a2a.md)

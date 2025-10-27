@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import math
-from pathlib import Path
 import json
 import math
+from pathlib import Path
 from typing import Dict, List
 
 import matplotlib
@@ -118,4 +117,56 @@ def plot_objective_history(history_path: Path, out_path: Path) -> None:
     plt.close()
 
 
-__all__ = ["render_resonance_plots", "plot_objective_history"]
+def plot_bayes_trace(trace_path: Path, out_path: Path) -> None:
+    if not trace_path.exists():
+        return
+    trials: List[float] = []
+    objectives: List[float] = []
+    k_values: List[float] = []
+    try:
+        for line in trace_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            trial = row.get("trial")
+            k_res = row.get("k_res")
+            objective = row.get("objective")
+            try:
+                trial_val = float(trial)
+                k_val = float(k_res)
+                obj_val = float(objective)
+            except (TypeError, ValueError):
+                continue
+            if not (math.isfinite(trial_val) and math.isfinite(k_val) and math.isfinite(obj_val)):
+                continue
+            trials.append(trial_val)
+            k_values.append(k_val)
+            objectives.append(obj_val)
+    except Exception:
+        return
+    if not trials:
+        return
+    order = np.argsort(np.asarray(trials))
+    trials_arr = np.asarray(trials)[order]
+    objectives_arr = np.asarray(objectives)[order]
+    k_values_arr = np.asarray(k_values)[order]
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig, (ax_obj, ax_k) = plt.subplots(2, 1, sharex=True, figsize=(5, 4))
+    ax_obj.plot(trials_arr, objectives_arr, marker="o", linewidth=1.2, color="#1f77b4")
+    ax_obj.set_ylabel("objective")
+    ax_obj.grid(alpha=0.2)
+    ax_obj.set_title("Bayesian tuning trace")
+    ax_k.plot(trials_arr, k_values_arr, marker="o", linewidth=1.2, color="#ff7f0e")
+    ax_k.set_xlabel("trial")
+    ax_k.set_ylabel("k_res")
+    ax_k.grid(alpha=0.2)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=160)
+    plt.close(fig)
+
+
+__all__ = ["render_resonance_plots", "plot_objective_history", "plot_bayes_trace"]
