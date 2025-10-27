@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema", "config_snapshot", "stats", "plots"],
+  "properties": {
+    "schema": { "const": "nightly.v1" },
+    "config_snapshot": { "type": "object" },
+    "stats": {
+      "type": "object",
+      "required": ["mean", "corr"],
+      "properties": {
+        "mean": {
+          "type": "object",
+          "required": ["S", "H", "rho", "I"]
+        },
+        "corr": {
+          "type": "object",
+          "required": ["rho_I"]
+        }
+      }
+    },
+    "tuning_suggestion": { "type": "object" },
+    "plots": {
+      "type": "object",
+      "required": ["ignition_timeseries", "rho_vs_I_scatter", "memory_graph"]
+    },
+    "alerts": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

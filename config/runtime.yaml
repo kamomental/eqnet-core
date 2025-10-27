@@ -1,0 +1,9 @@
+ignition:
+  theta_on: 0.62
+  theta_off: 0.48
+  dwell_steps: 8
+telemetry:
+  log_path: "telemetry/ignition-%Y%m%d.jsonl"
+replay:
+  min_interval_ms: 10
+  sample_every: 1

@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Apply Nightly tuning suggestions to runtime.yaml safely.
+
+Usage:
+    python scripts/apply_nightly_tuning.py --nightly reports/nightly.json --config config/runtime.yaml
+    python scripts/apply_nightly_tuning.py --nightly reports/nightly.json --config config/runtime.yaml --apply
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import sys
+import time
+from pathlib import Path
+
+import yaml
+
+
+def load_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_yaml(path: Path) -> dict:
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def dump_yaml(path: Path, data: dict) -> None:
+    path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Apply Nightly tuning suggestion to runtime.yaml.")
+    parser.add_argument("--nightly", default="reports/nightly.json", help="Nightly JSON summary path.")
+    parser.add_argument("--config", default="config/runtime.yaml", help="runtime.yaml path.")
+    parser.add_argument("--apply", action="store_true", help="Apply changes (default: dry-run).")
+    args = parser.parse_args()
+
+    nightly_path = Path(args.nightly)
+    config_path = Path(args.config)
+
+    if not nightly_path.exists():
+        print(f"[tuning] nightly summary not found: {nightly_path}")
+        return 1
+    if not config_path.exists():
+        print(f"[tuning] runtime config not found: {config_path}")
+        return 1
+
+    report = load_json(nightly_path)
+    suggestion = report.get("tuning_suggestion") or {}
+    if not {"theta_on", "theta_off"} <= suggestion.keys():
+        print("[tuning] no suggestion found. nothing to do.")
+        return 0
+
+    cfg = load_yaml(config_path) or {}
+    ignition = cfg.setdefault("ignition", {})
+    before = {
+        "theta_on": ignition.get("theta_on", 0.62),
+        "theta_off": ignition.get("theta_off", 0.48),
+    }
+    after = {
+        "theta_on": float(suggestion["theta_on"]),
+        "theta_off": float(suggestion["theta_off"]),
+    }
+
+    if not (0.0 <= after["theta_on"] <= 1.0 and 0.0 <= after["theta_off"] <= 1.0):
+        print("[tuning] suggested values outside [0,1]. abort.")
+        return 2
+    if not after["theta_on"] > after["theta_off"]:
+        print("[tuning] theta_on must be greater than theta_off. abort.")
+        return 3
+    if abs(after["theta_on"] - before["theta_on"]) > 0.2:
+        print("[tuning] change too large. abort.")
+        return 4
+
+    print(f"[tuning] current: {before}  suggested: {after}")
+    if not args.apply:
+        print("[tuning] dry-run mode. use --apply to persist changes.")
+        return 0
+
+    backup = config_path.with_suffix(config_path.suffix + f".{time.strftime('%Y%m%d-%H%M%S')}.bak")
+    shutil.copy2(config_path, backup)
+    ignition.update(after)
+    dump_yaml(config_path, cfg)
+    print(f"[tuning] runtime config updated. backup -> {backup}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
