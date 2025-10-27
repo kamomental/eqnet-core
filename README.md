@@ -189,6 +189,7 @@ python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMM
 - `reports/plots/ignition_timeseries.png`
 - `reports/plots/rho_vs_I_scatter.png`
 - `reports/plots/memory_graph.png`
+- `reports/plots/affective_map.png`
 
 この 3 コマンドだけで **S/H/ρ → Ignition → Telemetry → Nightly** のループをいつでも再現し、ログ／可視化／JSON を同時に確保できます。
 

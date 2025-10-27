@@ -32,6 +32,12 @@ from runtime.config import load_runtime_cfg
 from telemetry import event as telemetry_event
 
 
+def _resolve_log_path(template: str) -> Path:
+    if "%" in template:
+        return Path(datetime.utcnow().strftime(template))
+    return Path(template)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--steps", type=int, default=200)
@@ -159,9 +165,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
-def _resolve_log_path(template: str) -> Path:
-    if "%" in template:
-        return Path(datetime.utcnow().strftime(template))
-    return Path(template)

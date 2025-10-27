@@ -26,10 +26,27 @@ class ReplayCfg:
 
 
 @dataclass
+class EmotionCfg:
+    valence_w_rho: float = field(default=1.0)
+    valence_w_s: float = field(default=1.0)
+    resonance_k: float = field(default=0.05)
+    affective_log_path: str = field(default="memory/affective_log.jsonl")
+
+
+@dataclass
+class AlertsCfg:
+    max_abs_valence_mean: float = field(default=0.6)
+    min_corr_rho_I: float = field(default=0.2)
+    min_corr_arousal_I: float = field(default=0.1)
+
+
+@dataclass
 class RuntimeCfg:
     ignition: IgnitionCfg = field(default_factory=IgnitionCfg)
     telemetry: TelemetryCfg = field(default_factory=TelemetryCfg)
     replay: ReplayCfg = field(default_factory=ReplayCfg)
+    emotion: EmotionCfg = field(default_factory=EmotionCfg)
+    alerts: AlertsCfg = field(default_factory=AlertsCfg)
 
 
 def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
@@ -43,7 +60,9 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
     ignition = _merge_dataclass(IgnitionCfg(), payload.get("ignition", {}))
     telemetry = _merge_dataclass(TelemetryCfg(), payload.get("telemetry", {}))
     replay = _merge_dataclass(ReplayCfg(), payload.get("replay", {}))
-    return RuntimeCfg(ignition=ignition, telemetry=telemetry, replay=replay)
+    emotion = _merge_dataclass(EmotionCfg(), payload.get("emotion", {}))
+    alerts = _merge_dataclass(AlertsCfg(), payload.get("alerts", {}))
+    return RuntimeCfg(ignition=ignition, telemetry=telemetry, replay=replay, emotion=emotion, alerts=alerts)
 
 
 def _merge_dataclass(instance, overrides: dict[str, Any]):
@@ -54,4 +73,12 @@ def _merge_dataclass(instance, overrides: dict[str, Any]):
     return instance.__class__(**data)
 
 
-__all__ = ["load_runtime_cfg", "RuntimeCfg", "IgnitionCfg", "TelemetryCfg", "ReplayCfg"]
+__all__ = [
+    "load_runtime_cfg",
+    "RuntimeCfg",
+    "IgnitionCfg",
+    "TelemetryCfg",
+    "ReplayCfg",
+    "EmotionCfg",
+    "AlertsCfg",
+]

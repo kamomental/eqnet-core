@@ -86,6 +86,12 @@ class DevelopmentLoop:
         self.alert_logger = alert_logger
         self.router = router
         self._runtime_cfg = runtime_cfg or load_runtime_cfg()
+        self._emotion_cfg = getattr(self._runtime_cfg, "emotion", None)
+        self._valence_w_rho = float(getattr(self._emotion_cfg, "valence_w_rho", 1.0))
+        self._valence_w_s = float(getattr(self._emotion_cfg, "valence_w_s", 1.0))
+        self._resonance_k = float(getattr(self._emotion_cfg, "resonance_k", 0.05))
+        self._affective_log_path = Path(getattr(self._emotion_cfg, "affective_log_path", "memory/affective_log.jsonl"))
+        self._affective_log_path.parent.mkdir(parents=True, exist_ok=True)
         # Ignition thresholds (tunable for dry-runs)
         self._ignite_delta_R_thresh = float(ignite_delta_R_thresh)
         self._ignite_entropy_z_thresh = float(ignite_entropy_z_thresh)
@@ -126,6 +132,8 @@ class DevelopmentLoop:
         self._telemetry_hook = telemetry_hook or telemetry_event
         self._field_metrics_backlog: Optional[Dict[str, float]] = None
         replay_cfg = self._runtime_cfg.replay
+        self._prev_I_value: float | None = None
+        self._rho_resonance_bias: float = 0.0
         self._field_sample_every = max(1, int(getattr(replay_cfg, "sample_every", 1)))
         self._field_log_sample_index = 0
         self._min_field_interval = max(0.0, float(getattr(replay_cfg, "min_interval_ms", 0)) / 1000.0)
@@ -267,6 +275,12 @@ class DevelopmentLoop:
                 entropy_z,
                 field_metrics=field_metrics,
             )
+            valence = self._compute_valence(field_metrics.get("S", 0.5), field_metrics.get("rho", 0.5))
+            field_metrics["valence"] = valence
+            dt_ms = getattr(self._runtime_cfg.replay, "min_interval_ms", 1)
+            dt_sec = max(float(dt_ms) / 1000.0, 1e-3)
+            arousal = self._compute_arousal(I_value, dt_sec=dt_sec)
+            field_metrics["arousal"] = arousal
             self._emit_telemetry(
                 "field.metrics",
                 {
@@ -277,12 +291,34 @@ class DevelopmentLoop:
                     "rho": field_metrics.get("rho"),
                     "Ignition": I_value,
                     "delta_R": delta_R,
+                    "valence": valence,
+                    "arousal": arousal,
                     "field_source": field_metrics.get("field_source", "proxy"),
                     "delta_aff": float(delta_aff) if isinstance(delta_aff, (int, float)) else None,
                     "gate_level": getattr(self.router, "level", None) if self.router is not None else None,
                     "ignite_trigger": ignite_trigger,
                     "gate_state": self._gate_state,
                 },
+            )
+            context_summary = None
+            if isinstance(utterance, str):
+                context_summary = utterance[:160]
+            self._log_affective_episode(
+                {
+                    "ts": time.time(),
+                    "stage": stage.name,
+                    "step": self._step_counter,
+                    "S": field_metrics.get("S"),
+                    "H": field_metrics.get("H"),
+                    "rho": field_metrics.get("rho"),
+                    "I": I_value,
+                    "valence": valence,
+                    "arousal": arousal,
+                    "delta_R": delta_R,
+                    "field_source": field_metrics.get("field_source", "proxy"),
+                    "delta_aff": float(delta_aff) if isinstance(delta_aff, (int, float)) else None,
+                    "context": {"utterance": context_summary},
+                }
             )
 
             social_alignment = 0.5
@@ -562,6 +598,11 @@ class DevelopmentLoop:
             energy_scalar = float(state_stats_post.get("energy", 0.0))
         enthalpy_norm = float(np.clip(0.5 + 0.5 * np.tanh(energy_scalar), 0.0, 1.0))
         rho_norm = float(np.clip(1.0 - math.tanh(grad_norm), 0.0, 1.0))
+        if self._rho_resonance_bias:
+            rho_norm = float(np.clip(rho_norm + self._rho_resonance_bias, 0.0, 1.0))
+            self._rho_resonance_bias *= 0.9
+        else:
+            self._rho_resonance_bias *= 0.9
         metrics["entropy_norm"] = channel_entropy
         metrics["enthalpy_norm"] = enthalpy_norm
         metrics["rho_norm"] = rho_norm
@@ -569,7 +610,10 @@ class DevelopmentLoop:
         metrics["H"] = enthalpy_norm
         metrics["rho"] = rho_norm
 
-        return self._merge_external_field_metrics(metrics)
+        merged = self._merge_external_field_metrics(metrics)
+        if "valence" not in merged:
+            merged["valence"] = self._compute_valence(merged.get("S", 0.5), merged.get("rho", 0.5))
+        return merged
 
     def _entropy_norm_from_channel(self, channel: Optional[np.ndarray]) -> float:
         if channel is None or channel.size == 0:
@@ -608,6 +652,49 @@ class DevelopmentLoop:
         metrics.setdefault("H", metrics.get("enthalpy_norm", 0.5))
         metrics.setdefault("rho", metrics.get("rho_norm", 0.5))
         return metrics
+
+    def _compute_valence(self, entropy_norm: float, rho_norm: float) -> float:
+        try:
+            val = self._valence_w_rho * float(rho_norm) - self._valence_w_s * float(entropy_norm)
+        except Exception:
+            val = 0.0
+        return float(np.clip(val, -1.0, 1.0))
+
+    def _compute_arousal(self, I_value: float, dt_sec: float) -> float:
+        prev = self._prev_I_value
+        self._prev_I_value = float(I_value)
+        if prev is None:
+            return 0.0
+        try:
+            delta = float(I_value) - float(prev)
+            excitation = max(0.0, delta) / max(dt_sec, 1e-6)
+            level = max(0.0, float(I_value))
+            arousal = 0.2 * min(excitation, 1.0) + 0.8 * level
+        except Exception:
+            arousal = 0.0
+        return float(min(max(0.0, arousal), 1.0))
+
+    def ingest_resonance_from_peer(self, peer_I: float, k_res: Optional[float] = None) -> None:
+        coeff = float(k_res) if k_res is not None else self._resonance_k
+        if coeff <= 0.0:
+            return
+        base = self._prev_I_value
+        if base is None:
+            return
+        try:
+            delta = float(peer_I) - float(base)
+        except Exception:
+            return
+        bias = self._rho_resonance_bias + coeff * delta
+        self._rho_resonance_bias = float(np.clip(bias, -0.25, 0.25))
+
+    def _log_affective_episode(self, payload: Dict[str, Any]) -> None:
+        try:
+            self._affective_log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self._affective_log_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
 
     def _pull_field_metrics(self) -> Optional[Dict[str, float]]:
         if self._field_metrics_backlog is not None:

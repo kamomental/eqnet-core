@@ -31,3 +31,11 @@ state/
 reports/nightly/*.json
 emot_terrain_lab/data/
 data/
+
+# Generated analytics
+telemetry/**/*.jsonl
+reports/nightly.json
+reports/nightly.md
+reports/affective_stats.json
+reports/plots/*.png
+memory/affective_log.jsonl

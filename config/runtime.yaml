@@ -7,3 +7,12 @@ telemetry:
 replay:
   min_interval_ms: 10
   sample_every: 1
+emotion:
+  valence_w_rho: 1.0
+  valence_w_s: 1.0
+  resonance_k: 0.05
+  affective_log_path: "memory/affective_log.jsonl"
+alerts:
+  max_abs_valence_mean: 0.6
+  min_corr_rho_I: 0.2
+  min_corr_arousal_I: 0.1

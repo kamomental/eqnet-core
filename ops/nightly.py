@@ -13,7 +13,7 @@ from bisect import bisect_left
 from collections import defaultdict
 from pathlib import Path
 from statistics import median
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
 import yaml
@@ -41,6 +41,7 @@ from emot_terrain_lab.utils.fastpath_config import (
 )
 from telemetry import plot_ignition as ignition_plots
 from telemetry import plot_memory_graph
+from telemetry import plot_affective_map
 
 def _ensure_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -716,6 +717,8 @@ def _summarize_field_telemetry(path: Path) -> Optional[Dict[str, float]]:
     H: List[float] = []
     rho: List[float] = []
     ignition: List[float] = []
+    valence: List[float] = []
+    arousal: List[float] = []
     try:
         for line in path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -733,6 +736,10 @@ def _summarize_field_telemetry(path: Path) -> Optional[Dict[str, float]]:
                 H.append(float(data.get("H", np.nan)))
                 rho.append(float(data.get("rho", np.nan)))
                 ignition.append(float(data.get("Ignition", np.nan)))
+                if "valence" in data:
+                    valence.append(float(data.get("valence", np.nan)))
+                if "arousal" in data:
+                    arousal.append(float(data.get("arousal", np.nan)))
             except Exception:
                 continue
     except Exception:
@@ -743,6 +750,30 @@ def _summarize_field_telemetry(path: Path) -> Optional[Dict[str, float]]:
     H_arr = np.array(H, dtype=float)
     rho_arr = np.array(rho, dtype=float)
     I_arr = np.array(ignition, dtype=float)
+    V_arr = np.array(valence, dtype=float) if valence else np.full(1, np.nan)
+    A_arr = np.array(arousal, dtype=float) if arousal else np.full(1, np.nan)
+    rho_I_corr = _safe_corr(rho_arr, I_arr)
+    S_I_corr = _safe_corr(S_arr, I_arr)
+    H_I_corr = _safe_corr(H_arr, I_arr)
+    valence_mean = _mean_clean(V_arr)
+    arousal_mean = _mean_clean(A_arr)
+    valence_I_corr = _safe_corr(V_arr, I_arr)
+    arousal_I_corr = _safe_corr(A_arr, I_arr)
+    return {
+        "S_mean": _mean_clean(S_arr),
+        "H_mean": _mean_clean(H_arr),
+        "rho_mean": _mean_clean(rho_arr),
+        "Ignition_mean": _mean_clean(I_arr),
+        "rho_I_corr": rho_I_corr,
+        "S_I_corr": S_I_corr,
+        "H_I_corr": H_I_corr,
+        "valence_mean": valence_mean,
+        "arousal_mean": arousal_mean,
+        "valence_I_corr": valence_I_corr,
+        "arousal_I_corr": arousal_I_corr,
+    }
+
+
 def _mean_clean(arr: np.ndarray) -> float:
     mask = np.isfinite(arr)
     if not mask.any():
@@ -758,18 +789,32 @@ def _safe_corr(a: np.ndarray, b: np.ndarray) -> float:
         return float(np.corrcoef(a[mask], b[mask])[0, 1])
     except Exception:
         return float("nan")
-    rho_I_corr = _safe_corr(rho_arr, I_arr)
-    S_I_corr = _safe_corr(S_arr, I_arr)
-    H_I_corr = _safe_corr(H_arr, I_arr)
-    return {
-        "S_mean": _mean_clean(S_arr),
-        "H_mean": _mean_clean(H_arr),
-        "rho_mean": _mean_clean(rho_arr),
-        "Ignition_mean": _mean_clean(I_arr),
-        "rho_I_corr": rho_I_corr,
-        "S_I_corr": S_I_corr,
-        "H_I_corr": H_I_corr,
-    }
+
+
+def _compute_alerts(stats: Dict[str, Any], cfg_alerts: Mapping[str, Any]) -> List[str]:
+    alerts: List[str] = []
+    if not stats:
+        return alerts
+    thresholds = dict(cfg_alerts or {})
+
+    max_abs_valence_mean = float(thresholds.get("max_abs_valence_mean", 0.6))
+    valence_mean = stats.get("valence_mean")
+    if valence_mean is not None and math.isfinite(valence_mean):
+        if abs(valence_mean) > max_abs_valence_mean:
+            alerts.append(f"valence_mean_out_of_range:{valence_mean:.3f}")
+
+    min_corr_rho = float(thresholds.get("min_corr_rho_I", 0.2))
+    rho_corr = stats.get("rho_I_corr")
+    if rho_corr is not None and math.isfinite(rho_corr):
+        if rho_corr < min_corr_rho:
+            alerts.append(f"low_rho_I_correlation:{rho_corr:.3f}")
+
+    min_corr_arousal = float(thresholds.get("min_corr_arousal_I", 0.1))
+    arousal_corr = stats.get("arousal_I_corr")
+    if arousal_corr is not None and math.isfinite(arousal_corr):
+        if arousal_corr < min_corr_arousal:
+            alerts.append(f"low_arousal_I_correlation:{arousal_corr:.3f}")
+    return alerts
 
 
 def _extract_run_seed(path: Path) -> Optional[int]:
@@ -811,15 +856,13 @@ def _generate_telemetry_section(
     tuning = _derive_tuning_suggestion(field_state, cfg_dict)
     if tuning:
         report["tuning_suggestion"] = tuning
+    emotion_cfg = cfg_dict.get("emotion", {}) if isinstance(cfg_dict, dict) else {}
+    alerts_cfg = cfg_dict.get("alerts", {}) if isinstance(cfg_dict, dict) else {}
+    affective_log_path = Path(emotion_cfg.get("affective_log_path", "memory/affective_log.jsonl"))
     run_seed = _extract_run_seed(telemetry_log)
     if run_seed is not None:
         report["run_seed"] = run_seed
-    alerts = []
-    if field_state:
-        rho_corr = field_state.get("rho_I_corr")
-        if rho_corr is not None and math.isfinite(rho_corr) and rho_corr < 0.2:
-            alerts.append("low_rho_I_correlation")
-    report["alerts"] = alerts
+    report["alerts"] = _compute_alerts(field_state or {}, alerts_cfg)
     report["plots"] = report.get("plots", {})
     report["plots"] = report.get("plots", {})
     plot_info: Dict[str, Path] = {}
@@ -827,6 +870,7 @@ def _generate_telemetry_section(
     expected_plot_paths = {
         "ignition_timeseries": plots_dir / "ignition_timeseries.png",
         "rho_vs_I_scatter": plots_dir / "rho_vs_I_scatter.png",
+        "affective_map": plots_dir / "affective_map.png",
     }
     try:
         plot_info = ignition_plots.render_plots(telemetry_log, plots_dir)
@@ -858,6 +902,29 @@ def _generate_telemetry_section(
         plot_info.setdefault("memory_graph", mem_path)
         plot_info.setdefault("memory_graph", mem_path)
 
+    affective_plot = expected_plot_paths["affective_map"]
+    affective_stats_path = plots_dir / "affective_stats.json"
+    try:
+        plot_affective_map.render_affective_map(
+            affective_log_path,
+            affective_plot,
+            json_out_path=affective_stats_path,
+        )
+        if affective_stats_path.exists():
+            report["affective_stats_path"] = str(affective_stats_path)
+            try:
+                report["affective_stats"] = json.loads(affective_stats_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                report.setdefault("warnings", []).append(f"affective_stats_failed ({affective_stats_path}): {exc}")
+    except Exception as exc:
+        report.setdefault("warnings", []).append(f"affective_map_failed ({affective_log_path}): {exc}")
+    finally:
+        report.setdefault("artifacts", {}).setdefault("field_plots", {})["affective_map"] = str(affective_plot)
+        report["plots"]["affective_map"] = str(affective_plot)
+        plot_info.setdefault("affective_map", affective_plot)
+        if affective_stats_path.exists():
+            report.setdefault("artifacts", {}).setdefault("stats", {})["affective"] = str(affective_stats_path)
+
     _write_markdown_summary(report, md_path, plot_info, telemetry_log, plot_error)
     report["markdown_path"] = str(md_path)
 
@@ -878,6 +945,7 @@ def _write_markdown_summary(
     lines.append("```yaml")
     lines.append(cfg_text if cfg_text.strip() else "# empty")
     lines.append("```")
+
     warnings = list(report.get("warnings", []))
     if plot_error:
         warnings.append(f"plot_failed ({telemetry_log}): {plot_error}")
@@ -886,6 +954,7 @@ def _write_markdown_summary(
         lines.append("## Warnings")
         for warn in warnings:
             lines.append(f"- {warn}")
+
     suggestion = report.get("tuning_suggestion")
     if suggestion:
         lines.append("")
@@ -894,12 +963,20 @@ def _write_markdown_summary(
         theta_on = suggestion.get("theta_on", {})
         theta_off = suggestion.get("theta_off", {})
         lines.append(
-            f"- theta_on: current={theta_on.get('current')} → suggested={theta_on.get('suggested')}"
+            f"- theta_on: current={theta_on.get('current')} -> suggested={theta_on.get('suggested')}"
         )
         if theta_off:
             lines.append(
-                f"- theta_off: current={theta_off.get('current')} → suggested={theta_off.get('suggested')}"
+                f"- theta_off: current={theta_off.get('current')} -> suggested={theta_off.get('suggested')}"
             )
+
+    alerts = report.get("alerts", [])
+    if alerts:
+        lines.append("")
+        lines.append("## Alerts")
+        for alert in alerts:
+            lines.append(f"- {alert}")
+
     field_state = report.get("field_state")
     if field_state:
         lines.append("")
@@ -908,13 +985,36 @@ def _write_markdown_summary(
         lines.append(f"- H_mean: {_fmt_float(field_state.get('H_mean'))}")
         lines.append(f"- rho_mean: {_fmt_float(field_state.get('rho_mean'))}")
         lines.append(f"- Ignition_mean: {_fmt_float(field_state.get('Ignition_mean'))}")
+        lines.append(f"- valence_mean: {_fmt_float(field_state.get('valence_mean'))}")
+        lines.append(f"- arousal_mean: {_fmt_float(field_state.get('arousal_mean'))}")
         lines.append(f"- corr(rho, I): {_fmt_float(field_state.get('rho_I_corr'))}")
         lines.append(f"- corr(S, I): {_fmt_float(field_state.get('S_I_corr'))}")
         lines.append(f"- corr(H, I): {_fmt_float(field_state.get('H_I_corr'))}")
+        lines.append(f"- corr(valence, I): {_fmt_float(field_state.get('valence_I_corr'))}")
+        lines.append(f"- corr(arousal, I): {_fmt_float(field_state.get('arousal_I_corr'))}")
+
+    affective_stats = report.get("affective_stats")
+    if isinstance(affective_stats, dict):
+        lines.append("")
+        lines.append("## Affective Summary")
+        for axis in ("valence", "arousal"):
+            axis_stats = affective_stats.get(axis)
+            if isinstance(axis_stats, dict):
+                mean_val = _fmt_float(axis_stats.get("mean"))
+                std_val = _fmt_float(axis_stats.get("std"))
+                q25 = _fmt_float(axis_stats.get("q25"))
+                q50 = _fmt_float(axis_stats.get("q50"))
+                q75 = _fmt_float(axis_stats.get("q75"))
+                lines.append(
+                    f"- {axis}: mean={mean_val} std={std_val} q25={q25} q50={q50} q75={q75}"
+                )
+
     if plot_info:
         titles = {
-            "timeseries": "Ignition / S/H/ρ Timeseries",
-            "scatter": "ρ vs Ignition Scatter",
+            "timeseries": "Ignition / S/H/rho Timeseries",
+            "scatter": "rho vs Ignition Scatter",
+            "affective_map": "Valence vs Arousal Scatter",
+            "memory_graph": "Memory Graph",
         }
         lines.append("")
         lines.append("## Visuals")
@@ -924,6 +1024,7 @@ def _write_markdown_summary(
             lines.append(f"![{label}]({rel})")
     md_path.parent.mkdir(parents=True, exist_ok=True)
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
 
 
 def _fmt_float(value: Any) -> str:
@@ -1003,11 +1104,15 @@ def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Pat
             "H": field_state.get("H_mean"),
             "rho": field_state.get("rho_mean"),
             "I": field_state.get("Ignition_mean"),
+            "valence": field_state.get("valence_mean"),
+            "arousal": field_state.get("arousal_mean"),
         },
         "corr": {
             "rho_I": field_state.get("rho_I_corr"),
             "S_I": field_state.get("S_I_corr"),
             "H_I": field_state.get("H_I_corr"),
+            "valence_I": field_state.get("valence_I_corr"),
+            "arousal_I": field_state.get("arousal_I_corr"),
         },
     }
     plots = {k: str(v) for k, v in report.get("plots", {}).items()}
@@ -1021,6 +1126,7 @@ def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Pat
         "alerts": report.get("alerts", []),
         "run_seed": report.get("run_seed"),
         "plots": plots,
+        "affective_stats": report.get("affective_stats"),
     }
     json_path = out_path / "nightly.json"
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1035,10 +1141,12 @@ def main() -> None:
     args = parser.parse_args()
     report: Dict[str, Any] = {"ts": time.time()}
     _generate_telemetry_section(report, Path(args.telemetry_log), Path(args.plots_dir), Path(args.markdown_path))
+    json_path = _write_json_summary(report, out_dir="reports")
     if report.get("alerts"):
         print("[nightly] alerts:", ", ".join(report["alerts"]))
     else:
         print("[nightly] alerts: none")
+    print(f"[nightly] JSON summary -> {json_path}")
     print(f"Nightly summary written to {args.markdown_path}")
 
 

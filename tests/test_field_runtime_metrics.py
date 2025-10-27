@@ -52,6 +52,8 @@ def test_field_metrics_ingest_overrides_proxy() -> None:
     assert pytest.approx(metrics["S"], rel=1e-6) == 0.2
     assert pytest.approx(metrics["H"], rel=1e-6) == 0.9
     assert metrics["field_source"] == "push"
+    assert "valence" in metrics
+    assert -1.0 <= metrics["valence"] <= 1.0
 
 
 def test_field_metrics_log_loader(tmp_path) -> None:
@@ -65,6 +67,7 @@ def test_field_metrics_log_loader(tmp_path) -> None:
     assert pytest.approx(metrics["S"]) == 0.3
     assert pytest.approx(metrics["rho"]) == 0.8
     assert metrics["field_source"] == "log"
+    assert "valence" in metrics
 
 
 def test_ignition_respects_entropy_and_reward() -> None:

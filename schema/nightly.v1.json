@@ -22,7 +22,14 @@
     "tuning_suggestion": { "type": "object" },
     "plots": {
       "type": "object",
-      "required": ["ignition_timeseries", "rho_vs_I_scatter", "memory_graph"]
+      "required": ["ignition_timeseries", "rho_vs_I_scatter", "memory_graph", "affective_map"]
+    },
+    "affective_stats": {
+      "type": "object",
+      "properties": {
+        "valence": { "type": "object" },
+        "arousal": { "type": "object" }
+      }
     },
     "alerts": {
       "type": "array",
