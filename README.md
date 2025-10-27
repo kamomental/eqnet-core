@@ -193,3 +193,29 @@ python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMM
 
 この 3 コマンドだけで **S/H/ρ → Ignition → Telemetry → Nightly** のループをいつでも再現し、ログ／可視化／JSON を同時に確保できます。
 
+### 共鳴メトリクスの算出
+
+複数エージェントのテレメトリ（`field.metrics`）から共鳴指標を計算したい場合は次のコマンドを使います。
+
+```bash
+python -m ops.resonance_metrics \
+  --logs agentA=telemetry/agentA.jsonl agentB=telemetry/agentB.jsonl \
+  --out reports/resonance.json
+```
+
+`reports/resonance.json` には ρ の相関・クロス相関ピーク・ラグがペアごとに出力されます。
+
+構成例は `config/runtime.yaml` の `resonance` セクションを参照ください（ログ一覧・リサンプリング間隔・z-score などを設定できます）。
+
+### k_res チューニング
+
+```bash
+python scripts/tune_resonance.py \
+  --mode grid \
+  --run-cmd "python scripts/run_quick_loop.py --steps {steps} --seed {seed}" \
+  --nightly-cmd "python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-*.jsonl" \
+  --logs telemetry/ignition-*.jsonl
+```
+
+試行ごとの objective は `reports/resonance_history.jsonl` に追記され、`reports/plots/resonance_objective.png` に履歴グラフが生成されます。ベスト値は Nightly の `tuning_suggestion.k_res` に書き込まれるため、`scripts/apply_nightly_tuning.py --apply` を実行すれば runtime.yaml を更新できます。
+

@@ -38,4 +38,7 @@ reports/nightly.json
 reports/nightly.md
 reports/affective_stats.json
 reports/plots/*.png
+reports/plots/*.json
 memory/affective_log.jsonl
+reports/resonance_history.jsonl
+reports/culture_history.jsonl

@@ -51,39 +51,96 @@ def main() -> int:
 
     report = load_json(nightly_path)
     suggestion = report.get("tuning_suggestion") or {}
-    if not {"theta_on", "theta_off"} <= suggestion.keys():
+    has_theta = {"theta_on", "theta_off"} <= suggestion.keys()
+    has_k_res = "k_res" in suggestion
+    policy_feedback = report.get("policy_feedback") or {}
+    has_policy = bool(
+        isinstance(policy_feedback, dict)
+        and policy_feedback.get("enabled")
+        and policy_feedback.get("politeness_after") is not None
+        and policy_feedback.get("politeness_before") is not None
+    )
+    if not (has_theta or has_k_res or has_policy):
         print("[tuning] no suggestion found. nothing to do.")
         return 0
 
     cfg = load_yaml(config_path) or {}
-    ignition = cfg.setdefault("ignition", {})
-    before = {
-        "theta_on": ignition.get("theta_on", 0.62),
-        "theta_off": ignition.get("theta_off", 0.48),
-    }
-    after = {
-        "theta_on": float(suggestion["theta_on"]),
-        "theta_off": float(suggestion["theta_off"]),
-    }
+    ignition_before = {}
+    ignition_after = {}
+    if has_theta:
+        ignition = cfg.setdefault("ignition", {})
+        ignition_before = {
+            "theta_on": ignition.get("theta_on", 0.62),
+            "theta_off": ignition.get("theta_off", 0.48),
+        }
+        ignition_after = {
+            "theta_on": float(suggestion["theta_on"]),
+            "theta_off": float(suggestion["theta_off"]),
+        }
+        if not (0.0 <= ignition_after["theta_on"] <= 1.0 and 0.0 <= ignition_after["theta_off"] <= 1.0):
+            print("[tuning] suggested values outside [0,1]. abort.")
+            return 2
+        if not ignition_after["theta_on"] > ignition_after["theta_off"]:
+            print("[tuning] theta_on must be greater than theta_off. abort.")
+            return 3
+        if abs(ignition_after["theta_on"] - ignition_before["theta_on"]) > 0.2:
+            print("[tuning] change too large. abort.")
+            return 4
 
-    if not (0.0 <= after["theta_on"] <= 1.0 and 0.0 <= after["theta_off"] <= 1.0):
-        print("[tuning] suggested values outside [0,1]. abort.")
-        return 2
-    if not after["theta_on"] > after["theta_off"]:
-        print("[tuning] theta_on must be greater than theta_off. abort.")
-        return 3
-    if abs(after["theta_on"] - before["theta_on"]) > 0.2:
-        print("[tuning] change too large. abort.")
-        return 4
+    resonance_before = {}
+    resonance_after = {}
+    if has_k_res:
+        resonance_cfg = cfg.setdefault("resonance", {})
+        resonance_before["k_res"] = resonance_cfg.get("k_res")
+        try:
+            resonance_after["k_res"] = float(suggestion["k_res"])
+        except (TypeError, ValueError):
+            print("[tuning] invalid k_res suggestion.")
+            return 5
+        if resonance_after["k_res"] < 0.0:
+            print("[tuning] k_res must be non-negative. abort.")
+            return 6
 
-    print(f"[tuning] current: {before}  suggested: {after}")
+    culture_before = {}
+    culture_after = {}
+    if has_policy:
+        culture_cfg = cfg.setdefault("culture", {})
+        culture_before["politeness"] = culture_cfg.get("politeness")
+        try:
+            target_value = float(policy_feedback["politeness_after"])
+        except (TypeError, ValueError):
+            print("[tuning] invalid policy feedback value.")
+            return 7
+        if not (0.0 <= target_value <= 1.0):
+            print("[tuning] policy feedback politeness outside [0,1]. abort.")
+            return 8
+        culture_after["politeness"] = target_value
+
+    if has_theta:
+        print(f"[tuning] ignition current: {ignition_before}  suggested: {ignition_after}")
+    if has_k_res:
+        print(f"[tuning] resonance current: {resonance_before}  suggested: {resonance_after}")
+    if has_policy:
+        reason = policy_feedback.get("reason", "n/a")
+        corr_val = policy_feedback.get("corr")
+        print(
+            "[tuning] culture politeness current: "
+            f"{culture_before.get('politeness')}  suggested: {culture_after['politeness']} "
+            f"(reason={reason}, corr={corr_val})"
+        )
+
     if not args.apply:
         print("[tuning] dry-run mode. use --apply to persist changes.")
         return 0
 
     backup = config_path.with_suffix(config_path.suffix + f".{time.strftime('%Y%m%d-%H%M%S')}.bak")
     shutil.copy2(config_path, backup)
-    ignition.update(after)
+    if has_theta:
+        cfg.setdefault("ignition", {}).update(ignition_after)
+    if has_k_res:
+        cfg.setdefault("resonance", {})["k_res"] = resonance_after["k_res"]
+    if has_policy:
+        cfg.setdefault("culture", {})["politeness"] = culture_after["politeness"]
     dump_yaml(config_path, cfg)
     print(f"[tuning] runtime config updated. backup -> {backup}")
     return 0

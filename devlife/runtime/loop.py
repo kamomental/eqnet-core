@@ -87,6 +87,7 @@ class DevelopmentLoop:
         self.router = router
         self._runtime_cfg = runtime_cfg or load_runtime_cfg()
         self._emotion_cfg = getattr(self._runtime_cfg, "emotion", None)
+        self._culture_cfg = getattr(self._runtime_cfg, "culture", None)
         self._valence_w_rho = float(getattr(self._emotion_cfg, "valence_w_rho", 1.0))
         self._valence_w_s = float(getattr(self._emotion_cfg, "valence_w_s", 1.0))
         self._resonance_k = float(getattr(self._emotion_cfg, "resonance_k", 0.05))
@@ -303,23 +304,26 @@ class DevelopmentLoop:
             context_summary = None
             if isinstance(utterance, str):
                 context_summary = utterance[:160]
-            self._log_affective_episode(
-                {
-                    "ts": time.time(),
-                    "stage": stage.name,
-                    "step": self._step_counter,
-                    "S": field_metrics.get("S"),
-                    "H": field_metrics.get("H"),
-                    "rho": field_metrics.get("rho"),
-                    "I": I_value,
-                    "valence": valence,
-                    "arousal": arousal,
-                    "delta_R": delta_R,
-                    "field_source": field_metrics.get("field_source", "proxy"),
-                    "delta_aff": float(delta_aff) if isinstance(delta_aff, (int, float)) else None,
-                    "context": {"utterance": context_summary},
-                }
-            )
+                self._log_affective_episode(
+                    {
+                        "ts": time.time(),
+                        "stage": stage.name,
+                        "step": self._step_counter,
+                        "S": field_metrics.get("S"),
+                        "H": field_metrics.get("H"),
+                        "rho": field_metrics.get("rho"),
+                        "I": I_value,
+                        "valence": valence,
+                        "arousal": arousal,
+                        "delta_R": delta_R,
+                        "field_source": field_metrics.get("field_source", "proxy"),
+                        "delta_aff": float(delta_aff) if isinstance(delta_aff, (int, float)) else None,
+                        "culture_tag": getattr(self._culture_cfg, "tag", "default"),
+                        "politeness": float(getattr(self._culture_cfg, "politeness", 0.0)),
+                        "intimacy": float(getattr(self._culture_cfg, "intimacy", 0.0)),
+                        "context": {"utterance": context_summary},
+                    }
+                )
 
             social_alignment = 0.5
             if tom_out:

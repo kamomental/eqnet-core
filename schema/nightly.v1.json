@@ -22,7 +22,17 @@
     "tuning_suggestion": { "type": "object" },
     "plots": {
       "type": "object",
-      "required": ["ignition_timeseries", "rho_vs_I_scatter", "memory_graph", "affective_map"]
+      "required": ["ignition_timeseries", "rho_vs_I_scatter", "memory_graph", "affective_map"],
+      "properties": {
+        "ignition_timeseries": { "type": "string" },
+        "rho_vs_I_scatter": { "type": "string" },
+        "memory_graph": { "type": "string" },
+        "affective_map": { "type": "string" },
+        "culture_resonance": { "type": "string" },
+        "culture_trend": { "type": "string" },
+        "resonance_objective": { "type": "string" }
+      },
+      "additionalProperties": { "type": "string" }
     },
     "affective_stats": {
       "type": "object",
@@ -31,9 +41,64 @@
         "arousal": { "type": "object" }
       }
     },
+    "resonance_history_path": { "type": "string" },
+    "culture_history_path": { "type": "string" },
+    "policy_feedback": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "politeness_before": { "type": "number" },
+        "politeness_after": { "type": "number" },
+        "delta": { "type": "number" },
+        "corr": { "type": "number" },
+        "corr_source": { "type": ["string", "null"] },
+        "reason": { "type": "string" }
+      }
+    },
+    "culture_stats": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "count": { "type": "number" },
+          "mean_valence": { "type": "number" },
+          "mean_arousal": { "type": "number" },
+          "mean_rho": { "type": "number" },
+          "mean_politeness": { "type": "number" },
+          "mean_intimacy": { "type": "number" }
+        },
+        "required": ["count", "mean_valence", "mean_arousal", "mean_rho"]
+      }
+    },
+    "resonance": {
+      "type": "object",
+      "properties": {
+        "pairs": { "type": "array" },
+        "corr": { "type": "number" },
+        "corr_ci95": { "type": "array", "items": { "type": "number" } },
+        "lag": { "type": "number" },
+        "lag_refined": { "type": "number" },
+        "energy": { "type": "number" },
+        "n_eff": { "type": "number" },
+        "objective": { "type": "number" }
+      }
+    },
     "alerts": {
       "type": "array",
       "items": { "type": "string" }
+    },
+    "alerts_detail": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string" },
+          "tag": { "type": "string" },
+          "value": { "type": "number" },
+          "threshold": { "type": "number" },
+          "pair": { "type": "array" }
+        }
+      }
     }
   }
 }

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import glob
 import datetime as dt
 import json
 import time
@@ -12,7 +13,7 @@ import os
 from bisect import bisect_left
 from collections import defaultdict
 from pathlib import Path
-from statistics import median
+from statistics import mean, median
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
@@ -41,6 +42,10 @@ from emot_terrain_lab.utils.fastpath_config import (
 )
 from telemetry import plot_ignition as ignition_plots
 from telemetry import plot_memory_graph
+from telemetry import plot_resonance
+from telemetry import plot_culture_resonance
+from telemetry import plot_culture_trend
+from ops import resonance_metrics
 from telemetry import plot_affective_map
 
 def _ensure_dir(path: Path) -> None:
@@ -791,30 +796,136 @@ def _safe_corr(a: np.ndarray, b: np.ndarray) -> float:
         return float("nan")
 
 
-def _compute_alerts(stats: Dict[str, Any], cfg_alerts: Mapping[str, Any]) -> List[str]:
+def _compute_alerts(
+    stats: Dict[str, Any],
+    cfg_alerts: Mapping[str, Any],
+    resonance: Optional[Dict[str, Any]] = None,
+    culture_stats: Optional[Mapping[str, Mapping[str, Any]]] = None,
+) -> tuple[List[str], List[Dict[str, Any]]]:
     alerts: List[str] = []
-    if not stats:
-        return alerts
+    details: List[Dict[str, Any]] = []
     thresholds = dict(cfg_alerts or {})
 
     max_abs_valence_mean = float(thresholds.get("max_abs_valence_mean", 0.6))
-    valence_mean = stats.get("valence_mean")
+    valence_mean = stats.get("valence_mean") if stats else None
     if valence_mean is not None and math.isfinite(valence_mean):
         if abs(valence_mean) > max_abs_valence_mean:
             alerts.append(f"valence_mean_out_of_range:{valence_mean:.3f}")
+            details.append(
+                {
+                    "kind": "valence_mean_out_of_range",
+                    "value": float(valence_mean),
+                    "threshold": max_abs_valence_mean,
+                }
+            )
 
     min_corr_rho = float(thresholds.get("min_corr_rho_I", 0.2))
-    rho_corr = stats.get("rho_I_corr")
-    if rho_corr is not None and math.isfinite(rho_corr):
-        if rho_corr < min_corr_rho:
-            alerts.append(f"low_rho_I_correlation:{rho_corr:.3f}")
+    rho_corr = stats.get("rho_I_corr") if stats else None
+    if rho_corr is not None and math.isfinite(rho_corr) and rho_corr < min_corr_rho:
+        alerts.append(f"low_rho_I_correlation:{rho_corr:.3f}")
+        details.append(
+            {
+                "kind": "low_rho_I_correlation",
+                "value": float(rho_corr),
+                "threshold": min_corr_rho,
+            }
+        )
 
     min_corr_arousal = float(thresholds.get("min_corr_arousal_I", 0.1))
-    arousal_corr = stats.get("arousal_I_corr")
-    if arousal_corr is not None and math.isfinite(arousal_corr):
-        if arousal_corr < min_corr_arousal:
-            alerts.append(f"low_arousal_I_correlation:{arousal_corr:.3f}")
-    return alerts
+    arousal_corr = stats.get("arousal_I_corr") if stats else None
+    if (
+        arousal_corr is not None
+        and math.isfinite(arousal_corr)
+        and arousal_corr < min_corr_arousal
+    ):
+        alerts.append(f"low_arousal_I_correlation:{arousal_corr:.3f}")
+        details.append(
+            {
+                "kind": "low_arousal_I_correlation",
+                "value": float(arousal_corr),
+                "threshold": min_corr_arousal,
+            }
+        )
+
+    if resonance:
+        min_corr_rho_rho = float(thresholds.get("min_corr_rho_rho", 0.2))
+        max_allowed_lag = float(thresholds.get("max_allowed_lag", 8.0))
+        min_samples = float(thresholds.get("min_resonance_samples", 0))
+        for pair in resonance.get("pairs", []):
+            corr = pair.get("rho_corr")
+            if corr is not None and math.isfinite(corr) and corr < min_corr_rho_rho:
+                alerts.append(f"low_rho_rho_correlation:{corr:.3f}")
+                details.append(
+                    {
+                        "kind": "low_rho_rho_correlation",
+                        "value": float(corr),
+                        "threshold": min_corr_rho_rho,
+                        "pair": pair.get("agents"),
+                    }
+                )
+            lag = pair.get("rho_cross_corr_lag_refined")
+            if lag is None or not math.isfinite(lag):
+                lag = pair.get("rho_cross_corr_lag")
+            if lag is not None and math.isfinite(lag) and abs(lag) > max_allowed_lag:
+                alerts.append(f"excessive_resonance_lag:{lag:.2f}")
+                details.append(
+                    {
+                        "kind": "excessive_resonance_lag",
+                        "value": float(lag),
+                        "threshold": max_allowed_lag,
+                        "pair": pair.get("agents"),
+                    }
+                )
+            n_eff = pair.get("n_eff")
+            if n_eff is not None and math.isfinite(n_eff) and n_eff < min_samples:
+                alerts.append(f"low_resonance_samples:{n_eff:.0f}")
+                details.append(
+                    {
+                        "kind": "low_resonance_samples",
+                        "value": float(n_eff),
+                        "threshold": min_samples,
+                        "pair": pair.get("agents"),
+                    }
+                )
+    if culture_stats:
+        min_culture_samples = float(thresholds.get("min_culture_samples", 0))
+        max_abs_culture_valence = float(
+            thresholds.get("max_abs_culture_valence_mean", thresholds.get("max_abs_valence_mean", 0.6))
+        )
+        min_culture_rho = float(thresholds.get("min_culture_rho_mean", thresholds.get("min_corr_rho_I", 0.2)))
+        for tag, stats_tag in culture_stats.items():
+            if not isinstance(stats_tag, Mapping):
+                continue
+            count = stats_tag.get("count")
+            try:
+                count_val = float(count)
+            except Exception:
+                count_val = 0.0
+            if count_val < min_culture_samples:
+                continue
+            valence_mean = stats_tag.get("mean_valence")
+            if valence_mean is not None and math.isfinite(valence_mean) and abs(valence_mean) > max_abs_culture_valence:
+                alerts.append(f"culture.high_abs_valence:{tag}")
+                details.append(
+                    {
+                        "kind": "culture.high_abs_valence",
+                        "tag": tag,
+                        "value": float(valence_mean),
+                        "threshold": max_abs_culture_valence,
+                    }
+                )
+            rho_mean = stats_tag.get("mean_rho")
+            if rho_mean is not None and math.isfinite(rho_mean) and rho_mean < min_culture_rho:
+                alerts.append(f"culture.low_rho:{tag}")
+                details.append(
+                    {
+                        "kind": "culture.low_rho",
+                        "tag": tag,
+                        "value": float(rho_mean),
+                        "threshold": min_culture_rho,
+                    }
+                )
+    return alerts, details
 
 
 def _extract_run_seed(path: Path) -> Optional[int]:
@@ -842,6 +953,70 @@ def _extract_run_seed(path: Path) -> Optional[int]:
     return None
 
 
+def _resolve_resonance_logs(specs: Iterable[str]) -> List[Tuple[str, Path]]:
+    resolved: List[Tuple[str, Path]] = []
+    for entry in specs or []:
+        matches = glob.glob(entry) if isinstance(entry, str) else []
+        paths = matches or [entry]
+        for item in paths:
+            if isinstance(item, (list, tuple)):
+                continue
+            token = str(item)
+            if "=" in token:
+                label, path_str = token.split("=", 1)
+                label = label.strip()
+                path = Path(path_str.strip())
+            else:
+                path = Path(token)
+                label = path.stem
+            resolved.append((label or path.stem, path))
+    return resolved
+
+
+def _summarize_culture_stats(log_path: Path | None) -> Optional[Dict[str, Dict[str, float]]]:
+    if not log_path or not log_path.exists():
+        return None
+    buckets: Dict[str, Dict[str, List[float]]] = defaultdict(
+        lambda: {"valence": [], "arousal": [], "rho": [], "politeness": [], "intimacy": []}
+    )
+    try:
+        for line in log_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            tag = row.get("culture_tag") or "unknown"
+            buckets[tag]["valence"].append(float(row.get("valence", 0.0)))
+            buckets[tag]["arousal"].append(float(row.get("arousal", 0.0)))
+            buckets[tag]["rho"].append(float(row.get("rho", 0.0)))
+            if row.get("politeness") is not None:
+                buckets[tag]["politeness"].append(float(row.get("politeness")))
+            if row.get("intimacy") is not None:
+                buckets[tag]["intimacy"].append(float(row.get("intimacy")))
+    except Exception:
+        return None
+    summary: Dict[str, Dict[str, float]] = {}
+    for tag, data in buckets.items():
+        if not data["valence"]:
+            continue
+        entry: Dict[str, float] = {
+            "count": float(len(data["valence"])),
+            "mean_valence": mean(data["valence"]),
+            "mean_arousal": mean(data["arousal"]),
+            "mean_rho": mean(data["rho"]),
+        }
+        if data["politeness"]:
+            entry["mean_politeness"] = mean(data["politeness"])
+        if data["intimacy"]:
+            entry["mean_intimacy"] = mean(data["intimacy"])
+        summary[tag] = entry
+    return summary or None
+
+
+
 def _generate_telemetry_section(
     report: Dict[str, Any],
     telemetry_log: Path,
@@ -856,29 +1031,33 @@ def _generate_telemetry_section(
     tuning = _derive_tuning_suggestion(field_state, cfg_dict)
     if tuning:
         report["tuning_suggestion"] = tuning
+
     emotion_cfg = cfg_dict.get("emotion", {}) if isinstance(cfg_dict, dict) else {}
     alerts_cfg = cfg_dict.get("alerts", {}) if isinstance(cfg_dict, dict) else {}
+    resonance_cfg = cfg_dict.get("resonance", {}) if isinstance(cfg_dict, dict) else {}
+    culture_cfg_snapshot = cfg_dict.get("culture", {}) if isinstance(cfg_dict, dict) else {}
+
     affective_log_path = Path(emotion_cfg.get("affective_log_path", "memory/affective_log.jsonl"))
     run_seed = _extract_run_seed(telemetry_log)
     if run_seed is not None:
         report["run_seed"] = run_seed
-    report["alerts"] = _compute_alerts(field_state or {}, alerts_cfg)
-    report["plots"] = report.get("plots", {})
+
     report["plots"] = report.get("plots", {})
     plot_info: Dict[str, Path] = {}
     plot_error: Optional[str] = None
+
     expected_plot_paths = {
         "ignition_timeseries": plots_dir / "ignition_timeseries.png",
         "rho_vs_I_scatter": plots_dir / "rho_vs_I_scatter.png",
         "affective_map": plots_dir / "affective_map.png",
     }
     try:
-        plot_info = ignition_plots.render_plots(telemetry_log, plots_dir)
+        ignition_output = ignition_plots.render_plots(telemetry_log, plots_dir)
         normalized: Dict[str, str] = {}
-        if "timeseries" in plot_info:
-            normalized["ignition_timeseries"] = str(plot_info["timeseries"])
-        if "scatter" in plot_info:
-            normalized["rho_vs_I_scatter"] = str(plot_info["scatter"])
+        if "timeseries" in ignition_output:
+            normalized["ignition_timeseries"] = str(ignition_output["timeseries"])
+        if "scatter" in ignition_output:
+            normalized["rho_vs_I_scatter"] = str(ignition_output["scatter"])
         report.setdefault("artifacts", {})["field_plots"] = normalized
         report["plots"].update(normalized)
     except Exception as exc:
@@ -900,7 +1079,6 @@ def _generate_telemetry_section(
         report.setdefault("artifacts", {})["memory_graph"] = str(mem_path)
         report["plots"]["memory_graph"] = str(mem_path)
         plot_info.setdefault("memory_graph", mem_path)
-        plot_info.setdefault("memory_graph", mem_path)
 
     affective_plot = expected_plot_paths["affective_map"]
     affective_stats_path = plots_dir / "affective_stats.json"
@@ -915,7 +1093,9 @@ def _generate_telemetry_section(
             try:
                 report["affective_stats"] = json.loads(affective_stats_path.read_text(encoding="utf-8"))
             except Exception as exc:
-                report.setdefault("warnings", []).append(f"affective_stats_failed ({affective_stats_path}): {exc}")
+                report.setdefault("warnings", []).append(
+                    f"affective_stats_failed ({affective_stats_path}): {exc}"
+                )
     except Exception as exc:
         report.setdefault("warnings", []).append(f"affective_map_failed ({affective_log_path}): {exc}")
     finally:
@@ -925,8 +1105,253 @@ def _generate_telemetry_section(
         if affective_stats_path.exists():
             report.setdefault("artifacts", {}).setdefault("stats", {})["affective"] = str(affective_stats_path)
 
+    min_culture_samples = int(float(alerts_cfg.get("min_culture_samples", 0))) if isinstance(alerts_cfg, dict) else 0
+    culture_stats = _summarize_culture_stats(affective_log_path)
+    culture_for_plot: Dict[str, Dict[str, float]] = {}
+    if culture_stats:
+        report["culture_stats"] = culture_stats
+        for tag, stats_dict in culture_stats.items():
+            try:
+                count_val = float(stats_dict.get("count", 0.0))
+            except Exception:
+                count_val = 0.0
+            if count_val >= max(0, min_culture_samples):
+                culture_for_plot[tag] = stats_dict
+        history_path = Path("reports/culture_history.jsonl")
+        try:
+            history_path.parent.mkdir(parents=True, exist_ok=True)
+            with history_path.open("a", encoding="utf-8") as handle:
+                for tag, stats_dict in culture_stats.items():
+                    record = {
+                        "ts": float(report.get("ts", time.time())),
+                        "tag": tag,
+                        "mean_valence": stats_dict.get("mean_valence"),
+                        "mean_rho": stats_dict.get("mean_rho"),
+                        "count": stats_dict.get("count"),
+                    }
+                    json.dump(record, handle, ensure_ascii=False)
+                    handle.write("\n")
+            report["culture_history_path"] = str(history_path)
+        except Exception as exc:
+            report.setdefault("warnings", []).append(f"culture_history_failed: {exc}")
+
+        if culture_for_plot:
+            culture_plot = plots_dir / "culture_resonance.png"
+            try:
+                plot_culture_resonance.render_culture_resonance(culture_for_plot, culture_plot)
+            except Exception as exc:
+                report.setdefault("warnings", []).append(f"culture_resonance_failed: {exc}")
+            else:
+                if culture_plot.exists():
+                    report.setdefault("plots", {})["culture_resonance"] = str(culture_plot)
+                    plot_info.setdefault("culture_resonance", culture_plot)
+                    report.setdefault("artifacts", {}).setdefault("field_plots", {})[
+                        "culture_resonance"
+                    ] = str(culture_plot)
+        if report.get("culture_history_path"):
+            trend_plot = plots_dir / "culture_trend.png"
+            try:
+                plot_culture_trend.render_culture_trend(
+                    report["culture_history_path"],
+                    str(trend_plot),
+                    min_count=max(0, min_culture_samples),
+                )
+            except Exception as exc:
+                report.setdefault("warnings", []).append(f"culture_trend_failed: {exc}")
+            else:
+                if trend_plot.exists():
+                    report.setdefault("plots", {})["culture_trend"] = str(trend_plot)
+                    report.setdefault("artifacts", {}).setdefault("field_plots", {})[
+                        "culture_trend"
+                    ] = str(trend_plot)
+
+    resonance_metrics_result: Optional[Dict[str, Any]] = None
+    resonance_summary: Optional[Dict[str, Any]] = None
+    history_path = Path("reports/resonance_history.jsonl")
+    resonance_logs = _resolve_resonance_logs(resonance_cfg.get("logs", []))
+    if len(resonance_logs) >= 2:
+        try:
+            resonance_metrics_result = resonance_metrics.compute_resonance_metrics(
+                resonance_logs,
+                resample_ms=resonance_cfg.get("resample_ms"),
+                zscore=bool(resonance_cfg.get("zscore", False)),
+                detrend=bool(resonance_cfg.get("detrend", False)),
+                window=resonance_cfg.get("window", "none"),
+                alpha=float(resonance_cfg.get("alpha", 0.0)),
+                beta=float(resonance_cfg.get("beta", 0.0)),
+                return_series=True,
+            )
+            report["resonance"] = resonance_metrics_result
+            created = plot_resonance.render_resonance_plots(resonance_metrics_result, plots_dir)
+            if created:
+                report.setdefault("plots", {}).setdefault("resonance", created)
+                for idx, path in enumerate(created):
+                    plot_info.setdefault(f"resonance_{idx}", Path(path))
+            pairs = resonance_metrics_result.get("pairs") or []
+            if pairs:
+                best = max(
+                    pairs,
+                    key=lambda p: (
+                        p.get("objective")
+                        if p.get("objective") is not None
+                        else (p.get("rho_corr") or float("-inf"))
+                    ),
+                )
+                resonance_summary = {
+                    "agents": best.get("agents"),
+                    "corr": best.get("rho_corr"),
+                    "lag": best.get("rho_cross_corr_lag_refined", best.get("rho_cross_corr_lag")),
+                    "energy": best.get("energy"),
+                    "objective": best.get("objective"),
+                    "n_eff": best.get("n_eff"),
+                }
+                resonance_metrics_result["summary"] = resonance_summary
+                try:
+                    history_path.parent.mkdir(parents=True, exist_ok=True)
+                    history_entry = {
+                        "ts": report.get("ts", time.time()),
+                        "k_res": resonance_cfg.get("k_res"),
+                        **{k: v for k, v in resonance_summary.items() if k != "agents"},
+                    }
+                    with history_path.open("a", encoding="utf-8") as handle:
+                        handle.write(json.dumps(history_entry, ensure_ascii=False) + "\n")
+                    report["resonance_history_path"] = str(history_path)
+                    report.setdefault("artifacts", {}).setdefault("stats", {})[
+                        "resonance_history"
+                    ] = str(history_path)
+                    objective_plot = plots_dir / "resonance_objective.png"
+                    plot_resonance.plot_objective_history(history_path, objective_plot)
+                    if objective_plot.exists():
+                        report["plots"]["resonance_objective"] = str(objective_plot)
+                        plot_info.setdefault("resonance_objective", objective_plot)
+                except Exception as exc:
+                    report.setdefault("warnings", []).append(f"resonance_history_failed: {exc}")
+        except Exception as exc:
+            report.setdefault("warnings", []).append(f"resonance_failed: {exc}")
+
+    feedback_cfg = culture_cfg_snapshot.get("feedback", {}) if isinstance(culture_cfg_snapshot, dict) else {}
+    if isinstance(feedback_cfg, dict):
+        if feedback_cfg.get("enabled"):
+            politeness_before = float(culture_cfg_snapshot.get("politeness", 0.5))
+            corr_high = float(feedback_cfg.get("corr_high", 0.65))
+            corr_low = float(feedback_cfg.get("corr_low", 0.35))
+            delta = float(feedback_cfg.get("delta", 0.02))
+            clamp_min = float(feedback_cfg.get("clamp_min", 0.0))
+            clamp_max = float(feedback_cfg.get("clamp_max", 1.0))
+            corr_value: Optional[float] = None
+            corr_source = None
+            if resonance_summary and resonance_summary.get("corr") is not None:
+                try:
+                    corr_candidate = float(resonance_summary.get("corr"))
+                except (TypeError, ValueError):
+                    corr_candidate = None
+                if corr_candidate is not None and math.isfinite(corr_candidate):
+                    corr_value = corr_candidate
+                    corr_source = "resonance_summary"
+            if corr_value is None and culture_stats:
+                default_tag = culture_cfg_snapshot.get("tag", "default")
+                tag_stats = culture_stats.get(default_tag)
+                if tag_stats and tag_stats.get("mean_rho") is not None:
+                    try:
+                        corr_candidate = float(tag_stats.get("mean_rho"))
+                    except (TypeError, ValueError):
+                        corr_candidate = None
+                    if corr_candidate is not None and math.isfinite(corr_candidate):
+                        corr_value = corr_candidate
+                        corr_source = f"culture_stats[{default_tag}]"
+            reason = "insufficient_data"
+            politeness_after = politeness_before
+            applied_delta = 0.0
+            if corr_value is not None:
+                if corr_value >= corr_high:
+                    politeness_after = min(clamp_max, politeness_before + delta)
+                    applied_delta = politeness_after - politeness_before
+                    reason = "resonance_high"
+                elif corr_value <= corr_low:
+                    politeness_after = max(clamp_min, politeness_before - delta)
+                    applied_delta = politeness_after - politeness_before
+                    reason = "resonance_low"
+                else:
+                    reason = "resonance_mid"
+            report["policy_feedback"] = {
+                "enabled": True,
+                "politeness_before": politeness_before,
+                "politeness_after": politeness_after,
+                "delta": applied_delta,
+                "corr": corr_value,
+                "corr_source": corr_source,
+                "reason": reason,
+            }
+        else:
+            report["policy_feedback"] = {"enabled": False}
+
+    alerts, alert_details = _compute_alerts(
+        field_state or {},
+        alerts_cfg,
+        resonance_metrics_result,
+        culture_stats if isinstance(culture_stats, Mapping) else None,
+    )
+    report["alerts"] = alerts
+    if alert_details:
+        report["alerts_detail"] = alert_details
+
     _write_markdown_summary(report, md_path, plot_info, telemetry_log, plot_error)
     report["markdown_path"] = str(md_path)
+
+
+def _render_culture_alerts_table(report: Mapping[str, Any]) -> List[str]:
+    raw_alerts = [
+        a for a in report.get("alerts", []) if isinstance(a, str) and a.startswith("culture.")
+    ]
+    if not raw_alerts:
+        return []
+    rows: List[tuple[str, str]] = []
+    for alert in raw_alerts:
+        try:
+            kind_part, remainder = alert.split(":", 1)
+        except ValueError:
+            kind_part, remainder = alert, ""
+        tag = remainder.split(":", 1)[0] if remainder else "unknown"
+        kind = kind_part.replace("culture.", "")
+        rows.append((kind, tag or "unknown"))
+    rows.sort()
+    lines = ["", "## Culture Alerts (summary)", "| alert | tag |", "|---|---|"]
+    for kind, tag in rows:
+        lines.append(f"| {kind} | {tag} |")
+    lines.append("")
+    return lines
+
+
+def _render_culture_narrative(
+    stats: Mapping[str, Mapping[str, Any]],
+    *,
+    top_k: int = 3,
+) -> List[str]:
+    if not isinstance(stats, Mapping) or not stats:
+        return []
+    candidates: List[tuple[float, str, float, float, int]] = []
+    for tag, values in stats.items():
+        if not isinstance(values, Mapping):
+            continue
+        valence = values.get("mean_valence")
+        rho_mean = values.get("mean_rho")
+        count = values.get("count")
+        try:
+            valence_f = float(valence)
+            rho_f = float(rho_mean) if rho_mean is not None else float("nan")
+            count_f = int(round(float(count))) if count is not None else 0
+        except Exception:
+            continue
+        candidates.append((abs(valence_f), tag, valence_f, rho_f, count_f))
+    if not candidates:
+        return []
+    candidates.sort(reverse=True)
+    lines = ["", "**Culture quick notes**"]
+    for _, tag, valence_f, rho_f, count_f in candidates[: max(1, top_k)]:
+        tendency = "ポジ寄り" if valence_f >= 0 else "ネガ寄り"
+        lines.append(f"- {tag}: {tendency} (valence {valence_f:+.2f}), ρ={rho_f:.2f}, n={count_f}")
+    lines.append("")
+    return lines
 
 
 def _write_markdown_summary(
@@ -945,6 +1370,19 @@ def _write_markdown_summary(
     lines.append("```yaml")
     lines.append(cfg_text if cfg_text.strip() else "# empty")
     lines.append("```")
+
+    alerts_cfg = ((report.get("config_snapshot") or {}).get("alerts") or {}) if isinstance(report.get("config_snapshot"), dict) else {}
+    if alerts_cfg:
+        line = (
+            "_Alert thresholds_: "
+            f"|valence_mean| ≤ {alerts_cfg.get('max_abs_valence_mean', 0.6)}, "
+            f"corr(rho,I) ≥ {alerts_cfg.get('min_corr_rho_I', 0.2)}, "
+            f"corr(resonance) ≥ {alerts_cfg.get('min_corr_rho_rho', 0.2)}, "
+            f"|lag| ≤ {alerts_cfg.get('max_allowed_lag', 8.0)}, "
+            f"n_eff ≥ {alerts_cfg.get('min_resonance_samples', 0)}"
+        )
+        lines.append("")
+        lines.append(line)
 
     warnings = list(report.get("warnings", []))
     if plot_error:
@@ -976,6 +1414,7 @@ def _write_markdown_summary(
         lines.append("## Alerts")
         for alert in alerts:
             lines.append(f"- {alert}")
+        lines.extend(_render_culture_alerts_table(report))
 
     field_state = report.get("field_state")
     if field_state:
@@ -1008,6 +1447,64 @@ def _write_markdown_summary(
                 lines.append(
                     f"- {axis}: mean={mean_val} std={std_val} q25={q25} q50={q50} q75={q75}"
                 )
+    culture_stats = report.get("culture_stats")
+    if isinstance(culture_stats, dict) and culture_stats:
+        min_culture_samples = int(float(alerts_cfg.get("min_culture_samples", 0))) if isinstance(alerts_cfg, dict) else 0
+        lines.append("")
+        lines.append("## Culture Resonance")
+        sparse_lines: List[str] = []
+        for tag, stats in culture_stats.items():
+            if not isinstance(stats, dict):
+                continue
+            count_raw = stats.get("count")
+            try:
+                count_val = int(round(float(count_raw)))
+            except Exception:
+                count_val = 0
+            if count_val < max(0, min_culture_samples):
+                sparse_lines.append(f"- {tag}: count={count_val} (<{min_culture_samples}) insufficient samples")
+                continue
+            valence_mean = _fmt_float(stats.get("mean_valence"))
+            arousal_mean = _fmt_float(stats.get("mean_arousal"))
+            rho_mean = _fmt_float(stats.get("mean_rho"))
+            pol = stats.get("mean_politeness")
+            pol_str = _fmt_float(pol) if pol is not None else "n/a"
+            intimacy = stats.get("mean_intimacy")
+            intimacy_str = _fmt_float(intimacy) if intimacy is not None else "n/a"
+            lines.append(
+                f"- {tag}: count={count_val} valence={valence_mean} arousal={arousal_mean} "
+                f"rho={rho_mean} politeness={pol_str} intimacy={intimacy_str}"
+            )
+        if sparse_lines:
+            lines.append("")
+            lines.append(f"### Culture Tags Below Sample Threshold (n < {min_culture_samples})")
+            lines.extend(sparse_lines)
+    culture_trend_plot = report.get("plots", {}).get("culture_trend")
+    if culture_trend_plot:
+        lines.append("")
+        lines.append("### Culture Trend (multi-day)")
+        lines.append(f"![Culture Trend]({_relpath(Path(culture_trend_plot), md_path.parent)})")
+    lines.extend(_render_culture_narrative(culture_stats))
+
+    policy_feedback = report.get("policy_feedback")
+    if isinstance(policy_feedback, dict) and policy_feedback.get("enabled"):
+        lines.append("")
+        lines.append("## Policy Feedback (experimental)")
+        lines.append(f"- reason: {policy_feedback.get('reason')}")
+        corr_val = policy_feedback.get("corr")
+        if corr_val is not None:
+            source = policy_feedback.get("corr_source") or "n/a"
+            lines.append(f"- corr reference: {_fmt_float(corr_val)} ({source})")
+        lines.append(f"- politeness: {_fmt_float(policy_feedback.get('politeness_before'))} -> {_fmt_float(policy_feedback.get('politeness_after'))} (delta={_fmt_float(policy_feedback.get('delta'))})")
+    resonance_section = (report.get("resonance") or {}).get("summary")
+    if isinstance(resonance_section, dict):
+        lines.append("")
+        lines.append("## Resonance Summary")
+        lines.append(f"- corr: {_fmt_float(resonance_section.get('corr'))}")
+        lines.append(f"- lag: {_fmt_float(resonance_section.get('lag'))}")
+        lines.append(f"- energy: {_fmt_float(resonance_section.get('energy'))}")
+        lines.append(f"- objective: {_fmt_float(resonance_section.get('objective'))}")
+        lines.append(f"- n_eff: {_fmt_float(resonance_section.get('n_eff'))}")
 
     if plot_info:
         titles = {
@@ -1015,6 +1512,9 @@ def _write_markdown_summary(
             "scatter": "rho vs Ignition Scatter",
             "affective_map": "Valence vs Arousal Scatter",
             "memory_graph": "Memory Graph",
+            "resonance_objective": "Resonance Objective History",
+            "culture_resonance": "Culture Resonance Summary",
+            "culture_trend": "Culture Trend (multi-day)",
         }
         lines.append("")
         lines.append("## Visuals")
@@ -1124,10 +1624,19 @@ def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Pat
         "tuning_suggestion": report.get("tuning_suggestion"),
         "warnings": report.get("warnings", []),
         "alerts": report.get("alerts", []),
+        "alerts_detail": report.get("alerts_detail", []),
         "run_seed": report.get("run_seed"),
         "plots": plots,
         "affective_stats": report.get("affective_stats"),
+        "resonance": report.get("resonance"),
+        "resonance_history_path": report.get("resonance_history_path"),
     }
+    if report.get("culture_stats"):
+        payload["culture_stats"] = report["culture_stats"]
+    if report.get("culture_history_path"):
+        payload["culture_history_path"] = report["culture_history_path"]
+    if report.get("policy_feedback"):
+        payload["policy_feedback"] = report["policy_feedback"]
     json_path = out_path / "nightly.json"
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return json_path
