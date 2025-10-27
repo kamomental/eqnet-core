@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import argparse
+import datetime as dt
 import json
 import time
 import math
@@ -13,6 +15,7 @@ from pathlib import Path
 from statistics import median
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import yaml
 
 try:
@@ -36,6 +39,8 @@ from emot_terrain_lab.utils.fastpath_config import (
     load_fastpath_defaults,
     load_fastpath_overrides,
 )
+from telemetry import plot_ignition as ignition_plots
+from telemetry import plot_memory_graph
 
 def _ensure_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -156,6 +161,13 @@ def run(hub, cfg: Dict[str, Any] | None = None) -> Dict[str, Any]:
             yaml.safe_dump(overrides, sort_keys=False, allow_unicode=True), encoding="utf-8"
         )
         report["overrides_path"] = str(override_path)
+
+    telemetry_log = Path(cfg.get("telemetry_log", "logs/telemetry_events.jsonl"))
+    plots_dir = Path(cfg.get("plots_dir", "reports/plots"))
+    md_path = Path(cfg.get("markdown_path", "reports/nightly.md"))
+    _generate_telemetry_section(report, telemetry_log, plots_dir, md_path)
+    json_path = _write_json_summary(report, out_dir="reports")
+    print(f"[nightly] JSON summary -> {json_path}")
 
     return report
 
@@ -697,4 +709,341 @@ def _grid_search_beta_tau(
     return {"grid": grid, "best": best}
 
 
+def _summarize_field_telemetry(path: Path) -> Optional[Dict[str, float]]:
+    if not path.exists():
+        return None
+    S: List[float] = []
+    H: List[float] = []
+    rho: List[float] = []
+    ignition: List[float] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if row.get("event") != "field.metrics":
+                continue
+            data = row.get("data") or {}
+            try:
+                S.append(float(data.get("S", np.nan)))
+                H.append(float(data.get("H", np.nan)))
+                rho.append(float(data.get("rho", np.nan)))
+                ignition.append(float(data.get("Ignition", np.nan)))
+            except Exception:
+                continue
+    except Exception:
+        return None
+    if not S:
+        return None
+    S_arr = np.array(S, dtype=float)
+    H_arr = np.array(H, dtype=float)
+    rho_arr = np.array(rho, dtype=float)
+    I_arr = np.array(ignition, dtype=float)
+def _mean_clean(arr: np.ndarray) -> float:
+    mask = np.isfinite(arr)
+    if not mask.any():
+        return float("nan")
+    return float(np.mean(arr[mask]))
+
+
+def _safe_corr(a: np.ndarray, b: np.ndarray) -> float:
+    mask = np.isfinite(a) & np.isfinite(b)
+    if mask.sum() < 2:
+        return float("nan")
+    try:
+        return float(np.corrcoef(a[mask], b[mask])[0, 1])
+    except Exception:
+        return float("nan")
+    rho_I_corr = _safe_corr(rho_arr, I_arr)
+    S_I_corr = _safe_corr(S_arr, I_arr)
+    H_I_corr = _safe_corr(H_arr, I_arr)
+    return {
+        "S_mean": _mean_clean(S_arr),
+        "H_mean": _mean_clean(H_arr),
+        "rho_mean": _mean_clean(rho_arr),
+        "Ignition_mean": _mean_clean(I_arr),
+        "rho_I_corr": rho_I_corr,
+        "S_I_corr": S_I_corr,
+        "H_I_corr": H_I_corr,
+    }
+
+
+def _extract_run_seed(path: Path) -> Optional[int]:
+    if not path.exists():
+        return None
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if row.get("event") == "run.seed":
+                data = row.get("data") or {}
+                seed = data.get("seed")
+                if seed is not None:
+                    try:
+                        return int(seed)
+                    except Exception:
+                        return None
+    except Exception:
+        return None
+    return None
+
+
+def _generate_telemetry_section(
+    report: Dict[str, Any],
+    telemetry_log: Path,
+    plots_dir: Path,
+    md_path: Path,
+) -> None:
+    field_state = _summarize_field_telemetry(telemetry_log)
+    if field_state:
+        report["field_state"] = field_state
+    cfg_dict = _load_runtime_cfg_dict(Path("config/runtime.yaml"))
+    report["config_snapshot"] = cfg_dict
+    tuning = _derive_tuning_suggestion(field_state, cfg_dict)
+    if tuning:
+        report["tuning_suggestion"] = tuning
+    run_seed = _extract_run_seed(telemetry_log)
+    if run_seed is not None:
+        report["run_seed"] = run_seed
+    alerts = []
+    if field_state:
+        rho_corr = field_state.get("rho_I_corr")
+        if rho_corr is not None and math.isfinite(rho_corr) and rho_corr < 0.2:
+            alerts.append("low_rho_I_correlation")
+    report["alerts"] = alerts
+    report["plots"] = report.get("plots", {})
+    report["plots"] = report.get("plots", {})
+    plot_info: Dict[str, Path] = {}
+    plot_error: Optional[str] = None
+    expected_plot_paths = {
+        "ignition_timeseries": plots_dir / "ignition_timeseries.png",
+        "rho_vs_I_scatter": plots_dir / "rho_vs_I_scatter.png",
+    }
+    try:
+        plot_info = ignition_plots.render_plots(telemetry_log, plots_dir)
+        normalized: Dict[str, str] = {}
+        if "timeseries" in plot_info:
+            normalized["ignition_timeseries"] = str(plot_info["timeseries"])
+        if "scatter" in plot_info:
+            normalized["rho_vs_I_scatter"] = str(plot_info["scatter"])
+        report.setdefault("artifacts", {})["field_plots"] = normalized
+        report["plots"].update(normalized)
+    except Exception as exc:
+        plot_error = str(exc)
+        report.setdefault("warnings", []).append(f"plot_failed ({telemetry_log}): {plot_error}")
+    finally:
+        fallback = {k: str(v) for k, v in expected_plot_paths.items()}
+        report["plots"].update({k: report["plots"].get(k, path) for k, path in fallback.items()})
+        report.setdefault("artifacts", {}).setdefault("field_plots", {}).update(
+            {k: report["plots"][k] for k in fallback}
+        )
+
+    mem_path = plots_dir / "memory_graph.png"
+    try:
+        plot_memory_graph.render_memory_graph(telemetry_log, mem_path)
+    except Exception as exc:
+        report.setdefault("warnings", []).append(f"memory_graph_failed ({telemetry_log}): {exc}")
+    finally:
+        report.setdefault("artifacts", {})["memory_graph"] = str(mem_path)
+        report["plots"]["memory_graph"] = str(mem_path)
+        plot_info.setdefault("memory_graph", mem_path)
+        plot_info.setdefault("memory_graph", mem_path)
+
+    _write_markdown_summary(report, md_path, plot_info, telemetry_log, plot_error)
+    report["markdown_path"] = str(md_path)
+
+
+def _write_markdown_summary(
+    report: Dict[str, Any],
+    md_path: Path,
+    plot_info: Dict[str, Path],
+    telemetry_log: Path,
+    plot_error: Optional[str],
+) -> None:
+    lines: List[str] = ["# Nightly Report", ""]
+    lines.append(f"- Generated: {dt.datetime.utcnow().isoformat()}Z")
+    lines.append(f"- Telemetry log: {telemetry_log}")
+    cfg_text = _read_runtime_config_text(Path("config/runtime.yaml"))
+    lines.append("")
+    lines.append("## Runtime Config")
+    lines.append("```yaml")
+    lines.append(cfg_text if cfg_text.strip() else "# empty")
+    lines.append("```")
+    warnings = list(report.get("warnings", []))
+    if plot_error:
+        warnings.append(f"plot_failed ({telemetry_log}): {plot_error}")
+    if warnings:
+        lines.append("")
+        lines.append("## Warnings")
+        for warn in warnings:
+            lines.append(f"- {warn}")
+    suggestion = report.get("tuning_suggestion")
+    if suggestion:
+        lines.append("")
+        lines.append("## Auto Tuning Proposal")
+        lines.append(f"- Reason: {suggestion.get('reason', 'n/a')}")
+        theta_on = suggestion.get("theta_on", {})
+        theta_off = suggestion.get("theta_off", {})
+        lines.append(
+            f"- theta_on: current={theta_on.get('current')} → suggested={theta_on.get('suggested')}"
+        )
+        if theta_off:
+            lines.append(
+                f"- theta_off: current={theta_off.get('current')} → suggested={theta_off.get('suggested')}"
+            )
+    field_state = report.get("field_state")
+    if field_state:
+        lines.append("")
+        lines.append("## Field Metrics")
+        lines.append(f"- S_mean: {_fmt_float(field_state.get('S_mean'))}")
+        lines.append(f"- H_mean: {_fmt_float(field_state.get('H_mean'))}")
+        lines.append(f"- rho_mean: {_fmt_float(field_state.get('rho_mean'))}")
+        lines.append(f"- Ignition_mean: {_fmt_float(field_state.get('Ignition_mean'))}")
+        lines.append(f"- corr(rho, I): {_fmt_float(field_state.get('rho_I_corr'))}")
+        lines.append(f"- corr(S, I): {_fmt_float(field_state.get('S_I_corr'))}")
+        lines.append(f"- corr(H, I): {_fmt_float(field_state.get('H_I_corr'))}")
+    if plot_info:
+        titles = {
+            "timeseries": "Ignition / S/H/ρ Timeseries",
+            "scatter": "ρ vs Ignition Scatter",
+        }
+        lines.append("")
+        lines.append("## Visuals")
+        for key, path in plot_info.items():
+            label = titles.get(key, key)
+            rel = _relpath(path, md_path.parent)
+            lines.append(f"![{label}]({rel})")
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _fmt_float(value: Any) -> str:
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return "n/a"
+    if not math.isfinite(val):
+        return "n/a"
+    return f"{val:.3f}"
+
+
+def _relpath(path: Path, base: Path) -> str:
+    try:
+        rel = os.path.relpath(path, base)
+    except ValueError:
+        rel = str(path)
+    return Path(rel).as_posix()
+
+
+def _read_runtime_config_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        return "# runtime config unavailable"
+
+
+def _load_runtime_cfg_dict(path: Path) -> Dict[str, Any]:
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+
+def _derive_tuning_suggestion(field_state: Optional[Dict[str, float]], cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not field_state or not cfg:
+        return None
+    ignition_cfg = cfg.get("ignition", {})
+    theta_on = float(ignition_cfg.get("theta_on", 0.62))
+    theta_off = float(ignition_cfg.get("theta_off", 0.48))
+    corr = field_state.get("rho_I_corr")
+    mean_I = field_state.get("Ignition_mean")
+    suggestion: Optional[Dict[str, Any]] = None
+    if corr is not None and math.isfinite(corr) and corr < 0.2:
+        new_on = round(max(0.4, min(0.9, theta_on - 0.02)), 3)
+        new_off = round(max(0.2, min(new_on - 0.05, theta_off - 0.02)), 3)
+        suggestion = {
+            "reason": f"rho/I correlation low ({corr:.3f})",
+            "theta_on": {"current": theta_on, "suggested": new_on},
+            "theta_off": {"current": theta_off, "suggested": new_off},
+        }
+    elif mean_I is not None and math.isfinite(mean_I) and mean_I > 0.8:
+        new_on = round(min(0.95, theta_on + 0.01), 3)
+        new_off = round(min(new_on - 0.02, theta_off + 0.01), 3)
+        suggestion = {
+            "reason": f"Ignition mean high ({mean_I:.3f})",
+            "theta_on": {"current": theta_on, "suggested": new_on},
+            "theta_off": {"current": theta_off, "suggested": new_off},
+        }
+    elif mean_I is not None and math.isfinite(mean_I) and mean_I < 0.3:
+        new_on = round(max(theta_on - 0.01, theta_off + 0.05), 3)
+        suggestion = {
+            "reason": f"Ignition mean low ({mean_I:.3f})",
+            "theta_on": {"current": theta_on, "suggested": new_on},
+            "theta_off": {"current": theta_off, "suggested": theta_off},
+        }
+    return suggestion
+
+
+def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Path:
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    field_state = report.get("field_state") or {}
+    stats = {
+        "mean": {
+            "S": field_state.get("S_mean"),
+            "H": field_state.get("H_mean"),
+            "rho": field_state.get("rho_mean"),
+            "I": field_state.get("Ignition_mean"),
+        },
+        "corr": {
+            "rho_I": field_state.get("rho_I_corr"),
+            "S_I": field_state.get("S_I_corr"),
+            "H_I": field_state.get("H_I_corr"),
+        },
+    }
+    plots = {k: str(v) for k, v in report.get("plots", {}).items()}
+    payload = {
+        "schema": "nightly.v1",
+        "ts": int(time.time()),
+        "config_snapshot": report.get("config_snapshot", {}),
+        "stats": stats,
+        "tuning_suggestion": report.get("tuning_suggestion"),
+        "warnings": report.get("warnings", []),
+        "alerts": report.get("alerts", []),
+        "run_seed": report.get("run_seed"),
+        "plots": plots,
+    }
+    json_path = out_path / "nightly.json"
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return json_path
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Generate nightly summary from telemetry")
+    parser.add_argument("--telemetry_log", default="logs/telemetry_events.jsonl")
+    parser.add_argument("--plots_dir", default="reports/plots")
+    parser.add_argument("--markdown_path", default="reports/nightly.md")
+    args = parser.parse_args()
+    report: Dict[str, Any] = {"ts": time.time()}
+    _generate_telemetry_section(report, Path(args.telemetry_log), Path(args.plots_dir), Path(args.markdown_path))
+    if report.get("alerts"):
+        print("[nightly] alerts:", ", ".join(report["alerts"]))
+    else:
+        print("[nightly] alerts: none")
+    print(f"Nightly summary written to {args.markdown_path}")
+
+
 __all__ = ["run", "_apply_go_sc_gate", "_summarize_fastpath_metrics", "_summarize_inner_replay_metrics"]
+
+
+if __name__ == "__main__":
+    main()

@@ -1,5 +1,24 @@
 # -*- coding: utf-8 -*-
-"""Continuous emotional energy field (EQNet) prototype."""
+"""Continuous emotional energy field (EQNet) prototype.
+
+The field keeps three bounded thermodynamic-style indicators that downstream
+controllers can rely on without re-deriving the maths each time:
+
+* ``S`` — entropy normalised to ``[0, 1]`` (higher = more disorder)
+* ``H`` — enthalpy/energy carrier normalised to ``[0, 1]``
+* ``ρ`` — synchrony/density proxy derived from gradient magnitudes (higher =
+  calmer flow, lower gradients)
+
+Together with a reward delta ``ΔR`` (see :mod:`devlife.runtime.loop`), the
+Ignition Index is anchored to the contract::
+
+    I = w₁·ΔR_norm + w₂·(1 − S)
+    w₁ + w₂ = 1,   S ∈ [0, 1]
+
+which guarantees ``∂I/∂S ≤ 0`` and ``∂I/∂ΔR ≥ 0`` when the weights are
+non-negative.  This file focuses on producing stable S/H/ρ signals so that the
+loop only has to reason about combining them.
+"""
 
 from __future__ import annotations
 
@@ -192,24 +211,45 @@ class EmotionField:
         return self._bilinear_sample(arr, x, y)
 
     def compute_metrics(self) -> Dict[str, float]:
-        """Return thermodynamic-style summaries of the current field."""
+        """Return bounded thermodynamic summaries of the current field."""
         snapshot = self.snapshot()
-        energy = snapshot["energy"]
-        shift = energy - energy.max()
+        energy = np.nan_to_num(snapshot["energy"], nan=0.0, posinf=0.0, neginf=0.0)
+        shift = energy - np.nanmax(energy)
         exp = np.exp(shift)
-        prob = exp / (exp.sum() + 1e-12)
-        entropy = float(-np.sum(prob * np.log(prob + 1e-12)))
+        exp_sum = exp.sum() + 1e-12
+        prob = exp / exp_sum
+        raw_entropy = float(-np.sum(prob * np.log(prob + 1e-12)))
+        grid_size = max(2, energy.size)
+        entropy_cap = math.log(grid_size)
+        entropy_norm = float(np.clip(raw_entropy / entropy_cap, 0.0, 1.0))
+
         dissipation = float(self.params.lam * np.sum(np.abs(energy)))
-        info_flux = float(np.mean(snapshot["magnitude"]))
-        enthalpy = energy + self.params.enthalpy_gain * self.memory
+        info_flux = float(np.mean(np.nan_to_num(snapshot["magnitude"], nan=0.0)))
+
+        enthalpy = np.nan_to_num(energy + self.params.enthalpy_gain * self.memory, nan=0.0)
+        enthalpy_mean = float(enthalpy.mean())
+        enthalpy_var = float(enthalpy.var())
+        enthalpy_norm = float(np.clip(0.5 + 0.5 * np.tanh(enthalpy_mean), 0.0, 1.0))
+
+        grad_x, grad_y = np.gradient(energy)
+        grad_mag = np.sqrt(grad_x ** 2 + grad_y ** 2)
+        grad_mean = float(np.mean(np.nan_to_num(grad_mag, nan=0.0)))
+        rho_norm = float(np.clip(1.0 - math.tanh(grad_mean), 0.0, 1.0))
+
+        energy_mean = float(energy.mean())
+        energy_var = float(energy.var())
         return {
-            "entropy": entropy,
+            "entropy": raw_entropy,
+            "entropy_norm": entropy_norm,
+            "enthalpy_norm": enthalpy_norm,
+            "rho_norm": rho_norm,
             "dissipation": dissipation,
             "info_flux": info_flux,
-            "energy_mean": float(energy.mean()),
-            "energy_var": float(energy.var()),
-            "enthalpy_mean": float(enthalpy.mean()),
-            "enthalpy_var": float(enthalpy.var()),
+            "energy_mean": energy_mean,
+            "energy_var": energy_var,
+            "enthalpy_mean": enthalpy_mean,
+            "enthalpy_var": enthalpy_var,
+            "grad_mean": grad_mean,
         }
 
     def qualia_signature(

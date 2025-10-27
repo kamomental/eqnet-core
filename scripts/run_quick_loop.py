@@ -13,6 +13,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
+from pathlib import Path
+import random
+import time
+
+import numpy as np
 
 from devlife.core.body_nca import BodyNCA, BodyConfig
 from devlife.core.grn import SimpleGRN
@@ -22,6 +28,8 @@ from devlife.runtime.archive import EpisodeArchive
 from devlife.runtime.loop import DevelopmentLoop, StageConfig, SleepConfig
 from devlife.runtime.alerts import AlertsLogger
 from runtime.router import RuntimeRouter, AutonomyLevel, RouterConfig
+from runtime.config import load_runtime_cfg
+from telemetry import event as telemetry_event
 
 
 def main() -> None:
@@ -36,7 +44,38 @@ def main() -> None:
     ap.add_argument("--tom_med_window", type=int, default=5, help="ToM median filter window")
     ap.add_argument("--tom_rate_limit", type=float, default=0.15, help="ToM rate limit per step (fraction)")
     ap.add_argument("--selfother_thresh", type=float, default=0.15, help="Self/Other conflict threshold")
+    ap.add_argument(
+        "--field_metrics_log",
+        type=str,
+        default="",
+        help="Optional path to a terrain field_metrics log (JSON or JSONL) to replay into the loop.",
+    )
+    ap.add_argument(
+        "--telemetry_log",
+        type=str,
+        default="",
+        help="Override telemetry log path (default: telemetry/ignition-YYYYMMDD.jsonl).",
+    )
+    ap.add_argument(
+        "--print-config",
+        action="store_true",
+        help="Print the resolved runtime configuration and exit.",
+    )
+    ap.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility.")
     args = ap.parse_args()
+    runtime_cfg = load_runtime_cfg()
+    if args.print_config:
+        print(runtime_cfg)
+        return
+    seed = args.seed if args.seed is not None else int(time.time() * 1000) % 1_000_000
+    random.seed(seed)
+    try:
+        import numpy as np
+
+        np.random.seed(seed)
+    except Exception:
+        pass
+    print(f"[run_quick_loop] seed={seed}")
 
     body = BodyNCA(BodyConfig())
     grn = SimpleGRN()
@@ -69,6 +108,14 @@ def main() -> None:
         tom = None
         selfother = None
 
+    telemetry_template = args.telemetry_log or runtime_cfg.telemetry.log_path
+    telemetry_path = _resolve_log_path(telemetry_template)
+
+    def _telemetry_hook(name, payload):
+        if telemetry_event is None:
+            return
+        telemetry_event(name, payload, log_path=telemetry_path)
+
     loop = DevelopmentLoop(
         body,
         grn,
@@ -85,7 +132,19 @@ def main() -> None:
         mood_integrator=mood,
         selfother=selfother,
         theory_of_mind=tom,
+        telemetry_hook=_telemetry_hook,
+        runtime_cfg=runtime_cfg,
     )
+    print(f"[info] telemetry log: {telemetry_path}")
+    if telemetry_event is not None:
+        telemetry_event("run.seed", {"seed": seed}, log_path=telemetry_path)
+    if args.field_metrics_log:
+        fm_path = Path(args.field_metrics_log)
+        if fm_path.exists():
+            loop.load_field_metrics_log(fm_path)
+            print(f"[info] loaded field metrics log from {fm_path}")
+        else:
+            print(f"[warn] field metrics log not found: {fm_path}")
     # Router ToM thresholds
     router.config.trust_low = args.tom_trust_thresh
     router.config.trust_high = args.tom_trust_high
@@ -100,3 +159,9 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def _resolve_log_path(template: str) -> Path:
+    if "%" in template:
+        return Path(datetime.utcnow().strftime(template))
+    return Path(template)

@@ -3,7 +3,7 @@ import os
 import json
 import numpy as np
 from pathlib import Path
-from typing import Dict, List
+from typing import Callable, Dict, List
 from datetime import datetime, timedelta, date
 from .emotion import AXES, extract_emotion
 from .field import EmotionField, FieldParams
@@ -20,7 +20,7 @@ from .catalyst import CatalystManager, CatalystParams
 from .community import CommunityOrchestrator, CommunityProfile, Turn
 
 class EmotionalMemorySystem:
-    def __init__(self, state_dir: str):
+    def __init__(self, state_dir: str, *, metrics_sink: Callable[[Dict[str, float]], None] | None = None, metrics_log_path: str | Path | None = None):
         self.state_dir = Path(state_dir)
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.terrain = EmotionalTerrain()
@@ -67,6 +67,10 @@ class EmotionalMemorySystem:
         self._rest_mode_until = None
         self.rest_history_limit = int(os.getenv("REST_HISTORY_LIMIT", "128"))
         self._rest_history = []
+        self._field_metrics_sink = metrics_sink
+        self._field_metrics_log_path = Path(metrics_log_path) if metrics_log_path else None
+        if self._field_metrics_log_path is not None:
+            self._field_metrics_log_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _state_paths(self):
         return {
@@ -226,6 +230,7 @@ class EmotionalMemorySystem:
         self.field_metrics_log.append(metrics_record)
         if len(self.field_metrics_log) > 1000:
             self.field_metrics_log.pop(0)
+        self._emit_field_metrics(metrics_record)
         entropy_val = metrics_record.get("entropy", 0.0)
         enthalpy_val = metrics_record.get("enthalpy_mean", 0.0)
         fatigue_active = (
@@ -348,6 +353,14 @@ class EmotionalMemorySystem:
 
     def field_metrics_state(self):
         return self.field_metrics_log
+
+    def enable_field_metrics_logging(self, path: str | Path) -> None:
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        self._field_metrics_log_path = target
+
+    def set_field_metrics_sink(self, sink: Callable[[Dict[str, float]], None] | None) -> None:
+        self._field_metrics_sink = sink
 
     def catalyst_events_state(self):
         return self.catalyst.to_json()
@@ -581,3 +594,17 @@ class EmotionalMemorySystem:
                 for example in node.get("examples", []):
                     example.pop("qualia", None)
             self.memory_palace.qualia_state = self.memory_palace._default_qualia_state()
+
+    def _emit_field_metrics(self, metrics_record: Dict[str, float]) -> None:
+        if self._field_metrics_sink is not None:
+            try:
+                self._field_metrics_sink(dict(metrics_record))
+            except Exception:
+                # Sink failures should not break ingestion but should also not be silently swallowed.
+                self.community_last_error = "field_metrics_sink_error"
+        if self._field_metrics_log_path is not None:
+            try:
+                with self._field_metrics_log_path.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(metrics_record, ensure_ascii=False) + "\n")
+            except Exception:
+                self.community_last_error = "field_metrics_log_error"

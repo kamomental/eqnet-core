@@ -160,3 +160,35 @@ an understanding beyond culture,
 and the beginning of **a symbiotic intelligence that circulates with life.**
 
 > *It does not imitate life — it circulates with it.*
+
+## Developer Quick Checks
+
+1. **依存関係の準備**
+   ```bash
+   python -m pip install --upgrade pip
+   pip install -r requirements-dev.txt
+   ```
+2. **フィールド ↔ ループ整合テスト**
+   ```bash
+   pytest -q tests/test_field_runtime_metrics.py
+   ```
+
+### 最短E2E（実録→Nightly→可視化）
+
+```bash
+pip install -r requirements-dev.txt
+python scripts/run_quick_loop.py --field_metrics_log data/field_metrics.jsonl --steps 200 [--seed 20251027]
+python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMMDD.jsonl
+```
+
+生成される主要成果物:
+
+- `telemetry/ignition-YYYYMMDD.jsonl`（実録のシード付きテレメトリ）
+- `reports/nightly.md`（テキストサマリ + プロットリンク）
+- `reports/nightly.json`（JSONスキーマ `nightly.v1` 準拠の機械可読レポート）
+- `reports/plots/ignition_timeseries.png`
+- `reports/plots/rho_vs_I_scatter.png`
+- `reports/plots/memory_graph.png`
+
+この 3 コマンドだけで **S/H/ρ → Ignition → Telemetry → Nightly** のループをいつでも再現し、ログ／可視化／JSON を同時に確保できます。
+
