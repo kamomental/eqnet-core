@@ -40,7 +40,10 @@ if __name__ == "__main__":
     seed_demo()
     nightly_id = "nightly-local"
     total, forgiven, stats = evaluate_and_forgive(nightly_id, base_threshold=0.35)
-    update = policy_update_from_forgiveness(nightly_id)
+    update = policy_update_from_forgiveness(
+        nightly_id,
+        events_detail=stats.get("events_detail"),
+    )
     print(
         "DONE:",
         {
@@ -50,6 +53,8 @@ if __name__ == "__main__":
             "used_threshold": stats.get("forgive_threshold"),
             "policy_threshold": update.get("policy_feedback_threshold"),
             "empathy_gain": update.get("a2a_empathy_gain"),
+            "avg_replay_fidelity": stats.get("avg_replay_fidelity"),
+            "care_stats": stats.get("care_stats"),
         },
     )
 

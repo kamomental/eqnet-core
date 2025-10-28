@@ -67,6 +67,7 @@ class ResonanceCfg:
 
 @dataclass
 class PainLoopCfg:
+    adaptive: bool = field(default=True)
     forgive_threshold: float = field(default=0.35)
     rotate_daily: bool = field(default=False)
     max_events_per_nightly: int = field(default=2000)
@@ -81,6 +82,27 @@ class PainLoopCfg:
     min_samples: int = field(default=50)
     severity_window: int = field(default=200)
     max_empathy: float = field(default=0.5)
+    replay_eval: bool = field(default=False)
+    care_targets: list[str] = field(default_factory=list)
+    comfort_gain_base: float = field(default=0.15)
+    protection_bias: float = field(default=0.3)
+    growth_reward: float = field(default=0.2)
+    patience_budget: float = field(default=0.5)
+    care_mode: "CareModeCfg" = field(default_factory=lambda: CareModeCfg())
+
+
+@dataclass
+class CareModeBudgetsCfg:
+    l1: float = field(default=0.8)
+    l_inf: float = field(default=0.3)
+
+
+@dataclass
+class CareModeCfg:
+    enabled: bool = field(default=True)
+    canary_ratio: float = field(default=0.0)
+    canary_seed: int = field(default=227)
+    budgets: CareModeBudgetsCfg = field(default_factory=CareModeBudgetsCfg)
 
 
 @dataclass
@@ -114,7 +136,11 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
     )
     alerts = _merge_dataclass(AlertsCfg(), payload.get("alerts", {}))
     resonance = _merge_dataclass(ResonanceCfg(), payload.get("resonance", {}))
-    pain_loop = _merge_dataclass(PainLoopCfg(), payload.get("pain_loop", {}))
+    pain_loop = _merge_dataclass(
+        PainLoopCfg(),
+        payload.get("pain_loop", {}),
+        extra_factories={"care_mode": (CareModeCfg, {"budgets": CareModeBudgetsCfg})},
+    )
     return RuntimeCfg(
         ignition=ignition,
         telemetry=telemetry,
@@ -133,8 +159,13 @@ def _merge_dataclass(instance, overrides: dict[str, Any], extra_factories: dict[
         if key not in data:
             continue
         if extra_factories and key in extra_factories and isinstance(value, dict):
-            factory_cls = extra_factories[key]
-            data[key] = _merge_dataclass(factory_cls(), value)
+            factory_spec = extra_factories[key]
+            nested_factories = None
+            if isinstance(factory_spec, tuple):
+                factory_cls, nested_factories = factory_spec
+            else:
+                factory_cls = factory_spec
+            data[key] = _merge_dataclass(factory_cls(), value, nested_factories)
         else:
             data[key] = value
     return instance.__class__(**data)
@@ -163,4 +194,6 @@ __all__ = [
     "AlertsCfg",
     "ResonanceCfg",
     "PainLoopCfg",
+    "CareModeCfg",
+    "CareModeBudgetsCfg",
 ]

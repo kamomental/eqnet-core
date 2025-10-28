@@ -14,7 +14,7 @@ from bisect import bisect_left
 from collections import defaultdict
 from pathlib import Path
 from statistics import mean, median
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 import numpy as np
 import yaml
@@ -47,7 +47,11 @@ from telemetry import plot_culture_resonance
 from telemetry import plot_culture_trend
 from ops import resonance_metrics
 from telemetry import plot_affective_map
-from emot_terrain_lab.ops.pain_loop import evaluate_and_forgive, policy_update_from_forgiveness
+from calendar import monthrange
+
+from emot_terrain_lab.ops.care_canary import select_canary_ids
+from emot_terrain_lab.ops.monthly_highlights import generate_value_influence_highlights
+from emot_terrain_lab.ops.pain_loop import VALUE_INFLUENCE_LOG, evaluate_and_forgive, policy_update_from_forgiveness
 
 def _ensure_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1696,6 +1700,20 @@ def _generate_telemetry_section(
             max_events_int = int(max_events_cfg) if max_events_cfg is not None else None
         except (TypeError, ValueError):
             max_events_int = None
+        care_targets_cfg = pain_cfg.get("care_targets", [])
+        if isinstance(care_targets_cfg, str):
+            care_targets_list = [care_targets_cfg]
+        elif isinstance(care_targets_cfg, Iterable):
+            care_targets_list = [str(x) for x in care_targets_cfg if isinstance(x, (str, bytes))]
+        else:
+            care_targets_list = []
+        comfort_gain_base = float(pain_cfg.get("comfort_gain_base", 0.15))
+        protection_bias = float(pain_cfg.get("protection_bias", 0.3))
+        growth_reward = float(pain_cfg.get("growth_reward", 0.2))
+        patience_budget = float(pain_cfg.get("patience_budget", 0.5))
+        ema_alpha_cfg = float(pain_cfg.get("ema_alpha", 0.4))
+        l1_budget_cfg = float(pain_cfg.get("l1_budget", 0.8))
+        l_inf_budget_cfg = float(pain_cfg.get("l_inf_budget", 0.3))
         total, forgiven, pain_stats = evaluate_and_forgive(
             nightly_id,
             base_threshold=float(pain_cfg.get("forgive_threshold", 0.35)),
@@ -1707,28 +1725,138 @@ def _generate_telemetry_section(
             severity_window=int(pain_cfg.get("severity_window", 200)),
             rotate_daily=bool(pain_cfg.get("rotate_daily", False)),
             max_events=max_events_int,
+            care_targets=care_targets_list,
+            comfort_gain_base=comfort_gain_base,
+            protection_bias=protection_bias,
+            growth_reward=growth_reward,
+            patience_budget=patience_budget,
+            replay_eval=bool(pain_cfg.get("replay_eval", False)),
         )
         policy_update = policy_update_from_forgiveness(
             nightly_id,
             base_threshold=float(pain_cfg.get("policy_threshold_base", 0.5)),
             empathy_gain_base=float(pain_cfg.get("a2a_empathy_gain_base", 0.1)),
-            ema_alpha=float(pain_cfg.get("ema_alpha", 0.4)),
-            l1_budget=float(pain_cfg.get("l1_budget", 0.8)),
-            l_inf_budget=float(pain_cfg.get("l_inf_budget", 0.3)),
+            ema_alpha=ema_alpha_cfg,
+            l1_budget=l1_budget_cfg,
+            l_inf_budget=l_inf_budget_cfg,
             min_threshold=float(pain_cfg.get("min_threshold", 0.2)),
             max_threshold=float(pain_cfg.get("max_threshold", 0.6)),
             max_empathy=float(pain_cfg.get("max_empathy", 0.5)),
+            events_detail=pain_stats.get("events_detail"),
         )
         unforgiven_total = max(total - forgiven, 0)
-        report["pain_loop"] = {
+        events_detail = pain_stats.get("events_detail") or []
+        value_shift = policy_update.get("value_shift", {}) if isinstance(policy_update, Mapping) else {}
+        influence_agg: Dict[Tuple[str, bool], Dict[str, Any]] = {}
+        for detail in events_detail:
+            harmed = detail.get("harmed_values") or ["unspecified"]
+            care_flag = bool(detail.get("care_target"))
+            severity = float(detail.get("severity") or 0.0)
+            for value_name in harmed:
+                key = (value_name, care_flag)
+                bucket = influence_agg.setdefault(
+                    key,
+                    {
+                        "value": value_name,
+                        "care_target": care_flag,
+                        "severity_sum": 0.0,
+                        "count": 0,
+                        "delta_empathy_gain": float(value_shift.get("delta_empathy_gain", 0.0)),
+                        "delta_policy_threshold": float(value_shift.get("delta_policy_threshold", 0.0)),
+                    },
+                )
+                bucket["severity_sum"] += severity
+                bucket["count"] += 1
+        influence_top: List[Dict[str, Any]] = []
+        if influence_agg:
+            ordered = sorted(influence_agg.values(), key=lambda item: item["severity_sum"], reverse=True)
+            for entry in ordered[:5]:
+                influence_top.append(
+                    {
+                        "value": entry["value"],
+                        "care_target": entry["care_target"],
+                        "severity_sum": entry["severity_sum"],
+                        "count": entry["count"],
+                        "delta_empathy_gain": entry["delta_empathy_gain"],
+                        "delta_policy_threshold": entry["delta_policy_threshold"],
+                    }
+                )
+        care_mode_cfg = pain_cfg.get("care_mode", {}) if isinstance(pain_cfg, Mapping) else {}
+        canary_enabled = bool(care_mode_cfg.get("enabled", True))
+        canary_ratio = float(care_mode_cfg.get("canary_ratio", 0.0))
+        canary_seed = int(care_mode_cfg.get("canary_seed", 227))
+        budgets_cfg = care_mode_cfg.get("budgets", {}) if isinstance(care_mode_cfg, Mapping) else {}
+        canary_l1 = float(budgets_cfg.get("l1", l1_budget_cfg))
+        canary_l_inf = float(budgets_cfg.get("l_inf", l_inf_budget_cfg))
+
+        care_candidates = [
+            str(detail.get("target"))
+            for detail in events_detail
+            if detail.get("care_target") and detail.get("target")
+        ]
+        care_candidates = sorted(set(candidate for candidate in care_candidates if candidate))
+        if canary_enabled and care_candidates:
+            selected_ids = select_canary_ids(care_candidates, canary_ratio, canary_seed)
+        else:
+            selected_ids = set()
+        care_canary = {
+            "enabled": canary_enabled,
+            "ratio": canary_ratio,
+            "seed": canary_seed,
+            "candidates": len(care_candidates),
+            "selected": len(selected_ids),
+            "selected_ids": sorted(selected_ids),
+            "budgets": {"l1": canary_l1, "l_inf": canary_l_inf},
+        }
+
+        care_stats_raw = pain_stats.get("care_stats")
+        care_stats = dict(care_stats_raw) if isinstance(care_stats_raw, Mapping) else {}
+        if care_stats:
+            care_stats["targets"] = care_stats.get("targets", {})
+            care_stats["canary"] = {
+                "applied": len(selected_ids),
+                "candidates": len(care_candidates),
+                "ratio": canary_ratio,
+            }
+
+        pain_loop_info = {
             "total": total,
             "forgiven": forgiven,
             "unforgiven_total": unforgiven_total,
             "forgive_rate": pain_stats.get("forgive_rate"),
             "used_forgive_threshold": pain_stats.get("forgive_threshold"),
             "breakdown": pain_stats.get("breakdown", {}),
+            "care_stats": care_stats,
             "policy_update": policy_update,
+            "ema_alpha": ema_alpha_cfg,
+            "l1_budget": l1_budget_cfg,
+            "l_inf_budget": l_inf_budget_cfg,
+            "comfort_gain_base": comfort_gain_base,
+            "protection_bias": protection_bias,
+            "growth_reward": growth_reward,
+            "patience_budget": patience_budget,
+            "value_influence_top": influence_top,
+            "care_canary": care_canary,
         }
+
+        today = dt.datetime.utcnow().date()
+        last_day = monthrange(today.year, today.month)[1]
+        monthly_limit = int(pain_cfg.get("monthly_highlight_limit", 5))
+        if today.day == last_day:
+            try:
+                monthly = generate_value_influence_highlights(
+                    month=today.strftime("%Y-%m"),
+                    limit=monthly_limit,
+                    log_path=VALUE_INFLUENCE_LOG,
+                    output_dir="reports/monthly",
+                    write_files=True,
+                )
+                pain_loop_info["monthly_highlights"] = monthly.get("items", [])
+                pain_loop_info["monthly_highlights_paths"] = monthly.get("paths")
+            except Exception as exc:
+                report.setdefault("warnings", []).append(f"value_influence_highlights_failed: {exc}")
+
+        report["pain_loop"] = pain_loop_info
     except Exception as exc:
         report.setdefault("warnings", []).append(f"pain_loop_failed: {exc}")
 
@@ -1928,16 +2056,62 @@ def _write_markdown_summary(
         used_threshold = _fmt_float(pain_loop.get("used_forgive_threshold"))
         policy_update = pain_loop.get("policy_update", {})
         lines.append(
-            f"- Pain→Forgive: {forgiven}/{total} (rate {rate}), used_threshold={used_threshold}"
+            f"- Pain->Forgive: {forgiven}/{total} (rate {rate}), used_threshold={used_threshold}"
         )
         lines.append(
-            "- policy_threshold={} empathy_gain={} (EMA, L1={}, L∞={})".format(
+            "- policy_threshold={} empathy_gain={} (EMA, L1={}, L_inf={})".format(
                 _fmt_float(policy_update.get("policy_feedback_threshold")),
                 _fmt_float(policy_update.get("a2a_empathy_gain")),
-                _fmt_float(policy_update.get("l1_budget")),
-                _fmt_float(policy_update.get("l_inf_budget")),
+                _fmt_float(pain_loop.get("l1_budget", policy_update.get("l1_budget"))),
+                _fmt_float(pain_loop.get("l_inf_budget", policy_update.get("l_inf_budget"))),
             )
         )
+        care_stats = pain_loop.get("care_stats") or {}
+        if care_stats:
+            intv = int(care_stats.get("interventions", 0))
+            watch = int(care_stats.get("watch_only", 0))
+            targets = care_stats.get("targets") or {}
+            top_targets: List[Tuple[str, Any]] = []
+            for tgt, entry in targets.items():
+                try:
+                    total_care = int(entry.get("total", 0))
+                except Exception:
+                    total_care = 0
+                if total_care > 0:
+                    top_targets.append((tgt, total_care))
+            top_targets.sort(key=lambda x: x[1], reverse=True)
+            summary = ", ".join(f"{name}:{count}" for name, count in top_targets[:2]) if top_targets else "none"
+            canary_stats = care_stats.get("canary") or {}
+            canary_applied = canary_stats.get("applied", 0)
+            canary_candidates = canary_stats.get("candidates", 0)
+            lines.append(
+                f"- Care: interventions {intv}, watch {watch}, top targets: {summary} "
+                f"(canary {canary_applied}/{canary_candidates})"
+            )
+            lines.append(
+                "- comfort_gain={} protection_bias={} (EMA, L1={}, L_inf={})".format(
+                    _fmt_float(care_stats.get("comfort_gain_applied")),
+                    _fmt_float(pain_loop.get("protection_bias")),
+                    _fmt_float(pain_loop.get("l1_budget")),
+                    _fmt_float(pain_loop.get("l_inf_budget")),
+                )
+            )
+        influence_top = pain_loop.get("value_influence_top") or []
+        if influence_top:
+            rendered = ", ".join(
+                f"{item.get('value','?')}@{'care' if item.get('care_target') else 'all'}"
+                f"(dE={_fmt_float(item.get('delta_empathy_gain'))})"
+                for item in influence_top[:3]
+            )
+            lines.append(f"- value_influence: {rendered}")
+        monthly_highlights = pain_loop.get("monthly_highlights") or []
+        if monthly_highlights:
+            summary = ", ".join(
+                f"{item.get('value','?')}@{'care' if item.get('care_target') else 'all'}"
+                f"(sum={item.get('sum_delta_empathy_gain', 0.0):.4f})"
+                for item in monthly_highlights[:3]
+            )
+            lines.append(f"- monthly_highlights: {summary}")
         breakdown = (pain_loop.get("breakdown") or {}).get("by_kind") or {}
         top_unforgiven: List[Tuple[str, int]] = []
         for kind, stats in breakdown.items():

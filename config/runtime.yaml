@@ -60,6 +60,7 @@ resonance:
   alpha: 0.0
   beta: 0.0
 pain_loop:
+  adaptive: true
   forgive_threshold: 0.35
   rotate_daily: true
   max_events_per_nightly: 2000
@@ -74,3 +75,16 @@ pain_loop:
   min_samples: 50
   severity_window: 200
   max_empathy: 0.5
+  replay_eval: false
+  care_targets: []
+  comfort_gain_base: 0.15
+  protection_bias: 0.3
+  growth_reward: 0.2
+  patience_budget: 0.5
+  care_mode:
+    enabled: true
+    canary_ratio: 0.1
+    canary_seed: 227
+    budgets:
+      l1: 0.8
+      l_inf: 0.3
