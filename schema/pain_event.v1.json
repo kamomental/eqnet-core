@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["ts_ms", "kind", "delta_aff", "reasons", "hp", "context"],
+  "properties": {
+    "ts_ms": { "type": "integer" },
+    "kind": {
+      "type": "string",
+      "enum": ["isolation", "energy_depletion", "value_conflict", "other"]
+    },
+    "delta_aff": { "type": "number" },
+    "reasons": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "hp": {
+      "type": "object",
+      "properties": {
+        "emotional": { "type": "number" },
+        "metabolic": { "type": "number" },
+        "ethical": { "type": "number" }
+      },
+      "required": ["emotional", "metabolic", "ethical"]
+    },
+    "context": { "type": "object" },
+    "labels": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

@@ -47,6 +47,7 @@ from telemetry import plot_culture_resonance
 from telemetry import plot_culture_trend
 from ops import resonance_metrics
 from telemetry import plot_affective_map
+from emot_terrain_lab.ops.pain_loop import evaluate_and_forgive, policy_update_from_forgiveness
 
 def _ensure_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1225,6 +1226,7 @@ def _generate_telemetry_section(
         report["vision_snapshot"] = vision_summary
     cfg_dict = _load_runtime_cfg_dict(Path("config/runtime.yaml"))
     report["config_snapshot"] = cfg_dict
+    nightly_id = report.setdefault("nightly_id", dt.datetime.utcnow().strftime("N-%Y%m%d-%H%M%S"))
     tuning = _derive_tuning_suggestion(field_state, cfg_dict)
     if tuning:
         report["tuning_suggestion"] = tuning
@@ -1687,6 +1689,49 @@ def _generate_telemetry_section(
         except Exception as exc:
             report.setdefault("warnings", []).append(f"policy_feedback_history_failed: {exc}")
 
+    pain_cfg = cfg_dict.get("pain_loop", {}) if isinstance(cfg_dict, dict) else {}
+    try:
+        max_events_cfg = pain_cfg.get("max_events_per_nightly")
+        try:
+            max_events_int = int(max_events_cfg) if max_events_cfg is not None else None
+        except (TypeError, ValueError):
+            max_events_int = None
+        total, forgiven, pain_stats = evaluate_and_forgive(
+            nightly_id,
+            base_threshold=float(pain_cfg.get("forgive_threshold", 0.35)),
+            adaptive=bool(pain_cfg.get("adaptive", True)),
+            min_threshold=float(pain_cfg.get("min_threshold", 0.2)),
+            max_threshold=float(pain_cfg.get("max_threshold", 0.6)),
+            quantile=float(pain_cfg.get("quantile", 0.35)),
+            min_samples=int(pain_cfg.get("min_samples", 50)),
+            severity_window=int(pain_cfg.get("severity_window", 200)),
+            rotate_daily=bool(pain_cfg.get("rotate_daily", False)),
+            max_events=max_events_int,
+        )
+        policy_update = policy_update_from_forgiveness(
+            nightly_id,
+            base_threshold=float(pain_cfg.get("policy_threshold_base", 0.5)),
+            empathy_gain_base=float(pain_cfg.get("a2a_empathy_gain_base", 0.1)),
+            ema_alpha=float(pain_cfg.get("ema_alpha", 0.4)),
+            l1_budget=float(pain_cfg.get("l1_budget", 0.8)),
+            l_inf_budget=float(pain_cfg.get("l_inf_budget", 0.3)),
+            min_threshold=float(pain_cfg.get("min_threshold", 0.2)),
+            max_threshold=float(pain_cfg.get("max_threshold", 0.6)),
+            max_empathy=float(pain_cfg.get("max_empathy", 0.5)),
+        )
+        unforgiven_total = max(total - forgiven, 0)
+        report["pain_loop"] = {
+            "total": total,
+            "forgiven": forgiven,
+            "unforgiven_total": unforgiven_total,
+            "forgive_rate": pain_stats.get("forgive_rate"),
+            "used_forgive_threshold": pain_stats.get("forgive_threshold"),
+            "breakdown": pain_stats.get("breakdown", {}),
+            "policy_update": policy_update,
+        }
+    except Exception as exc:
+        report.setdefault("warnings", []).append(f"pain_loop_failed: {exc}")
+
     alerts, alert_details = _compute_alerts(
         field_state or {},
         alerts_cfg,
@@ -1873,6 +1918,41 @@ def _write_markdown_summary(
             pose_str = ", ".join(f"{k}={_fmt_float(v)}" for k, v in pose_mean.items())
             lines.append(f"- pose_mean: {pose_str}")
         lines.extend(_render_vision_narrative(vision_summary))
+    pain_loop = report.get("pain_loop")
+    if isinstance(pain_loop, dict):
+        lines.append("")
+        lines.append("## Pain Loop")
+        total = int(pain_loop.get("total", 0))
+        forgiven = int(pain_loop.get("forgiven", 0))
+        rate = _fmt_float(pain_loop.get("forgive_rate"))
+        used_threshold = _fmt_float(pain_loop.get("used_forgive_threshold"))
+        policy_update = pain_loop.get("policy_update", {})
+        lines.append(
+            f"- Pain→Forgive: {forgiven}/{total} (rate {rate}), used_threshold={used_threshold}"
+        )
+        lines.append(
+            "- policy_threshold={} empathy_gain={} (EMA, L1={}, L∞={})".format(
+                _fmt_float(policy_update.get("policy_feedback_threshold")),
+                _fmt_float(policy_update.get("a2a_empathy_gain")),
+                _fmt_float(policy_update.get("l1_budget")),
+                _fmt_float(policy_update.get("l_inf_budget")),
+            )
+        )
+        breakdown = (pain_loop.get("breakdown") or {}).get("by_kind") or {}
+        top_unforgiven: List[Tuple[str, int]] = []
+        for kind, stats in breakdown.items():
+            try:
+                total_k = int(stats.get("total", 0))
+                forgiven_k = int(stats.get("forgiven", 0))
+            except Exception:
+                continue
+            delta = total_k - forgiven_k
+            if delta > 0:
+                top_unforgiven.append((kind, delta))
+        if top_unforgiven:
+            top_unforgiven.sort(key=lambda x: x[1], reverse=True)
+            summary = ", ".join(f"{kind}×{count}" for kind, count in top_unforgiven[:2])
+            lines.append(f"- Unforgiven top: {summary}")
     affective_stats = report.get("affective_stats")
     if isinstance(affective_stats, dict):
         lines.append("")
@@ -2072,6 +2152,7 @@ def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Pat
     payload = {
         "schema": "nightly.v1",
         "ts": int(time.time()),
+        "nightly_id": report.get("nightly_id"),
         "config_snapshot": report.get("config_snapshot", {}),
         "stats": stats,
         "tuning_suggestion": report.get("tuning_suggestion"),
@@ -2094,6 +2175,8 @@ def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Pat
         payload["policy_feedback"] = report["policy_feedback"]
     if report.get("policy_feedback_history_path"):
         payload["policy_feedback_history_path"] = report["policy_feedback_history_path"]
+    if report.get("pain_loop"):
+        payload["pain_loop"] = report["pain_loop"]
     if report.get("resonance_bayes_trace_path"):
         payload["resonance_bayes_trace_path"] = report["resonance_bayes_trace_path"]
     json_path = out_path / "nightly.json"

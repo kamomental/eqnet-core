@@ -66,6 +66,24 @@ class ResonanceCfg:
 
 
 @dataclass
+class PainLoopCfg:
+    forgive_threshold: float = field(default=0.35)
+    rotate_daily: bool = field(default=False)
+    max_events_per_nightly: int = field(default=2000)
+    policy_threshold_base: float = field(default=0.5)
+    a2a_empathy_gain_base: float = field(default=0.1)
+    ema_alpha: float = field(default=0.4)
+    l1_budget: float = field(default=0.8)
+    l_inf_budget: float = field(default=0.3)
+    min_threshold: float = field(default=0.2)
+    max_threshold: float = field(default=0.6)
+    quantile: float = field(default=0.35)
+    min_samples: int = field(default=50)
+    severity_window: int = field(default=200)
+    max_empathy: float = field(default=0.5)
+
+
+@dataclass
 class RuntimeCfg:
     ignition: IgnitionCfg = field(default_factory=IgnitionCfg)
     telemetry: TelemetryCfg = field(default_factory=TelemetryCfg)
@@ -74,6 +92,7 @@ class RuntimeCfg:
     culture: CultureCfg = field(default_factory=CultureCfg)
     alerts: AlertsCfg = field(default_factory=AlertsCfg)
     resonance: ResonanceCfg = field(default_factory=ResonanceCfg)
+    pain_loop: PainLoopCfg = field(default_factory=PainLoopCfg)
 
 
 def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
@@ -95,6 +114,7 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
     )
     alerts = _merge_dataclass(AlertsCfg(), payload.get("alerts", {}))
     resonance = _merge_dataclass(ResonanceCfg(), payload.get("resonance", {}))
+    pain_loop = _merge_dataclass(PainLoopCfg(), payload.get("pain_loop", {}))
     return RuntimeCfg(
         ignition=ignition,
         telemetry=telemetry,
@@ -103,6 +123,7 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
         culture=culture,
         alerts=alerts,
         resonance=resonance,
+        pain_loop=pain_loop,
     )
 
 
@@ -141,4 +162,5 @@ __all__ = [
     "CultureFeedbackCfg",
     "AlertsCfg",
     "ResonanceCfg",
+    "PainLoopCfg",
 ]
