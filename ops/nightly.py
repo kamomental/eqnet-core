@@ -49,6 +49,8 @@ from ops import resonance_metrics
 from telemetry import plot_affective_map
 from calendar import monthrange
 
+MEMORY_REF_LOG_PATH = Path("logs/memory_ref.jsonl")
+
 from emot_terrain_lab.ops.care_canary import select_canary_ids
 from emot_terrain_lab.ops.monthly_highlights import generate_value_influence_highlights
 from emot_terrain_lab.ops.pain_loop import VALUE_INFLUENCE_LOG, evaluate_and_forgive, policy_update_from_forgiveness
@@ -1170,6 +1172,52 @@ def _resolve_resonance_logs(specs: Iterable[str]) -> List[Tuple[str, Path]]:
     return resolved
 
 
+def _summarize_memory_reference(log_path: Path | None) -> Optional[Dict[str, Any]]:
+    if not log_path or not log_path.exists():
+        return None
+    asked = 0
+    high_fidelity = 0
+    repair_used = 0
+    repair_success = 0
+    disputed = 0
+    try:
+        with log_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                asked += 1
+                fidelity = float(row.get("fidelity", 0.0) or 0.0)
+                mode = str(row.get("mode", "recall"))
+                if fidelity >= 0.65:
+                    high_fidelity += 1
+                if mode == "mend":
+                    repair_used += 1
+                    if bool(row.get("repair_success")):
+                        repair_success += 1
+                if row.get("disputed"):
+                    disputed += 1
+    except Exception:
+        return None
+    if asked == 0:
+        return None
+    summary: Dict[str, Any] = {
+        "asked": asked,
+        "high_fidelity": high_fidelity,
+        "repair_used": repair_used,
+        "repair_success": repair_success,
+        "disputed": disputed,
+    }
+    summary["repair_success_rate"] = (
+        repair_success / max(1, repair_used) if repair_used > 0 else None
+    )
+    return summary
+
+
 def _summarize_culture_stats(log_path: Path | None) -> Optional[Dict[str, Dict[str, float]]]:
     if not log_path or not log_path.exists():
         return None
@@ -1244,6 +1292,15 @@ def _generate_telemetry_section(
     run_seed = _extract_run_seed(telemetry_log)
     if run_seed is not None:
         report["run_seed"] = run_seed
+
+    memory_ref_cfg = cfg_dict.get("memory_reference") if isinstance(cfg_dict, dict) else {}
+    log_path_str = memory_ref_cfg.get("log_path") if isinstance(memory_ref_cfg, dict) else None
+    memory_ref_path = Path(log_path_str) if log_path_str else MEMORY_REF_LOG_PATH
+    memory_ref_stats = _summarize_memory_reference(memory_ref_path)
+    if memory_ref_stats:
+        report["memory_match"] = memory_ref_stats
+        if memory_ref_stats.get("repair_success_rate") is not None:
+            report["repair_success_rate"] = memory_ref_stats["repair_success_rate"]
 
     report["plots"] = report.get("plots", {})
     plot_info: Dict[str, Path] = {}
@@ -2345,6 +2402,10 @@ def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Pat
         payload["culture_history_path"] = report["culture_history_path"]
     if report.get("vision_snapshot"):
         payload["vision_snapshot"] = report["vision_snapshot"]
+    if report.get("memory_match"):
+        payload["memory_match"] = report["memory_match"]
+    if report.get("repair_success_rate") is not None:
+        payload["repair_success_rate"] = report["repair_success_rate"]
     if report.get("policy_feedback"):
         payload["policy_feedback"] = report["policy_feedback"]
     if report.get("policy_feedback_history_path"):

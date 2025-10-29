@@ -1,0 +1,17 @@
+ja-JP:
+  casual:
+    - "これはいま感じ取った仮説だよ。もし違っていたら遠慮なく教えてね。"
+    - "いまのところの推測だよ。ズレていたらすぐ言って、もう少し聴いているね。"
+  support:
+    - "観測からの仮説です。違っていたら遠慮なく訂正してくださいね。こちらは受け止め続けます。"
+    - "これは手がかりベースの仮説です。もししっくり来なければ教えてください、一緒に整えましょう。"
+  polite:
+    - "ただいまの仮説でございます。もし違っていれば遠慮なくお知らせくださいませ。"
+en-US:
+  casual:
+    - "This is my current hypothesis. If I'm off, please tell me and I'll keep listening."
+    - "Just a quick guess based on what I'm sensing—correct me if it misses the mark."
+  support:
+    - "This is an observation-based hypothesis. If it feels wrong, let me know and I'll stay with you."
+  polite:
+    - "This is merely a working hypothesis. Please correct me if it does not match your sense."

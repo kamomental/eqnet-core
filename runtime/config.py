@@ -20,6 +20,21 @@ class TelemetryCfg:
 
 
 @dataclass
+class LatencyCfg:
+    tight_max_ms: float = field(default=500.0)
+    loose_max_ms: float = field(default=2000.0)
+    enable_loose: bool = field(default=True)
+
+
+@dataclass
+class LLMCfg:
+    model: str = field(default="gpt-oss20b(A3B)")
+    stream: bool = field(default=True)
+    max_tokens: int = field(default=96)
+    temperature: float = field(default=0.35)
+
+
+@dataclass
 class ReplayCfg:
     min_interval_ms: int = field(default=10)
     sample_every: int = field(default=1)
@@ -106,15 +121,64 @@ class CareModeCfg:
 
 
 @dataclass
+class BackchannelCfg:
+    enabled: bool = field(default=True)
+    nod_threshold: float = field(default=0.55)
+    aizuchi_threshold: float = field(default=0.45)
+    min_gap_ms: int = field(default=180)
+    cancel_on_voice_ms: int = field(default=50)
+    rate_limit_cpm: int = field(default=8)
+    silence_ms_for_nod: int = field(default=260)
+    silence_ms_for_aizuchi: int = field(default=420)
+    energy_bias: float = field(default=0.05)
+    culture: str = field(default="ja-JP")
+
+
+@dataclass
+class MemoryReferenceCfg:
+    enabled: bool = field(default=True)
+    k: int = field(default=3)
+    name_threshold: float = field(default=0.5)
+    fidelity_high: float = field(default=0.65)
+    fidelity_low: float = field(default=0.45)
+    anchor_high: float = field(default=0.5)
+    max_reply_chars: int = field(default=140)
+    cooldown_s: float = field(default=20.0)
+    log_path: str = field(default="logs/memory_ref.jsonl")
+    per_culture: Dict[str, Dict[str, float | int]] = field(default_factory=dict)
+
+
+@dataclass
+class ObserverDisclaimerCfg:
+    mode: str = field(default="llm_first")  # llm_first, template_only, fixed_only, llm_only, template_first
+    max_latency_ms: int = field(default=150)
+    rotation: str = field(default="deterministic")  # deterministic or random
+    templates_path: str = field(default="config/i18n/disclaimer.yaml")
+    community_bias: float = field(default=0.05)
+    i_message_bias: float = field(default=0.0)
+
+
+@dataclass
+class UiCfg:
+    community_update_ms: int = field(default=400)
+
+
+@dataclass
 class RuntimeCfg:
     ignition: IgnitionCfg = field(default_factory=IgnitionCfg)
     telemetry: TelemetryCfg = field(default_factory=TelemetryCfg)
+    latency: LatencyCfg = field(default_factory=LatencyCfg)
+    llm: LLMCfg = field(default_factory=LLMCfg)
     replay: ReplayCfg = field(default_factory=ReplayCfg)
     emotion: EmotionCfg = field(default_factory=EmotionCfg)
     culture: CultureCfg = field(default_factory=CultureCfg)
     alerts: AlertsCfg = field(default_factory=AlertsCfg)
     resonance: ResonanceCfg = field(default_factory=ResonanceCfg)
     pain_loop: PainLoopCfg = field(default_factory=PainLoopCfg)
+    backchannel: BackchannelCfg = field(default_factory=BackchannelCfg)
+    memory_reference: MemoryReferenceCfg = field(default_factory=MemoryReferenceCfg)
+    observer: ObserverDisclaimerCfg = field(default_factory=ObserverDisclaimerCfg)
+    ui: UiCfg = field(default_factory=UiCfg)
 
 
 def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
@@ -127,6 +191,8 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
         return RuntimeCfg()
     ignition = _merge_dataclass(IgnitionCfg(), payload.get("ignition", {}))
     telemetry = _merge_dataclass(TelemetryCfg(), payload.get("telemetry", {}))
+    latency = _merge_dataclass(LatencyCfg(), payload.get("latency", {}))
+    llm_cfg = _merge_dataclass(LLMCfg(), payload.get("llm", {}))
     replay = _merge_dataclass(ReplayCfg(), payload.get("replay", {}))
     emotion = _merge_dataclass(EmotionCfg(), payload.get("emotion", {}))
     culture = _merge_dataclass(
@@ -141,15 +207,25 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
         payload.get("pain_loop", {}),
         extra_factories={"care_mode": (CareModeCfg, {"budgets": CareModeBudgetsCfg})},
     )
+    backchannel = _merge_dataclass(BackchannelCfg(), payload.get("backchannel", {}))
+    memory_reference = _merge_dataclass(MemoryReferenceCfg(), payload.get("memory_reference", {}))
+    observer_cfg = _merge_dataclass(ObserverDisclaimerCfg(), payload.get("observer", {}))
+    ui_cfg = _merge_dataclass(UiCfg(), payload.get("ui", {}))
     return RuntimeCfg(
         ignition=ignition,
         telemetry=telemetry,
+        latency=latency,
+        llm=llm_cfg,
         replay=replay,
         emotion=emotion,
         culture=culture,
         alerts=alerts,
         resonance=resonance,
         pain_loop=pain_loop,
+        backchannel=backchannel,
+        memory_reference=memory_reference,
+        observer=observer_cfg,
+        ui=ui_cfg,
     )
 
 
@@ -187,6 +263,8 @@ __all__ = [
     "RuntimeCfg",
     "IgnitionCfg",
     "TelemetryCfg",
+    "LatencyCfg",
+    "LLMCfg",
     "ReplayCfg",
     "EmotionCfg",
     "CultureCfg",
@@ -196,4 +274,8 @@ __all__ = [
     "PainLoopCfg",
     "CareModeCfg",
     "CareModeBudgetsCfg",
+    "BackchannelCfg",
+    "MemoryReferenceCfg",
+    "ObserverDisclaimerCfg",
+    "UiCfg",
 ]

@@ -1,4 +1,4 @@
-"""Lightweight theory-of-mind with smoothing and rate limiting."""
+﻿"""Lightweight theory-of-mind with smoothing and rate limiting."""
 
 from __future__ import annotations
 
@@ -6,6 +6,15 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+
+
+@dataclass
+class TomSmoothingConfig:
+    """Smoothing/robustness knobs for intent trust."""
+
+    alpha: float = 0.2       # EMA coefficient (0.1-0.3 recommended)
+    med_window: int = 5      # Median filter window (odd)
+    rate_limit: float = 0.15 # Max fractional change per step (e.g., 0.15 = 15%)
 
 
 @dataclass
@@ -55,10 +64,3 @@ class TheoryOfMind:
             limited = float(np.clip(ema, self._trust_smoothed - max_delta, self._trust_smoothed + max_delta))
         self._trust_smoothed = float(np.clip(limited, 0.0, 1.0))
         return self._trust_smoothed
-@dataclass
-class TomSmoothingConfig:
-    """Smoothing/robustness knobs for intent trust."""
-
-    alpha: float = 0.2       # EMA coefficient (0.1–0.3 recommended)
-    med_window: int = 5      # Median filter window (odd)
-    rate_limit: float = 0.15 # Max fractional change per step (e.g., 0.15=15%)

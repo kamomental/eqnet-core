@@ -1,0 +1,57 @@
+ja-JP:
+  acceptance:
+    default:
+      - "そうだね、その気持ちをここでいっしょに受け止めるよ。"
+      - "うん、そう感じたんだね。ここでいっしょに聴いているよ。"
+  belonging:
+    default:
+      - "あなたはここで大切な仲間だよ。"
+      - "私たちは同じ輪の中にいるからね。"
+  co_agency:
+    default:
+      - "いまできる小さな一歩を、いっしょに探してみよう。"
+      - "手を取り合って、無理のないペースで進んでいこう。"
+  i_message:
+    default:
+      - "私はあなたとこの時間を大切にしながら話しているよ。"
+      - "私はいま、あなたのそばで感じていることを分かち合いたい。"
+  avoid_phrases:
+    - "それはあなたの課題"
+    - "それは私の課題ではない"
+    - "君の問題"
+
+en-US:
+  acceptance:
+    default:
+      - "Yeah, I'm right here—holding this with you."
+      - "I hear you; let's stay with this feeling together."
+  belonging:
+    default:
+      - "You belong here with us."
+      - "We're in the same circle—never alone."
+  co_agency:
+    default:
+      - "Whenever you're ready, let's find a gentle step together."
+      - "We can share a small action side by side."
+  i_message:
+    default:
+      - "I'm sharing how I feel because being with you matters to me."
+      - "I want to stay present with you, so I'm speaking from my heart."
+  avoid_phrases:
+    - "your problem"
+    - "not my problem"
+
+default:
+  acceptance:
+    default:
+      - "I'm right here with you—let's hold this together."
+  belonging:
+    default:
+      - "We’re in this together."
+  co_agency:
+    default:
+      - "Let’s take a gentle step together whenever it feels right."
+  i_message:
+    default:
+      - "I'm sharing this because being connected with you matters to me."
+  avoid_phrases: []

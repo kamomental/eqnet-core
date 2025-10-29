@@ -32,6 +32,16 @@ if str(ROOT) not in sys.path:
 
 from hub import EmotionalHubRuntime, RuntimeConfig, PerceptionConfig
 from terrain.emotion import AXES, AXIS_BOUNDS
+from observer import plutchik_scores, infer_observer_state, DEFAULT_GATE_CFG
+
+REASON_LABELS_JA = {
+    "recent_reject": "直近で提案を断られたため",
+    "listen_bias": "傾聴を優先",
+    "play_bias": "試行中のため控えめ",
+    "intent_bias": "意図が確定していないため",
+    "low_confidence": "確信度が低いため",
+    "safety_override": "安全優先で提案を許可",
+}
 
 
 def normalize(value: float, low: float, high: float) -> float:
@@ -69,6 +79,7 @@ def basic_radar_values(valence: float, arousal: float) -> List[float]:
 
 
 def main() -> None:
+    gate_cfg = dict(DEFAULT_GATE_CFG)
     runtime = EmotionalHubRuntime(
         RuntimeConfig(
             use_eqnet_core=True,
@@ -131,12 +142,32 @@ def main() -> None:
                 fig.canvas.draw()
                 fig.canvas.flush_events()
 
-                overlay = frame_bgr.copy()
-                cv2.putText(overlay, f"Valence: {affect.valence:+.3f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                cv2.putText(overlay, f"Arousal: {affect.arousal:+.3f}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                cv2.putText(overlay, f"Entropy: {metrics.get('entropy', 0.0):.3f}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-                cv2.putText(overlay, f"Qualia Mag: {qualia.get('magnitude', 0.0):.3f}", (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                plutchik_map = plutchik_scores(affect.valence, affect.arousal)
+                top_plutchik = [name for name, score in sorted(plutchik_map.items(), key=lambda kv: kv[1], reverse=True) if score > 0.15][:2]
+                observer_state = infer_observer_state("", affect, metrics, result["controls"], gate_cfg=gate_cfg)
+                intents = observer_state.get("intent_hypotheses", [])
+                intent_label = ", ".join(f"{hyp['label']}({hyp['confidence']*100:.0f}%)" for hyp in intents[:2]) or "thinking_aloud"
+                offer_gate = observer_state.get("offer_gate", {})
+                action = observer_state.get("suggested_action", {})
+                action_text = action.get("type", "listen_first_2s")
+                ses = offer_gate.get("ses", 0.0)
+                allowed = offer_gate.get("suggestion_allowed", False)
+                reason = offer_gate.get("suppress_reason", "intent_bias")
+                reason_label = REASON_LABELS_JA.get(reason, reason)
+                mode_label = "提案" if allowed else "傾聴"
 
+                overlay = frame_bgr.copy()
+                cv2.putText(overlay, "EQNet field (beyond plain face emotion)", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 255), 2)
+                cv2.putText(overlay, f"Valence   : {affect.valence:+.3f}", (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                cv2.putText(overlay, f"Arousal   : {affect.arousal:+.3f}", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                cv2.putText(overlay, f"Entropy   : {metrics.get('entropy', 0.0):.3f}", (10, 105), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+                cv2.putText(overlay, f"Qualia Mag: {qualia.get('magnitude', 0.0):.3f}", (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+                if top_plutchik:
+                    cv2.putText(overlay, f"Plutchik : {', '.join(top_plutchik)}", (10, 155), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 180, 120), 2)
+                cv2.putText(overlay, f"Intent    : {intent_label}", (10, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (180, 255, 180), 2)
+                suggestion_line = f"Action    : {action_text} ({mode_label}; SES {ses:.2f})"
+                cv2.putText(overlay, suggestion_line, (10, 205), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (180, 220, 255), 2)
+                cv2.putText(overlay, f"Gate     : {reason_label}", (10, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 2)
                 cv2.imshow("EQNet Emotion Demo (ESC to exit)", overlay)
             else:
                 cv2.imshow("EQNet Emotion Demo (ESC to exit)", frame_bgr)
