@@ -6,8 +6,7 @@ from __future__ import annotations
 import re
 from typing import Dict, Iterable, List, Tuple
 
-_SENTENCE_SPLIT = re.compile(r"([。．！？!?…
-])")
+_SENTENCE_SPLIT = re.compile(r"([。．！？?!…\n])")
 _CODE_FENCE = re.compile(r"```.*?```", re.DOTALL)
 _INLINE_CODE = re.compile(r"`[^`]+`")
 _URL = re.compile(r"https?://\S+")
@@ -93,15 +92,15 @@ def insert_fillers(
                     break
                 idx += 1
                 continue
-            elif position == "clause":
+            if position == "clause":
                 new_chunk = _inject_clause(chunk, phrase)
                 if new_chunk != chunk:
                     chunk = new_chunk
                     idx += 1
                     break
                 idx += 1
-            else:
-                idx += 1
+                continue
+            idx += 1
         result_parts[i] = chunk
         if punct:
             result_parts[i + 1] = punct

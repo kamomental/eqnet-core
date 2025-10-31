@@ -1,0 +1,25 @@
+﻿ack:
+  allow_intents: ["listen", "clarify", "plan", "empathize"]
+  forbid_memory_write: true
+  max_speculative_tokens: 40
+
+kv_prefix:
+  include: ["system", "developer", "persona", "culture_static"]
+  exclude: ["affect_dynamic", "session_goals"]
+  invalidate_on: ["culture_hash_change", "persona_hash_change", "model_change"]
+
+rag:
+  max_topk: 5
+  high_influence_radius_threshold: 0.7
+  defer_high_influence_commits: true
+
+memory:
+  commit_phase: "post_final"
+  require_flags: ["final_llm_ok", "policy_check_pass"]
+
+kpi_targets:
+  tone_match_min: 0.90
+  culture_violation_per_100_max: 0.5
+  ack_latency_ms_max: 300
+  p50_final_s_max: 1.6
+  p95_final_s_max: 3.0

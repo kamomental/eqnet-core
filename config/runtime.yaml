@@ -1,3 +1,13 @@
+model:
+  use_assoc_kernel: false
+  assoc_kernel:
+    sigma_init: 1.2
+    beta_local_init: -3.0
+    beta_global_init: -3.0
+    window_w: 128
+    stride_s: 8
+    use_kv_asymmetry: false
+    use_bandwidth_gating: false
 ignition:
   theta_on: 0.62
   theta_off: 0.48
@@ -7,7 +17,7 @@ telemetry:
 latency:
   tight_max_ms: 500
   loose_max_ms: 2000
-  enable_loose: false
+  enable_loose: true
 llm:
   model: "gpt-oss20b"
   stream: true

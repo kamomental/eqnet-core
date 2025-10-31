@@ -741,6 +741,8 @@ def _summarize_field_telemetry(path: Path) -> Optional[Dict[str, float]]:
     ignition: List[float] = []
     valence: List[float] = []
     arousal: List[float] = []
+    delta_m_vals: List[float] = []
+    jerk_vals: List[float] = []
     try:
         for line in path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -758,6 +760,10 @@ def _summarize_field_telemetry(path: Path) -> Optional[Dict[str, float]]:
                 H.append(float(data.get("H", np.nan)))
                 rho.append(float(data.get("rho", np.nan)))
                 ignition.append(float(data.get("Ignition", np.nan)))
+                if "delta_m" in data:
+                    delta_m_vals.append(float(data.get("delta_m", np.nan)))
+                if "jerk" in data:
+                    jerk_vals.append(float(data.get("jerk", np.nan)))
                 if "valence" in data:
                     valence.append(float(data.get("valence", np.nan)))
                 if "arousal" in data:
@@ -774,6 +780,8 @@ def _summarize_field_telemetry(path: Path) -> Optional[Dict[str, float]]:
     I_arr = np.array(ignition, dtype=float)
     V_arr = np.array(valence, dtype=float) if valence else np.full(1, np.nan)
     A_arr = np.array(arousal, dtype=float) if arousal else np.full(1, np.nan)
+    delta_arr = np.array(delta_m_vals, dtype=float) if delta_m_vals else np.full(1, np.nan)
+    jerk_arr = np.array(jerk_vals, dtype=float) if jerk_vals else np.full(1, np.nan)
     rho_I_corr = _safe_corr(rho_arr, I_arr)
     S_I_corr = _safe_corr(S_arr, I_arr)
     H_I_corr = _safe_corr(H_arr, I_arr)
@@ -793,7 +801,172 @@ def _summarize_field_telemetry(path: Path) -> Optional[Dict[str, float]]:
         "arousal_mean": arousal_mean,
         "valence_I_corr": valence_I_corr,
         "arousal_I_corr": arousal_I_corr,
+        "delta_m_p95": _nan_percentile(delta_arr, 95.0),
+        "jerk_p95": _nan_percentile(jerk_arr, 95.0),
     }
+
+
+def _extract_field_series(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    if not path.exists():
+        return np.empty(0, dtype=float), np.empty(0, dtype=float)
+    delta_vals: List[float] = []
+    jerk_vals: List[float] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if row.get("event") != "field.metrics":
+                continue
+            data = row.get("data") or {}
+            try:
+                if "delta_m" in data:
+                    delta_vals.append(float(data.get("delta_m", np.nan)))
+                if "jerk" in data:
+                    jerk_vals.append(float(data.get("jerk", np.nan)))
+            except Exception:
+                continue
+    except Exception:
+        return np.empty(0, dtype=float), np.empty(0, dtype=float)
+    return np.array(delta_vals, dtype=float), np.array(jerk_vals, dtype=float)
+
+
+def _finite_or_none(value: Optional[float]) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        as_float = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(as_float):
+        return None
+    return as_float
+
+
+def _render_assoc_plots(
+    delta_series: np.ndarray,
+    jerk_series: np.ndarray,
+    entropy_series: np.ndarray,
+    max_abs_series: np.ndarray,
+    plots_dir: Path,
+) -> Dict[str, Path]:
+    if plt is None:
+        return {}
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    created: Dict[str, Path] = {}
+    delta_clean = delta_series[np.isfinite(delta_series)] if delta_series.size else delta_series
+    jerk_clean = jerk_series[np.isfinite(jerk_series)] if jerk_series.size else jerk_series
+    entropy_clean = entropy_series[np.isfinite(entropy_series)] if entropy_series.size else entropy_series
+    max_abs_clean = max_abs_series[np.isfinite(max_abs_series)] if max_abs_series.size else max_abs_series
+    if delta_clean.size:
+        fig, ax = plt.subplots(figsize=(6, 3))
+        ax.plot(delta_clean, label="delta_m", color="#1f77b4", linewidth=1.2)
+        if jerk_clean.size:
+            ax.plot(jerk_clean, label="jerk", color="#ff7f0e", linewidth=1.0, alpha=0.9)
+        ax.set_title("Δm / jerk (recent)")
+        ax.set_xlabel("step")
+        ax.set_ylabel("value")
+        ax.grid(alpha=0.2)
+        ax.legend(loc="upper right")
+        fig.tight_layout()
+        out_path = plots_dir / "assoc_delta_jerk.png"
+        fig.savefig(out_path, dpi=160)
+        plt.close(fig)
+        if out_path.exists():
+            created["assoc_delta_jerk"] = out_path
+    if entropy_clean.size:
+        fig, ax1 = plt.subplots(figsize=(6, 3))
+        ax1.plot(entropy_clean, color="#2ca02c", linewidth=1.1, label="attn_entropy")
+        ax1.set_ylabel("entropy")
+        ax1.grid(alpha=0.2)
+        ax2 = ax1.twinx()
+        if max_abs_clean.size:
+            ax2.plot(max_abs_clean, color="#d62728", linewidth=1.0, label="max|score|")
+        ax2.set_ylabel("max|score|")
+        ax1.set_xlabel("record")
+        ax1.set_title("Assoc attention health")
+        lines, labels = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        if lines or lines2:
+            ax1.legend(lines + lines2, labels + labels2, loc="upper right")
+        fig.tight_layout()
+        out_path = plots_dir / "assoc_attention_health.png"
+        fig.savefig(out_path, dpi=160)
+        plt.close(fig)
+        if out_path.exists():
+            created["assoc_attention_health"] = out_path
+    return created
+
+
+def _summarize_assoc_kernel(
+    canary_path: Path,
+    plots_dir: Path,
+    delta_series: np.ndarray,
+    jerk_series: np.ndarray,
+) -> tuple[Optional[Dict[str, Any]], Dict[str, Path]]:
+    if not canary_path.exists():
+        return None, {}
+    entropy_vals: List[float] = []
+    max_abs_vals: List[float] = []
+    guard_counts: Dict[str, int] = defaultdict(int)
+    icl1_vals: List[float] = []
+    icl3_vals: List[float] = []
+    records = 0
+    try:
+        for line in canary_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(rec, dict):
+                continue
+            records += 1
+            entropy = rec.get("attn_entropy")
+            if isinstance(entropy, (int, float)) and math.isfinite(float(entropy)):
+                entropy_vals.append(float(entropy))
+            max_abs = rec.get("max_score_abs")
+            if isinstance(max_abs, (int, float)) and math.isfinite(float(max_abs)):
+                max_abs_vals.append(float(max_abs))
+            guard_action = rec.get("guard_action")
+            if guard_action:
+                guard_counts[str(guard_action)] += 1
+            icl1 = rec.get("icl_at1")
+            if isinstance(icl1, (int, float)) and math.isfinite(float(icl1)):
+                icl1_vals.append(float(icl1))
+            icl3 = rec.get("icl_at3")
+            if isinstance(icl3, (int, float)) and math.isfinite(float(icl3)):
+                icl3_vals.append(float(icl3))
+    except Exception:
+        return None, {}
+    if records == 0:
+        return None, {}
+
+    entropy_arr = np.array(entropy_vals, dtype=float) if entropy_vals else np.empty(0, dtype=float)
+    max_abs_arr = np.array(max_abs_vals, dtype=float) if max_abs_vals else np.empty(0, dtype=float)
+    summary = {
+        "schema": "assoc.v1",
+        "records": records,
+        "attn_entropy_mean": _finite_or_none(_mean_clean(entropy_arr) if entropy_arr.size else None),
+        "max_score_p99": _finite_or_none(_nan_percentile(max_abs_arr, 99.0) if max_abs_arr.size else None),
+        "dm_p95": _finite_or_none(
+            _nan_percentile(delta_series, 95.0) if isinstance(delta_series, np.ndarray) and delta_series.size else None
+        ),
+        "jerk_p95": _finite_or_none(
+            _nan_percentile(jerk_series, 95.0) if isinstance(jerk_series, np.ndarray) and jerk_series.size else None
+        ),
+        "icl_at1": _finite_or_none(np.mean(icl1_vals) if icl1_vals else None),
+        "icl_at3": _finite_or_none(np.mean(icl3_vals) if icl3_vals else None),
+        "guard_actions": {k: int(v) for k, v in guard_counts.items()},
+    }
+    plots = _render_assoc_plots(delta_series, jerk_series, entropy_arr, max_abs_arr, plots_dir)
+    return summary, plots
 
 
 def _summarize_vision_metrics(path: Path) -> Optional[Dict[str, Any]]:
@@ -983,6 +1156,16 @@ def _mean_clean(arr: np.ndarray) -> float:
     if not mask.any():
         return float("nan")
     return float(np.mean(arr[mask]))
+
+
+def _nan_percentile(arr: np.ndarray, percentile: float) -> float:
+    mask = np.isfinite(arr)
+    if not mask.any():
+        return float("nan")
+    try:
+        return float(np.percentile(arr[mask], percentile))
+    except Exception:
+        return float("nan")
 
 
 def _safe_corr(a: np.ndarray, b: np.ndarray) -> float:
@@ -1273,6 +1456,26 @@ def _generate_telemetry_section(
     field_state = _summarize_field_telemetry(telemetry_log)
     if field_state:
         report["field_state"] = field_state
+    delta_series, jerk_series = _extract_field_series(telemetry_log)
+    assoc_summary, assoc_plots = _summarize_assoc_kernel(
+        Path("logs/canary/assoc_kernel.jsonl"),
+        plots_dir,
+        delta_series,
+        jerk_series,
+    )
+    if assoc_summary:
+        report["assoc_kernel"] = assoc_summary
+        summary_path = Path("reports/nightly/assoc_summary.json")
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(json.dumps(assoc_summary, ensure_ascii=False, indent=2), encoding="utf-8")
+        artifacts_assoc = report.setdefault("artifacts", {}).setdefault("assoc_kernel", {})
+        artifacts_assoc["summary"] = str(summary_path)
+        report["assoc_summary_path"] = str(summary_path)
+        report["plots"] = report.get("plots", {})
+        for key, plot_path in assoc_plots.items():
+            artifacts_assoc[key] = str(plot_path)
+            report["plots"][key] = str(plot_path)
+
     vision_summary = _summarize_vision_metrics(telemetry_log)
     if vision_summary:
         report["vision_snapshot"] = vision_summary
@@ -1305,6 +1508,9 @@ def _generate_telemetry_section(
     report["plots"] = report.get("plots", {})
     plot_info: Dict[str, Path] = {}
     plot_error: Optional[str] = None
+    if assoc_plots:
+        for key, path in assoc_plots.items():
+            plot_info.setdefault(key, path)
 
     if vision_summary:
         vision_plot_paths = _render_vision_plots(vision_summary, plots_dir)
@@ -2414,6 +2620,10 @@ def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Pat
         payload["pain_loop"] = report["pain_loop"]
     if report.get("resonance_bayes_trace_path"):
         payload["resonance_bayes_trace_path"] = report["resonance_bayes_trace_path"]
+    if report.get("assoc_kernel"):
+        payload["assoc_kernel"] = report["assoc_kernel"]
+    if report.get("assoc_summary_path"):
+        payload["assoc_summary_path"] = report["assoc_summary_path"]
     json_path = out_path / "nightly.json"
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return json_path

@@ -49,6 +49,23 @@ class EmotionCfg:
 
 
 @dataclass
+class AssocKernelCfg:
+    sigma_init: float = field(default=1.2)
+    beta_local_init: float = field(default=-3.0)
+    beta_global_init: float = field(default=-3.0)
+    window_w: int = field(default=128)
+    stride_s: int = field(default=8)
+    use_kv_asymmetry: bool = field(default=False)
+    use_bandwidth_gating: bool = field(default=False)
+
+
+@dataclass
+class ModelCfg:
+    use_assoc_kernel: bool = field(default=False)
+    assoc_kernel: AssocKernelCfg = field(default_factory=AssocKernelCfg)
+
+
+@dataclass
 class CultureCfg:
     tag: str = field(default="default")
     politeness: float = field(default=0.5)
@@ -169,6 +186,7 @@ class RuntimeCfg:
     telemetry: TelemetryCfg = field(default_factory=TelemetryCfg)
     latency: LatencyCfg = field(default_factory=LatencyCfg)
     llm: LLMCfg = field(default_factory=LLMCfg)
+    model: ModelCfg = field(default_factory=ModelCfg)
     replay: ReplayCfg = field(default_factory=ReplayCfg)
     emotion: EmotionCfg = field(default_factory=EmotionCfg)
     culture: CultureCfg = field(default_factory=CultureCfg)
@@ -193,6 +211,11 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
     telemetry = _merge_dataclass(TelemetryCfg(), payload.get("telemetry", {}))
     latency = _merge_dataclass(LatencyCfg(), payload.get("latency", {}))
     llm_cfg = _merge_dataclass(LLMCfg(), payload.get("llm", {}))
+    model = _merge_dataclass(
+        ModelCfg(),
+        payload.get("model", {}),
+        extra_factories={"assoc_kernel": AssocKernelCfg},
+    )
     replay = _merge_dataclass(ReplayCfg(), payload.get("replay", {}))
     emotion = _merge_dataclass(EmotionCfg(), payload.get("emotion", {}))
     culture = _merge_dataclass(
@@ -216,6 +239,7 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
         telemetry=telemetry,
         latency=latency,
         llm=llm_cfg,
+        model=model,
         replay=replay,
         emotion=emotion,
         culture=culture,
@@ -265,8 +289,10 @@ __all__ = [
     "TelemetryCfg",
     "LatencyCfg",
     "LLMCfg",
+    "ModelCfg",
     "ReplayCfg",
     "EmotionCfg",
+    "AssocKernelCfg",
     "CultureCfg",
     "CultureFeedbackCfg",
     "AlertsCfg",

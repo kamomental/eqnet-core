@@ -1,0 +1,18 @@
+﻿prefix_kv:
+  lru_size: 8
+  warm_start: true
+  cache_dir: "cache/prefix_kv"
+
+rag:
+  cache_dir: "cache/rag"
+  ttl_minutes: 15
+  index_revision_file: "cache/rag/index.rev"
+
+embeddings:
+  store: "cache/embeddings.sqlite"
+  wal: true
+  preload_recent: 256
+
+terrain:
+  warm_start: true
+  prewarm_script: "scripts/prewarm_terrain.py"

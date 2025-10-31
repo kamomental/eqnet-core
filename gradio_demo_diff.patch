@@ -1,0 +1,62 @@
+--- previous
++++ current
+@@ -1,4 +1,4 @@
+-﻿# -*- coding: utf-8 -*-
++# -*- coding: utf-8 -*-
+ """
+ Gradio demo for the EQNet emotional hub.
+ 
+@@ -18,17 +18,42 @@
+ if str(REPO_ROOT) not in sys.path:
+     sys.path.append(str(REPO_ROOT))
+ 
+-from typing import Any, Dict, Optional, Tuple
+-from collections import defaultdict
++from dataclasses import dataclass
++from enum import Enum, auto
++from typing import Any, Deque, Dict, Optional, Tuple
++from collections import defaultdict, deque
+ from concurrent.futures import ThreadPoolExecutor, TimeoutError
+ import threading
+ import time
++import os
++import json
++import random
+ 
+ import gradio as gr
+ import numpy as np
+ import plotly.graph_objects as go
+ from PIL import Image
+ import yaml
++import requests
++import matplotlib.pyplot as plt
++try:
++    import cv2
++except Exception:  # pragma: no cover
++    cv2 = None
++
++try:
++    import mediapipe as mp
++
++    HAVE_MEDIAPIPE = True
++except Exception:  # pragma: no cover
++    HAVE_MEDIAPIPE = False
++
++try:
++    import pyttsx3
++
++    HAVE_TTS = True
++except Exception:  # pragma: no cover
++    HAVE_TTS = False
+ 
+ from emot_terrain_lab.perception.text_affect import quick_text_affect_v2
+ 
+@@ -209,7 +234,7 @@
+     resolved = resolve_keys()
+     phrases = table.get(resolved[0], {}).get(resolved[1], {}).get(resolved[2], [])
+     if not phrases:
+-        return "縺ｯ縺・√♀隧ｱ繧貞女縺大叙繧翫∪縺励◆縲・
++        return "はい、お話を受け取りました。"
+     with ACK_LOCK:
+         cursor = ACK_CURSOR[resolved]
+         phrase = phrases[cursor % len(phrases)]

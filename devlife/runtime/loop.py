@@ -15,7 +15,9 @@ import uuid
 
 import numpy as np
 
+from devlife.logging.canary_logger import CanaryLogger
 from devlife.value.model import compute_value_summary
+from emot_terrain_lab.models.ssmax_encoder import register_assoc_health_hook, register_assoc_logger
 from runtime.config import RuntimeCfg, load_runtime_cfg
 
 logger = logging.getLogger(__name__)
@@ -135,6 +137,30 @@ class DevelopmentLoop:
         replay_cfg = self._runtime_cfg.replay
         self._prev_I_value: float | None = None
         self._rho_resonance_bias: float = 0.0
+        self._prev_mood_vec: np.ndarray | None = None
+        self._prev_prev_mood_vec: np.ndarray | None = None
+        self._last_delta_m: float | None = None
+        self._last_jerk: float | None = None
+        self._assoc_canary_logger: Optional[CanaryLogger] = None
+        self._assoc_score_spike_run: int = 0
+        self._assoc_dm_spike_run: int = 0
+        self._assoc_jerk_spike_run: int = 0
+        self._assoc_icl_drop_run: int = 0
+        self._assoc_score_threshold: float = 12.0
+        self._assoc_dm_threshold: float = 0.35
+        self._assoc_jerk_threshold: float = 0.2
+        self._assoc_icl_baseline: Optional[float] = None
+        self._assoc_icl_at1: Optional[float] = None
+        self._assoc_icl_at3: Optional[float] = None
+        self._assoc_icl_base_at1: Optional[float] = None
+        self._assoc_icl_base_at3: Optional[float] = None
+        try:
+            self._assoc_canary_logger = CanaryLogger("logs/canary/assoc_kernel.jsonl")
+            register_assoc_logger(self._assoc_canary_logger.write, self._assoc_log_context)
+        except Exception:
+            self._assoc_canary_logger = None
+            register_assoc_logger(None)
+        register_assoc_health_hook(self._assoc_guard_hook)
         self._field_sample_every = max(1, int(getattr(replay_cfg, "sample_every", 1)))
         self._field_log_sample_index = 0
         self._min_field_interval = max(0.0, float(getattr(replay_cfg, "min_interval_ms", 0)) / 1000.0)
@@ -187,6 +213,32 @@ class DevelopmentLoop:
                 "mood_effort": 0.0,
                 "mood_uncertainty": 0.0,
             }
+            mood_vec = np.array(
+                [
+                    mood_metrics["mood_v"],
+                    mood_metrics["mood_a"],
+                    mood_metrics["mood_effort"],
+                    mood_metrics["mood_uncertainty"],
+                ],
+                dtype=np.float32,
+            )
+            delta_m: float | None = None
+            jerk: float | None = None
+            if self._prev_mood_vec is not None:
+                try:
+                    delta_m = float(np.linalg.norm(mood_vec - self._prev_mood_vec))
+                except Exception:
+                    delta_m = None
+            if self._prev_prev_mood_vec is not None and self._prev_mood_vec is not None:
+                try:
+                    jerk_vec = mood_vec - 2.0 * self._prev_mood_vec + self._prev_prev_mood_vec
+                    jerk = float(np.linalg.norm(jerk_vec))
+                except Exception:
+                    jerk = None
+            self._prev_prev_mood_vec = self._prev_mood_vec
+            self._prev_mood_vec = mood_vec
+            self._last_delta_m = delta_m
+            self._last_jerk = jerk
             tokens = self.composer.bodylex_map(self.body.snapshot())
             utterance, delta_aff = self.composer.dialog(
                 body_tokens=tokens,
@@ -299,6 +351,8 @@ class DevelopmentLoop:
                     "gate_level": getattr(self.router, "level", None) if self.router is not None else None,
                     "ignite_trigger": ignite_trigger,
                     "gate_state": self._gate_state,
+                    "delta_m": delta_m,
+                    "jerk": jerk,
                 },
             )
             context_summary = None
@@ -321,6 +375,8 @@ class DevelopmentLoop:
                         "culture_tag": getattr(self._culture_cfg, "tag", "default"),
                         "politeness": float(getattr(self._culture_cfg, "politeness", 0.0)),
                         "intimacy": float(getattr(self._culture_cfg, "intimacy", 0.0)),
+                        "delta_m": delta_m,
+                        "jerk": jerk,
                         "context": {"utterance": context_summary},
                     }
                 )
@@ -700,6 +756,137 @@ class DevelopmentLoop:
         except Exception:
             pass
 
+    def _assoc_log_context(self) -> Dict[str, Any]:
+        ctx: Dict[str, Any] = {"step": self._step_counter}
+        if self._last_delta_m is not None:
+            ctx["delta_m"] = self._last_delta_m
+        if self._last_jerk is not None:
+            ctx["jerk"] = self._last_jerk
+        if self._assoc_icl_at1 is not None:
+            ctx["icl_at1"] = self._assoc_icl_at1
+        if self._assoc_icl_at3 is not None:
+            ctx["icl_at3"] = self._assoc_icl_at3
+        if self._assoc_icl_base_at1 is not None:
+            ctx["icl_base_at1"] = self._assoc_icl_base_at1
+        if self._assoc_icl_base_at3 is not None:
+            ctx["icl_base_at3"] = self._assoc_icl_base_at3
+        if self._assoc_icl_baseline is not None:
+            ctx["icl_baseline"] = self._assoc_icl_baseline
+        ctx["score_threshold"] = self._assoc_score_threshold
+        ctx["dm_threshold"] = self._assoc_dm_threshold
+        ctx["jerk_threshold"] = self._assoc_jerk_threshold
+        return ctx
+
+    def _assoc_guard_hook(self, metrics: Dict[str, Any]) -> Optional[str]:
+        action: Optional[str] = None
+        self.record_assoc_icl(metrics.get("icl_at1"), metrics.get("icl_at3"))
+        max_abs = metrics.get("max_score_abs")
+        if isinstance(max_abs, (int, float)) and math.isfinite(float(max_abs)):
+            value = float(max_abs)
+            if value > self._assoc_score_threshold:
+                self._assoc_score_spike_run += 1
+            else:
+                self._assoc_score_spike_run = 0
+            if self._assoc_score_spike_run >= 3:
+                self._assoc_score_spike_run = 0
+                return "fallback_attention"
+        else:
+            self._assoc_score_spike_run = 0
+
+        delta_m = metrics.get("delta_m", self._last_delta_m)
+        if isinstance(delta_m, (int, float)) and math.isfinite(float(delta_m)):
+            delta_val = float(delta_m)
+            if delta_val > self._assoc_dm_threshold:
+                self._assoc_dm_spike_run += 1
+            else:
+                self._assoc_dm_spike_run = 0
+            if self._assoc_dm_spike_run >= 3:
+                self._assoc_dm_spike_run = 0
+                return "broaden_bandwidth"
+        else:
+            self._assoc_dm_spike_run = 0
+
+        jerk_val = metrics.get("jerk", self._last_jerk)
+        if isinstance(jerk_val, (int, float)) and math.isfinite(float(jerk_val)):
+            jerk_val = float(jerk_val)
+            if jerk_val > self._assoc_jerk_threshold:
+                self._assoc_jerk_spike_run += 1
+            else:
+                self._assoc_jerk_spike_run = 0
+            if self._assoc_jerk_spike_run >= 3:
+                self._assoc_jerk_spike_run = 0
+                return "broaden_bandwidth"
+        else:
+            self._assoc_jerk_spike_run = 0
+
+        icl_at3 = metrics.get("icl_at3", self._assoc_icl_at3)
+        baseline_at3 = self._assoc_icl_base_at3
+        if baseline_at3 is None:
+            baseline_at3 = self._assoc_icl_baseline
+        if (
+            isinstance(icl_at3, (int, float))
+            and math.isfinite(float(icl_at3))
+            and baseline_at3 is not None
+            and math.isfinite(float(baseline_at3))
+        ):
+            icl_val = float(icl_at3)
+            baseline_at3 = float(baseline_at3)
+            if icl_val < baseline_at3 - 3.0:
+                self._assoc_icl_drop_run += 1
+            else:
+                self._assoc_icl_drop_run = 0
+            if self._assoc_icl_drop_run >= 2:
+                self._assoc_icl_drop_run = 0
+                return "narrow_bandwidth"
+        else:
+            self._assoc_icl_drop_run = 0
+        return action
+
+    def record_assoc_icl(
+        self,
+        icl_at1: Optional[float] = None,
+        icl_at3: Optional[float] = None,
+        *,
+        update_baseline: bool = False,
+    ) -> None:
+        """Update ICL metrics used by assoc-kernel guards."""
+
+        updated = False
+        if isinstance(icl_at1, (int, float)) and math.isfinite(float(icl_at1)):
+            value = float(icl_at1)
+            self._assoc_icl_at1 = value
+            updated = True
+            if self._assoc_icl_base_at1 is None or update_baseline:
+                self._assoc_icl_base_at1 = value
+        if isinstance(icl_at3, (int, float)) and math.isfinite(float(icl_at3)):
+            value = float(icl_at3)
+            self._assoc_icl_at3 = value
+            updated = True
+            if self._assoc_icl_base_at3 is None or update_baseline:
+                self._assoc_icl_base_at3 = value
+        if updated and (self._assoc_icl_baseline is None or update_baseline):
+            if self._assoc_icl_base_at3 is not None:
+                self._assoc_icl_baseline = float(self._assoc_icl_base_at3)
+            elif self._assoc_icl_at3 is not None:
+                self._assoc_icl_baseline = float(self._assoc_icl_at3)
+        if update_baseline and self._assoc_icl_baseline is not None:
+            self._assoc_icl_drop_run = 0
+
+    def set_assoc_thresholds(
+        self,
+        *,
+        max_score: Optional[float] = None,
+        delta_m: Optional[float] = None,
+        jerk: Optional[float] = None,
+    ) -> None:
+        """Allow runtime adjustments of assoc-kernel guard thresholds."""
+
+        if isinstance(max_score, (int, float)) and max_score > 0:
+            self._assoc_score_threshold = float(max_score)
+        if isinstance(delta_m, (int, float)) and delta_m > 0:
+            self._assoc_dm_threshold = float(delta_m)
+        if isinstance(jerk, (int, float)) and jerk > 0:
+            self._assoc_jerk_threshold = float(jerk)
     def _pull_field_metrics(self) -> Optional[Dict[str, float]]:
         if self._field_metrics_backlog is not None:
             if self._should_emit_log_entry():

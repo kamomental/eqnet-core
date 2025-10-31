@@ -58,3 +58,6 @@ umap-learn==0.5.9.post2
 websockets>=13.0
 plotly
 gradio
+mediapipe
+opencv-python
+requests
