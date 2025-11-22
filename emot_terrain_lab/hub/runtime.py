@@ -17,13 +17,14 @@ import hashlib
 import numpy as np
 from pathlib import Path
 
-from terrain.emotion import AXES
+from eqnet.modules.prospective_drive_core import PDCConfig, ProspectiveDriveCore
+from emot_terrain_lab.terrain.emotion import AXES
 from .perception import PerceptionBridge, PerceptionConfig, AffectSample
 from .policy import PolicyHead, PolicyConfig, AffectControls
 from .llm_hub import LLMHub, LLMHubConfig, HubResponse
 from .robot_bridge import RobotBridgeConfig, ROS2Bridge
 from datetime import datetime
-from terrain.system import EmotionalMemorySystem
+from emot_terrain_lab.terrain.system import EmotionalMemorySystem
 from emot_terrain_lab.memory.reference_helper import handle_memory_reference
 from emot_terrain_lab.perception.text_affect import quick_text_affect_v2
 
@@ -86,6 +87,31 @@ def _decide_talk_mode(ctx: GateContext) -> TalkMode:
     return TalkMode.WATCH
 
 
+class _NullProspectiveMemory:
+    """Fallback memory surface for when EQNet core is unavailable."""
+
+    def __init__(self, dim: int) -> None:
+        self.dim = dim
+
+    def _fit(self, vector) -> np.ndarray:
+        arr = np.zeros(self.dim, dtype=float)
+        if vector is None:
+            return arr
+        vec = np.asarray(vector, dtype=float).reshape(-1)
+        limit = min(arr.size, vec.size)
+        if limit:
+            arr[:limit] = vec[:limit]
+        return arr
+
+    def sample_success_vector(self, phi_t: np.ndarray) -> np.ndarray:
+        return self._fit(phi_t)
+
+    def sample_future_template(self, phi_t: np.ndarray, psi_t: np.ndarray | None = None) -> np.ndarray:
+        phi_vec = self._fit(phi_t)
+        psi_vec = self._fit(psi_t) if psi_t is not None else np.zeros_like(phi_vec)
+        return 0.6 * phi_vec + 0.4 * psi_vec
+
+
 class EmotionalHubRuntime:
     """
     Minimal orchestrator for the EQNet emotional hub.
@@ -118,6 +144,9 @@ class EmotionalHubRuntime:
         self.eqnet_system: Optional[EmotionalMemorySystem] = None
         if self.config.use_eqnet_core:
             self.eqnet_system = EmotionalMemorySystem(self.config.eqnet_state_dir)
+        self._pdc = ProspectiveDriveCore(PDCConfig(dim=len(AXES)))
+        self._pdc_memory_fallback = _NullProspectiveMemory(len(AXES))
+        self._last_prospective: Optional[Dict[str, Any]] = None
         self._runtime_cfg = None
         if load_runtime_cfg is not None:
             try:
@@ -224,6 +253,20 @@ class EmotionalHubRuntime:
         metrics = self._update_metrics(affect, fast_only=fast_only)
         # Merge external mood metrics if provided (env or file)
         metrics = self._merge_mood_metrics(metrics)
+        prospective: Optional[Dict[str, Any]] = None
+        if self._pdc is not None:
+            phi_vec = np.array(self._last_E, dtype=float)
+            psi_vec = self._psi_vector_from_metrics(metrics)
+            memory_iface = self.eqnet_system or self._pdc_memory_fallback
+            try:
+                prospective = self._pdc.step(phi_vec, psi_vec, memory_iface)
+            except Exception:
+                prospective = self._pdc.step(phi_vec, psi_vec, self._pdc_memory_fallback)
+            prospective["jerk_p95"] = self._pdc.compute_jerk_p95()
+            metrics = dict(metrics)
+            metrics.setdefault("pdc_story", prospective["E_story"])
+            metrics.setdefault("pdc_temperature", prospective["T"])
+            self._last_prospective = prospective
         self._last_metrics = metrics
 
         affect_vec = np.array([affect.valence, affect.arousal], dtype=float)
@@ -286,8 +329,10 @@ class EmotionalHubRuntime:
             "mode": self._talk_mode.name.lower(),
             "force_listen": self._force_listen,
         }
+        if prospective:
+            self._last_gate_context["pdc_story"] = float(prospective.get("E_story", 0.0))
 
-        controls = self.policy.affect_to_controls(affect, metrics)
+        controls = self.policy.affect_to_controls(affect, metrics, prospective=prospective)
         if self._talk_mode == TalkMode.SOOTHE:
             controls.temperature = float(np.clip(controls.temperature, 0.25, 0.55))
             controls.pause_ms = int(np.clip(controls.pause_ms + 150, *self.policy.config.pause_bounds))
@@ -328,6 +373,7 @@ class EmotionalHubRuntime:
                 "qualia": self._last_qualia,
                 "talk_mode": self._talk_mode.name.lower(),
                 "gate_context": self._last_gate_context,
+                "prospective": self._serialize_prospective(prospective),
             }
 
         should_call_llm = text_input and self._talk_mode == TalkMode.TALK
@@ -344,18 +390,26 @@ class EmotionalHubRuntime:
             ):
                 response = self._wrap_memory_response(memory_reference["reply"])
             else:
+                llm_controls = {
+                    "temperature": controls.temperature,
+                    "top_p": controls.top_p,
+                    "pause_ms": controls.pause_ms,
+                    "directness": controls.directness,
+                    "warmth": controls.warmth,
+                    "prosody_energy": controls.prosody_energy,
+                    "spoiler_mode": "warn",
+                }
+                if prospective:
+                    llm_controls["pdc_story"] = float(prospective.get("E_story", 0.0))
+                    llm_controls["pdc_temperature"] = float(prospective.get("T", controls.temperature))
+                    for key in ("m_t", "m_past_hat", "m_future_hat"):
+                        value = prospective.get(key)
+                        if isinstance(value, np.ndarray):
+                            llm_controls[f"pdc_{key}"] = value.tolist()
                 response = self.llm.generate(
                     user_text=user_text or "",
                     context=context,
-                    controls={
-                        "temperature": controls.temperature,
-                        "top_p": controls.top_p,
-                        "pause_ms": controls.pause_ms,
-                        "directness": controls.directness,
-                        "warmth": controls.warmth,
-                        "prosody_energy": controls.prosody_energy,
-                        "spoiler_mode": "warn",
-                    },
+                    controls=llm_controls,
                     intent=intent or self.llm.config.default_intent,
                     slos={"p95_ms": 180.0},
                 )
@@ -381,6 +435,7 @@ class EmotionalHubRuntime:
             "qualia": self._last_qualia,
             "talk_mode": self._talk_mode.name.lower(),
             "gate_context": self._last_gate_context,
+            "prospective": self._serialize_prospective(prospective),
         }
 
     # ------------------------------------------------------------------ #
@@ -527,6 +582,36 @@ class EmotionalHubRuntime:
             vec[0] = sample.valence
             vec[1] = sample.arousal
         return vec
+
+    def _psi_vector_from_metrics(self, metrics: Dict[str, float]) -> np.ndarray:
+        dim = len(self._last_E)
+        vec = np.zeros(dim, dtype=float)
+        keys = ("H", "R", "kappa", "ignition", "rho", "novelty", "coherence")
+        idx = 0
+        for key in keys:
+            if idx >= dim:
+                break
+            val = metrics.get(key)
+            if val is None:
+                continue
+            vec[idx] = float(val)
+            idx += 1
+        return vec
+
+    def _serialize_prospective(self, prospective: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if not prospective:
+            return None
+        payload: Dict[str, Any] = {
+            "E_story": float(prospective.get("E_story", 0.0)),
+            "T": float(prospective.get("T", 0.0)),
+        }
+        for key in ("m_t", "m_past_hat", "m_future_hat"):
+            value = prospective.get(key)
+            if isinstance(value, np.ndarray):
+                payload[key] = value.tolist()
+        if "jerk_p95" in prospective:
+            payload["jerk_p95"] = float(prospective["jerk_p95"])
+        return payload
 
     # ------------------------------------------------------------------ #
     # Memory reference helpers

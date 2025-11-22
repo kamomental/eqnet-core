@@ -1,0 +1,147 @@
+model:
+  use_assoc_kernel: false
+  assoc_kernel:
+    sigma_init: 1.2
+    beta_local_init: -3.0
+    beta_global_init: -3.0
+    window_w: 128
+    stride_s: 8
+    use_kv_asymmetry: false
+    use_bandwidth_gating: false
+ignition:
+  theta_on: 0.62
+  theta_off: 0.48
+  dwell_steps: 8
+telemetry:
+  log_path: "telemetry/ignition-%Y%m%d.jsonl"
+latency:
+  tight_max_ms: 500
+  loose_max_ms: 2000
+  enable_loose: true
+llm:
+  model: "gpt-oss20b"
+  stream: true
+  max_tokens: 96
+  temperature: 0.35
+replay:
+  min_interval_ms: 10
+  sample_every: 1
+emotion:
+  valence_w_rho: 1.0
+  valence_w_s: 1.0
+  resonance_k: 0.05
+  affective_log_path: "memory/affective_log.jsonl"
+culture:
+  tag: "default"
+  politeness: 0.5
+  intimacy: 0.5
+  feedback:
+    enabled: false
+    corr_high: 0.65
+    corr_low: 0.35
+    delta: 0.02
+    clamp_min: 0.0
+    clamp_max: 1.0
+    vision_coefficients:
+      handshake:
+        normalize: "events"
+        scale: 0.08
+        politeness_delta: 0.05
+        intimacy_delta: 0.03
+        max_abs: 0.1
+      bow:
+        normalize: "events"
+        scale: 0.05
+        politeness_delta: 0.04
+        intimacy_delta: 0.02
+      anomaly:
+        normalize: "detections"
+        scale: 0.12
+        politeness_delta: -0.08
+        intimacy_delta: -0.05
+        max_abs: 0.12
+backchannel:
+  enabled: true
+  nod_threshold: 0.55
+  aizuchi_threshold: 0.45
+  min_gap_ms: 180
+  cancel_on_voice_ms: 50
+  rate_limit_cpm: 8
+  silence_ms_for_nod: 260
+  silence_ms_for_aizuchi: 420
+  energy_bias: 0.05
+  culture: "ja-JP"
+offer_gate:
+  threshold: 0.55
+  listen_bias: 0.15
+  cool_off_s: 12
+memory_reference:
+  enabled: true
+  k: 3
+  name_threshold: 0.50
+  fidelity_high: 0.65
+  fidelity_low: 0.45
+  anchor_high: 0.50
+  max_reply_chars: 140
+  cooldown_s: 30
+  log_path: "logs/memory_ref.jsonl"
+  per_culture:
+    ja-jp:
+      max_reply_chars: 120
+      cooldown_s: 30
+observer:
+  mode: "llm_first"
+  max_latency_ms: 150
+  rotation: "deterministic"
+  templates_path: "config/i18n/disclaimer.yaml"
+  community_bias: 0.05
+  i_message_bias: 0.05
+alerts:
+  max_abs_valence_mean: 0.6
+  min_corr_rho_I: 0.2
+  min_corr_arousal_I: 0.1
+  min_corr_rho_rho: 0.2
+  max_allowed_lag: 8
+  min_resonance_samples: 100
+  max_abs_culture_valence_mean: 0.6
+  min_culture_rho_mean: 0.2
+  min_culture_samples: 20
+resonance:
+  logs: []
+  resample_ms: 20
+  zscore: true
+  detrend: true
+  window: "hann"
+  alpha: 0.0
+  beta: 0.0
+pain_loop:
+  adaptive: true
+  forgive_threshold: 0.35
+  rotate_daily: true
+  max_events_per_nightly: 2000
+  policy_threshold_base: 0.5
+  a2a_empathy_gain_base: 0.1
+  ema_alpha: 0.4
+  l1_budget: 0.8
+  l_inf_budget: 0.3
+  min_threshold: 0.2
+  max_threshold: 0.6
+  quantile: 0.35
+  min_samples: 50
+  severity_window: 200
+  max_empathy: 0.5
+  replay_eval: false
+  care_targets: []
+  comfort_gain_base: 0.15
+  protection_bias: 0.3
+  growth_reward: 0.2
+  patience_budget: 0.5
+  care_mode:
+    enabled: true
+    canary_ratio: 0.1
+    canary_seed: 227
+    budgets:
+      l1: 0.8
+      l_inf: 0.3
+ui:
+  community_update_ms: 400

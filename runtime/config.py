@@ -38,6 +38,24 @@ class LLMCfg:
 class ReplayCfg:
     min_interval_ms: int = field(default=10)
     sample_every: int = field(default=1)
+    horizon: int = field(default=3)
+    alpha: float = field(default=0.6)
+    beta: float = field(default=0.8)
+    gamma: float = field(default=0.1)
+    future_ttl_sec: int = field(default=90)
+    future_energy_threshold: float = field(default=1.2)
+
+
+@dataclass
+class PolicyRuntimeCfg:
+    entropy_coef: float = field(default=0.03)
+    temperature_base: float = field(default=0.9)
+    temperature_k_by_entropy: float = field(default=0.2)
+
+
+@dataclass
+class GuardsCfg:
+    talk_block_on_guard: bool = field(default=True)
 
 
 @dataclass
@@ -188,6 +206,8 @@ class RuntimeCfg:
     llm: LLMCfg = field(default_factory=LLMCfg)
     model: ModelCfg = field(default_factory=ModelCfg)
     replay: ReplayCfg = field(default_factory=ReplayCfg)
+    policy: PolicyRuntimeCfg = field(default_factory=PolicyRuntimeCfg)
+    guards: GuardsCfg = field(default_factory=GuardsCfg)
     emotion: EmotionCfg = field(default_factory=EmotionCfg)
     culture: CultureCfg = field(default_factory=CultureCfg)
     alerts: AlertsCfg = field(default_factory=AlertsCfg)
@@ -217,6 +237,8 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
         extra_factories={"assoc_kernel": AssocKernelCfg},
     )
     replay = _merge_dataclass(ReplayCfg(), payload.get("replay", {}))
+    policy_cfg = _merge_dataclass(PolicyRuntimeCfg(), payload.get("policy", {}))
+    guards_cfg = _merge_dataclass(GuardsCfg(), payload.get("guards", {}))
     emotion = _merge_dataclass(EmotionCfg(), payload.get("emotion", {}))
     culture = _merge_dataclass(
         CultureCfg(),
@@ -241,6 +263,8 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
         llm=llm_cfg,
         model=model,
         replay=replay,
+        policy=policy_cfg,
+        guards=guards_cfg,
         emotion=emotion,
         culture=culture,
         alerts=alerts,
@@ -303,5 +327,7 @@ __all__ = [
     "BackchannelCfg",
     "MemoryReferenceCfg",
     "ObserverDisclaimerCfg",
+    "PolicyRuntimeCfg",
+    "GuardsCfg",
     "UiCfg",
 ]

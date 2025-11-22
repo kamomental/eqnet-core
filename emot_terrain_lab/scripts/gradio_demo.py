@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 Gradio demo for the EQNet emotional hub.
 
@@ -38,6 +38,7 @@ from PIL import Image
 import yaml
 import requests
 import matplotlib.pyplot as plt
+from emot_terrain_lab.hub.future_memory import FutureMemoryController
 
 try:
     import cv2
@@ -153,6 +154,64 @@ WATCH_VARIATIONS = [
     "大丈夫、落ち着いたら教えて。いつでも耳を傾けるよ。",
 ]
 
+_DEMO_FM_CFG = {
+    "alpha": 0.6,
+    "beta": 0.8,
+    "gamma": 0.1,
+    "future_ttl_sec": 90,
+    "future_energy_threshold": 1.2,
+}
+_DEMO_FUTURE = FutureMemoryController(_DEMO_FM_CFG, clock=time.monotonic)
+
+
+def _demo_embed_action(text: str) -> np.ndarray:
+    text = text or ""
+    features = [
+        float(len(text)),
+        float(text.count("。")),
+        float(text.count("！")),
+        float(text.count("？")),
+        float(sum(ch.isdigit() for ch in text)),
+    ]
+    return np.asarray(features, dtype=float)
+
+
+def _demo_novelty(vec: np.ndarray) -> float:
+    return float(np.linalg.norm(vec))
+
+
+def _cosine(u: np.ndarray, v: np.ndarray) -> float:
+    denom = float(np.linalg.norm(u) * np.linalg.norm(v))
+    if denom < 1e-9:
+        return 0.0
+    return float(np.dot(u, v) / denom)
+
+
+def select_action(
+    candidates: List[str],
+    m_past: Optional[np.ndarray],
+    m_future: Optional[np.ndarray],
+    gamma: float,
+):
+    ranked: List[Tuple[float, str, np.ndarray]] = []
+    for text in candidates:
+        vec = _demo_embed_action(text)
+        score = 0.0
+        if m_past is not None and m_past.size:
+            score += _cosine(vec, m_past)
+        if m_future is not None and m_future.size:
+            score += _cosine(vec, m_future)
+        score += float(gamma) * _demo_novelty(vec)
+        ranked.append((score, text, vec))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    if not ranked:
+        return "", [], None
+    best_score, best_text, best_vec = ranked[0]
+    return best_text, ranked, best_vec
+
+
+_LAST_DEMO_SNAPSHOT: Optional[Dict[str, Any]] = None
+
 if HAVE_MEDIAPIPE:
     _MP_FACE = mp.solutions.face_mesh.FaceMesh(
         static_image_mode=False,
@@ -185,7 +244,7 @@ class HeartbeatSynth:
         breath = 0.7 + 0.3 * np.sin(2 * np.pi * (self.env_phase + 0.25 * t))
         y = amp * breath * wave
         self.buf = np.roll(self.buf, -len(t))
-        self.buf[-len(t):] = y
+        self.buf[-len(t) :] = y
         self.phase = (self.phase + f * (len(t) / self.sr)) % 1.0
         self.env_phase = (self.env_phase + 0.25 * (len(t) / self.sr)) % 1.0
         return self.buf.copy()
@@ -211,7 +270,9 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
-def _update_session_state(voice_energy: float, instant_freeze: Optional[float] = None) -> Tuple[int, float, float]:
+def _update_session_state(
+    voice_energy: float, instant_freeze: Optional[float] = None
+) -> Tuple[int, float, float]:
     global _SESSION_SILENCE_MS, _SESSION_FREEZE_SMOOTH, _SESSION_LAST_SAMPLE_MS, _SESSION_LAST_FREEZE_RAW
     now = _now_ms()
     if _SESSION_LAST_SAMPLE_MS is None:
@@ -229,7 +290,9 @@ def _update_session_state(voice_energy: float, instant_freeze: Optional[float] =
         instant_freeze = _SESSION_LAST_FREEZE_RAW
     alpha = 0.15
     prev = _SESSION_FREEZE_SMOOTH
-    _SESSION_FREEZE_SMOOTH = (1 - alpha) * _SESSION_FREEZE_SMOOTH + alpha * float(instant_freeze)
+    _SESSION_FREEZE_SMOOTH = (1 - alpha) * _SESSION_FREEZE_SMOOTH + alpha * float(
+        instant_freeze
+    )
     _SESSION_LAST_FREEZE_RAW = float(instant_freeze)
     freeze_trend = _SESSION_FREEZE_SMOOTH - prev
     return _SESSION_SILENCE_MS, _SESSION_FREEZE_SMOOTH, freeze_trend
@@ -243,7 +306,11 @@ def _decide_talk_mode_local(ctx: GateContext, guard_action: str = "ok") -> TalkM
         return TalkMode.TALK
 
     if guard_action in {"fallback_attention", "tighten_band"}:
-        _LAST_MODE = TalkMode.SOOTHE if (ctx.dm > DM_ENTER or ctx.jerk > JK_ENTER) else TalkMode.WATCH
+        _LAST_MODE = (
+            TalkMode.SOOTHE
+            if (ctx.dm > DM_ENTER or ctx.jerk > JK_ENTER)
+            else TalkMode.WATCH
+        )
         return _LAST_MODE
 
     if not ctx.engaged or ctx.since_last_user_ms < TALK_MIN_SINCE:
@@ -276,7 +343,11 @@ def _decide_talk_mode_local(ctx: GateContext, guard_action: str = "ok") -> TalkM
             _LAST_MODE = TalkMode.SOOTHE_DEEP
             return _LAST_MODE
 
-    if ctx.face in {"neutral"} and ctx.voice_energy < ASK_VOICE_TH and ctx.since_last_user_ms > ASK_MIN_SINCE:
+    if (
+        ctx.face in {"neutral"}
+        and ctx.voice_energy < ASK_VOICE_TH
+        and ctx.since_last_user_ms > ASK_MIN_SINCE
+    ):
         _LAST_MODE = TalkMode.ASK
         return _LAST_MODE
 
@@ -285,12 +356,22 @@ def _decide_talk_mode_local(ctx: GateContext, guard_action: str = "ok") -> TalkM
         normalized = ctx.text_value.strip()
         if normalized:
             trigger_key = f"text:{hash((normalized, ctx.memory_anchor))}"
-    elif ctx.voice_energy >= TALK_SIGNAL_VOICE or ctx.dm >= TALK_SIGNAL_DM or ctx.jerk >= TALK_SIGNAL_JERK:
+    elif (
+        ctx.voice_energy >= TALK_SIGNAL_VOICE
+        or ctx.dm >= TALK_SIGNAL_DM
+        or ctx.jerk >= TALK_SIGNAL_JERK
+    ):
         trigger_key = f"sensor:{int(ctx.voice_energy * 100)}-{int(ctx.dm * 100)}-{int(ctx.jerk * 100)}"
 
     if trigger_key and ctx.freeze_score < FREEZE_EXIT:
-        if ctx.since_last_user_ms > TALK_MIN_SINCE and (now - _LAST_TALK_MS) > TALK_COOLDOWN_MS:
-            if trigger_key != _LAST_TALK_TRIGGER or (now - _LAST_TALK_TRIGGER_MS) > TALK_REPEAT_RESET_MS:
+        if (
+            ctx.since_last_user_ms > TALK_MIN_SINCE
+            and (now - _LAST_TALK_MS) > TALK_COOLDOWN_MS
+        ):
+            if (
+                trigger_key != _LAST_TALK_TRIGGER
+                or (now - _LAST_TALK_TRIGGER_MS) > TALK_REPEAT_RESET_MS
+            ):
                 _LAST_TALK_TRIGGER = trigger_key
                 _LAST_TALK_TRIGGER_MS = now
                 _LAST_MODE = TalkMode.TALK
@@ -321,7 +402,10 @@ def _tts_speak(text: str) -> None:
         if _TTS_ENGINE is None:
             _TTS_ENGINE = pyttsx3.init()
             _TTS_ENGINE.setProperty("rate", 180)
-        threading.Thread(target=lambda: (_TTS_ENGINE.say(text), _TTS_ENGINE.runAndWait()), daemon=True).start()
+        threading.Thread(
+            target=lambda: (_TTS_ENGINE.say(text), _TTS_ENGINE.runAndWait()),
+            daemon=True,
+        ).start()
     except Exception:  # pragma: no cover
         pass
 
@@ -365,13 +449,19 @@ def _format_ack(mode: TalkMode, ctx: GateContext) -> str:
         return f"{line} (freeze={ctx.freeze_score:.2f}, silence={ctx.silence_ms}ms)"
     if mode == TalkMode.ASK:
         line = random.choice(ASK_VARIATIONS)
-        return f"{line} (voice={ctx.voice_energy:.2f}, since={ctx.since_last_user_ms}ms)"
+        return (
+            f"{line} (voice={ctx.voice_energy:.2f}, since={ctx.since_last_user_ms}ms)"
+        )
     line = random.choice(WATCH_VARIATIONS)
     return f"{line} (Ignition={ctx.ignition:.2f})"
 
 
 def _llm_free_talk(ctx: GateContext) -> str:
-    mood = "静穏" if (ctx.S < 0.4 and ctx.H < 0.4) else "ざわつき" if (ctx.S > 0.6 or ctx.H > 0.6) else "ゆらぎ"
+    mood = (
+        "静穏"
+        if (ctx.S < 0.4 and ctx.H < 0.4)
+        else "ざわつき" if (ctx.S > 0.6 or ctx.H > 0.6) else "ゆらぎ"
+    )
     lines: List[str] = [
         f"今の空気は「{mood}」。S={ctx.S:.2f}, H={ctx.H:.2f}, rho={ctx.rho:.2f}, Ignition={ctx.ignition:.2f}",
     ]
@@ -382,11 +472,15 @@ def _llm_free_talk(ctx: GateContext) -> str:
     if ctx.voice_energy < 0.2:
         lines.append("声はいま控えめ。こちらから少しだけ話すね")
     if ctx.freeze_score > FREEZE_ENTER or ctx.silence_ms > SILENCE_ENTER_MS:
-        lines.append("体が固まっている感じがあるね。呼吸を整えながら、分に一度だけそっと心の状態を見よう")
+        lines.append(
+            "体が固まっている感じがあるね。呼吸を整えながら、分に一度だけそっと心の状態を見よう"
+        )
     if ctx.dm > 0.35 or ctx.jerk > 0.2:
         lines.append("感情の波が少し大きい。大丈夫、私が隣で整えるよ")
     if ctx.memory_anchor and ctx.memory_anchor != "-":
-        lines.append(f"最近鳴いている記憶は「{ctx.memory_anchor}」。そこに寄り添って考えてみよう")
+        lines.append(
+            f"最近鳴いている記憶は「{ctx.memory_anchor}」。そこに寄り添って考えてみよう"
+        )
     lines.append("続ける準備ができたら、合図して")
     return " ".join(lines)
 
@@ -395,7 +489,9 @@ def _hub_step(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not HUB_URL:
         return None
     try:
-        response = requests.post(f"{HUB_URL.rstrip('/')}/api/step", json=payload, timeout=10)
+        response = requests.post(
+            f"{HUB_URL.rstrip('/')}/api/step", json=payload, timeout=10
+        )
         if response.ok:
             return response.json()
     except Exception:  # pragma: no cover
@@ -431,7 +527,15 @@ def _build_radar_chart(emotion_vec: np.ndarray, qualia: Dict[str, Any]) -> go.Fi
     if emotion_vec is None or emotion_vec.size < len(AXES):
         return go.Figure()
 
-    emotion_axes = ["sensory", "temporal", "spatial", "affective", "cognitive", "social", "meta"]
+    emotion_axes = [
+        "sensory",
+        "temporal",
+        "spatial",
+        "affective",
+        "cognitive",
+        "social",
+        "meta",
+    ]
     emotion_values = [
         _normalize(float(emotion_vec[AXES.index(axis)]), *AXIS_BOUNDS[axis])
         for axis in emotion_axes
@@ -574,7 +678,15 @@ def _pick_ack(tone: str, culture: str, tag: str) -> str:
     tag_key = (
         tag
         if tag
-        in {"happy_excited", "calm_positive", "angry_hot", "angry_quiet", "surprise", "curious", "neutral"}
+        in {
+            "happy_excited",
+            "calm_positive",
+            "angry_hot",
+            "angry_quiet",
+            "surprise",
+            "curious",
+            "neutral",
+        }
         else "neutral"
     )
 
@@ -614,6 +726,7 @@ def _build_outputs(
     Dict[str, Any],
     Dict[str, Any],
     Dict[str, Any],
+    Dict[str, Any],
     go.Figure,
     go.Figure,
     go.Figure,
@@ -640,6 +753,15 @@ def _build_outputs(
         key: (round(value, 6) if isinstance(value, (int, float)) else str(value))
         for key, value in vars(controls).items()
     }
+    prospective_payload: Dict[str, Any]
+    prospective_payload = result.get("prospective") or {}
+    if not prospective_payload:
+        last_prospective = getattr(rt, "_last_prospective", None)
+        if last_prospective:
+            serialize = getattr(rt, "_serialize_prospective", None)
+            if callable(serialize):
+                prospective_payload = serialize(last_prospective) or {}
+
     radar_fig = _build_radar_chart(rt.last_E, rt.last_qualia)
     basic_fig = _build_basic_emotion_chart(affect.valence, affect.arousal)
     heatmap_fig = _build_heatmap(rt.last_snapshot)
@@ -649,6 +771,7 @@ def _build_outputs(
         affect_payload,
         metrics_payload,
         controls_payload,
+        prospective_payload,
         radar_fig,
         basic_fig,
         heatmap_fig,
@@ -677,7 +800,11 @@ def _get_runtime() -> EmotionalHubRuntime:
             runtime._runtime_cfg = external_cfg  # force override to reflect latest file
             latency_cfg = getattr(external_cfg, "latency", None)
             if latency_cfg is not None:
-                setattr(runtime, "_loose_enabled", bool(getattr(latency_cfg, "enable_loose", True)))
+                setattr(
+                    runtime,
+                    "_loose_enabled",
+                    bool(getattr(latency_cfg, "enable_loose", True)),
+                )
         else:
             setattr(runtime, "_loose_enabled", True)
     return runtime
@@ -815,9 +942,13 @@ def talkmode_step_ui(
     instant_freeze = (
         _SESSION_LAST_FREEZE_RAW
         if _SESSION_LAST_FREEZE_RAW > 0.0
-        else float(np.clip(1.0 - min(1.0, 0.5 * float(dm) + 0.5 * float(jerk)), 0.0, 1.0))
+        else float(
+            np.clip(1.0 - min(1.0, 0.5 * float(dm) + 0.5 * float(jerk)), 0.0, 1.0)
+        )
     )
-    silence_ms, freeze_score, freeze_trend = _update_session_state(float(voice_energy), instant_freeze)
+    silence_ms, freeze_score, freeze_trend = _update_session_state(
+        float(voice_energy), instant_freeze
+    )
 
     payload = {
         "face": face,
@@ -878,7 +1009,9 @@ def talkmode_step_ui(
         ctx_json.setdefault("freeze_trend", freeze_trend)
         guard_action = gate.get("guard_action", guard_action)
         mode_name = (hub_response.get("talk_mode") or "WATCH").upper()
-        mode = TalkMode[mode_name] if mode_name in TalkMode.__members__ else TalkMode.WATCH
+        mode = (
+            TalkMode[mode_name] if mode_name in TalkMode.__members__ else TalkMode.WATCH
+        )
         resp_text = (
             hub_response.get("llm_text")
             or (hub_response.get("response") or {}).get("text")
@@ -968,7 +1101,13 @@ def talkmode_auto_tick(
 ) -> Tuple[Any, Any, Any, Any, Any]:
     global _SESSION_STARTED
     if not auto_enabled or not _SESSION_STARTED:
-        return gr.update(), gr.update(), gr.update(), gr.update(value="WATCH"), gr.update(value=since_ms)
+        return (
+            gr.update(),
+            gr.update(),
+            gr.update(),
+            gr.update(value="WATCH"),
+            gr.update(value=since_ms),
+        )
 
     since_ms = min(int(since_ms) + 500, 4000)
     text, ctx_json, fig, mode = talkmode_step_ui(
@@ -990,7 +1129,9 @@ def talkmode_auto_tick(
     return text, ctx_json, fig, gr.update(value=mode), gr.update(value=since_ms)
 
 
-def talkmode_camera_stream(frame: Optional[np.ndarray], face_val: str, engaged_val: bool) -> Tuple[Any, Any, Any, Any, Any, Any]:
+def talkmode_camera_stream(
+    frame: Optional[np.ndarray], face_val: str, engaged_val: bool
+) -> Tuple[Any, Any, Any, Any, Any, Any]:
     if frame is None or not HAVE_MEDIAPIPE:
         return (
             gr.update(),
@@ -1012,7 +1153,9 @@ def talkmode_camera_stream(frame: Optional[np.ndarray], face_val: str, engaged_v
     if engaged:
         mouth_norm = float(np.clip(mouth_open * 25.0, 0.0, 1.0))
         blink_norm = float(np.clip(blink * 150.0, 0.0, 1.0))
-        freeze_raw = float(np.clip(1.0 - (0.6 * mouth_norm + 0.4 * blink_norm), 0.0, 1.0))
+        freeze_raw = float(
+            np.clip(1.0 - (0.6 * mouth_norm + 0.4 * blink_norm), 0.0, 1.0)
+        )
     else:
         freeze_raw = 0.0
     global _SESSION_LAST_FREEZE_RAW
@@ -1035,7 +1178,9 @@ with gr.Blocks() as demo:
         )
 
         with gr.Row():
-            text_in = gr.Textbox(label="User Text", placeholder="How are you feeling today?", lines=2)
+            text_in = gr.Textbox(
+                label="User Text", placeholder="How are you feeling today?", lines=2
+            )
             image_in = gr.Image(label="Image Frame (optional)", type="pil")
 
         audio_in = gr.Audio(label="Audio (optional)", type="numpy")
@@ -1045,6 +1190,7 @@ with gr.Blocks() as demo:
         affect_out = gr.JSON(label="Affect (valence / arousal / confidence)")
         metrics_out = gr.JSON(label="EQNet Metrics")
         controls_out = gr.JSON(label="Behaviour Controls")
+        prospective_out = gr.JSON(label="Prospective State")
         advanced_radar_out = gr.Plot(label="EQNet 7D + Qualia Radar")
         basic_radar_out = gr.Plot(label="Basic Emotion Radar")
         heatmap_out = gr.Plot(label="Field Energy Heatmap")
@@ -1058,6 +1204,7 @@ with gr.Blocks() as demo:
                 affect_out,
                 metrics_out,
                 controls_out,
+                prospective_out,
                 advanced_radar_out,
                 basic_radar_out,
                 heatmap_out,
@@ -1065,7 +1212,9 @@ with gr.Blocks() as demo:
             ],
         )
 
-        gr.Markdown("For continuous demos, consider enabling Gradio's `live` mode or streaming camera/microphone input.")
+        gr.Markdown(
+            "For continuous demos, consider enabling Gradio's `live` mode or streaming camera/microphone input."
+        )
 
     with gr.Tab("TalkMode Resonance"):
         gr.Markdown(
@@ -1076,21 +1225,33 @@ with gr.Blocks() as demo:
         with gr.Row():
             if HAVE_MEDIAPIPE:
                 with gr.Column():
-                    camera = gr.Video(sources=["webcam"], streaming=True, label="Webcam", height=240)
+                    camera = gr.Video(
+                        sources=["webcam"], streaming=True, label="Webcam", height=240
+                    )
                     camera_preview = gr.Image(label="Webcam Preview")
             else:
                 camera = None
                 camera_preview = None
-            talk_mode_display = gr.Textbox(label="TalkMode", value="WATCH", interactive=False)
+            talk_mode_display = gr.Textbox(
+                label="TalkMode", value="WATCH", interactive=False
+            )
 
-        gr.Markdown("※ Auto update をオンにすると 0.5 秒ごとに再判定します。初回は下の Run ボタンを押してください。")
-        gr.Markdown("※ Webカメラを使わない場合は下のスライダで手動入力できます。カメラ接続時は自動で上書きされます。")
+        gr.Markdown(
+            "※ Auto update をオンにすると 0.5 秒ごとに再判定します。初回は下の Run ボタンを押してください。"
+        )
+        gr.Markdown(
+            "※ Webカメラを使わない場合は下のスライダで手動入力できます。カメラ接続時は自動で上書きされます。"
+        )
 
         with gr.Row():
-            face_radio = gr.Radio(["joy", "neutral", "sad", "surprise"], value="neutral", label="Face")
+            face_radio = gr.Radio(
+                ["joy", "neutral", "sad", "surprise"], value="neutral", label="Face"
+            )
             voice_slider = gr.Slider(0.0, 1.0, value=0.20, label="Voice energy")
             engaged_check = gr.Checkbox(True, label="Engaged")
-            since_slider = gr.Slider(0, 4000, value=1200, step=50, label="Elapsed since last user [ms]")
+            since_slider = gr.Slider(
+                0, 4000, value=1200, step=50, label="Elapsed since last user [ms]"
+            )
 
         with gr.Row():
             dm_slider = gr.Slider(0.0, 1.0, value=0.10, label="Delta m")
@@ -1100,8 +1261,12 @@ with gr.Blocks() as demo:
             rho_slider = gr.Slider(0.0, 1.0, value=0.55, label="rho (sync)")
             ignition_slider = gr.Slider(0.0, 1.0, value=0.30, label="Ignition")
 
-        memory_tags = gr.Textbox(value="work, family, project-X", label="Memory tags / recent events")
-        user_text = gr.Textbox(label="Text input (optional)", placeholder="ASR output can be placed here")
+        memory_tags = gr.Textbox(
+            value="work, family, project-X", label="Memory tags / recent events"
+        )
+        user_text = gr.Textbox(
+            label="Text input (optional)", placeholder="ASR output can be placed here"
+        )
 
         with gr.Row():
             talk_text = gr.Textbox(label="Response", lines=4)

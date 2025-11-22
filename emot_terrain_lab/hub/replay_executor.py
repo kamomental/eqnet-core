@@ -1,9 +1,10 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Replay orchestration helper."""
 
 from __future__ import annotations
 
 import math
+import time
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from ..mind.replay_unified import UnifiedReplayKernel
@@ -12,6 +13,7 @@ from ..timekeeper import TimeKeeper
 from ..utils.io import append_jsonl
 from .phase_ratio_filter import HysteresisCfg, PhaseRatioFilter
 from devlife.mind.replay_memory import ReplayMemory
+from .future_memory import FutureMemoryController
 
 
 class ReplayExecutor:
@@ -56,6 +58,8 @@ class ReplayExecutor:
         self._phase_success_streak = 0
         self._phase_error = float(self._phase_cfg["error_target"])
 
+        self._future_memory = FutureMemoryController(self.replay_cfg, clock=time.monotonic)
+
         phase_dyn_cfg = self.replay_cfg.get("phase", {}) or {}
         self._phase_filter: PhaseRatioFilter | None = None
         if phase_dyn_cfg:
@@ -96,6 +100,9 @@ class ReplayExecutor:
         best_choice: Optional[Dict[str, Any]] = None
         candidates: List[Dict[str, Any]] = []
         d_tau_step: Optional[float] = None
+        future_snapshot: Optional[Any] = None
+
+        self._future_memory.update_future(plan)
 
         if self.mode not in {"reflective", "living"}:
             return {
@@ -104,6 +111,7 @@ class ReplayExecutor:
                 "best": best_choice,
                 "candidates": candidates,
                 "d_tau_step": d_tau_step,
+                "future_memory": None,
             }
 
         cooldown_tau = float(self.replay_cfg.get("cooldown_tau", 0.8))
@@ -114,6 +122,7 @@ class ReplayExecutor:
                 "best": best_choice,
                 "candidates": candidates,
                 "d_tau_step": d_tau_step,
+                "future_memory": snapshot_payload,
             }
 
         field_signals = plan.get("biofield", {}).get("signals", {}) if isinstance(
@@ -195,6 +204,9 @@ class ReplayExecutor:
             except Exception:
                 pass
 
+        self._future_memory.update_past(best_choice)
+        future_snapshot = self._future_memory.snapshot(ctx_time, field_signals)
+
         replay_details = {
             "type": "forward",
             "horizon_tau": round(horizon_tau, 2),
@@ -219,6 +231,18 @@ class ReplayExecutor:
         }
 
         self._record_log(replay_details, candidates)
+        if future_snapshot is not None:
+            snapshot_payload = future_snapshot.as_dict()
+            replay_info["future_alignment"] = {
+                "cos_past": snapshot_payload.get("cos_past"),
+                "cos_future": snapshot_payload.get("cos_future"),
+                "bi_loss": snapshot_payload.get("bi_loss"),
+            }
+            if replay_details is not None:
+                replay_details["future_alignment"] = snapshot_payload
+        else:
+            snapshot_payload = None
+
         success = bool(
             best_choice
             and float(best_choice.get("U", 0.0)) >= self._phase_cfg["success_threshold"]
@@ -312,3 +336,4 @@ def _clip(value: float, lo: float, hi: float) -> float:
 
 
 __all__ = ["ReplayExecutor"]
+

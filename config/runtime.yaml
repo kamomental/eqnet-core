@@ -1,4 +1,4 @@
-model:
+﻿model:
   use_assoc_kernel: false
   assoc_kernel:
     sigma_init: 1.2
@@ -26,6 +26,18 @@ llm:
 replay:
   min_interval_ms: 10
   sample_every: 1
+  horizon: 3
+  alpha: 0.6
+  beta: 0.8
+  gamma: 0.1
+  future_ttl_sec: 90
+  future_energy_threshold: 1.2
+policy:
+  entropy_coef: 0.03
+  temperature_base: 0.9
+  temperature_k_by_entropy: 0.2
+guards:
+  talk_block_on_guard: true
 emotion:
   valence_w_rho: 1.0
   valence_w_s: 1.0

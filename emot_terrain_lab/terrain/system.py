@@ -608,3 +608,71 @@ class EmotionalMemorySystem:
                     handle.write(json.dumps(metrics_record, ensure_ascii=False) + "\n")
             except Exception:
                 self.community_last_error = "field_metrics_log_error"
+
+    # ------------------------------------------------------------------
+    # Prospective drive helpers
+    # ------------------------------------------------------------------
+    def _prospective_dim(self) -> int:
+        return int(self.current_emotion.size) or len(AXES)
+
+    def _prospective_vector(self, vector):
+        arr = np.zeros(self._prospective_dim(), dtype=float)
+        if vector is None:
+            return arr
+        vec = np.asarray(vector, dtype=float).reshape(-1)
+        limit = min(arr.size, vec.size)
+        if limit:
+            arr[:limit] = vec[:limit]
+        return arr
+
+    def sample_success_vector(self, phi_t: np.ndarray) -> np.ndarray:
+        """Return a success prototype driven by episodic memory clusters."""
+        phi_vec = self._prospective_vector(phi_t)
+        episodes = getattr(self.l2, "episodes", [])
+        if not episodes:
+            return phi_vec
+        accum = np.zeros_like(phi_vec)
+        weight_sum = 0.0
+        tau = max(1e-6, float(os.getenv("PDC_SUCCESS_TAU", "1.0")))
+        for episode in episodes:
+            pattern = episode.get("emotion_pattern") or {}
+            center = pattern.get("center")
+            if center is None:
+                continue
+            center_vec = self._prospective_vector(center)
+            dist = float(np.linalg.norm(phi_vec - center_vec))
+            weight = float(np.exp(-dist / tau))
+            weight *= float(episode.get("importance", 0.5))
+            accum += weight * center_vec
+            weight_sum += weight
+        if weight_sum <= 1e-6:
+            return phi_vec
+        return accum / weight_sum
+
+    def sample_future_template(self, phi_t: np.ndarray, psi_t: np.ndarray | None = None) -> np.ndarray:
+        """Return a future template from semantic patterns and ?(t)."""
+        phi_vec = self._prospective_vector(phi_t)
+        psi_vec = self._prospective_vector(psi_t if psi_t is not None else np.zeros_like(phi_vec))
+        patterns = getattr(self.l3, "patterns", [])
+        if not patterns:
+            return 0.7 * phi_vec + 0.3 * psi_vec
+        accum = np.zeros_like(phi_vec)
+        weight_sum = 0.0
+        psi_norm = float(np.linalg.norm(psi_vec))
+        for pattern in patterns:
+            signature = pattern.get("emotion_signature")
+            if signature is None:
+                continue
+            sig_vec = self._prospective_vector(signature)
+            weight = float(max(1.0, pattern.get("occurrences", 1.0)))
+            if psi_norm > 1e-6:
+                dot = float(np.dot(sig_vec, psi_vec))
+                sig_norm = float(np.linalg.norm(sig_vec)) + 1e-8
+                weight *= 1.0 + max(0.0, dot / (sig_norm * psi_norm))
+            accum += weight * sig_vec
+            weight_sum += weight
+        if weight_sum <= 1e-6:
+            blended = 0.6 * phi_vec + 0.4 * psi_vec
+            return blended
+        return accum / weight_sum
+

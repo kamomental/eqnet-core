@@ -11,7 +11,7 @@ learnt MLP later.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Literal
+from typing import Dict, Literal, Optional
 import numpy as np
 from devlife.mind.mood import AffectState, gate_from_m
 
@@ -73,7 +73,12 @@ class PolicyHead:
     def __init__(self, config: PolicyConfig | None = None) -> None:
         self.config = config or PolicyConfig()
 
-    def affect_to_controls(self, affect, metrics: Dict[str, float]) -> AffectControls:
+    def affect_to_controls(
+        self,
+        affect,
+        metrics: Dict[str, float],
+        prospective: Optional[Dict[str, float]] = None,
+    ) -> AffectControls:
         """
         Convert affect + metrics to monotonic control outputs.
 
@@ -85,6 +90,10 @@ class PolicyHead:
         metrics:
             Dict containing EQNet metrics (H, R, kappa, etc.). Missing keys are
             treated as neutral 0.5.
+        prospective:
+            Optional dict from the Prospective Drive Core (temperature, ``E_story``).
+            When provided it nudges the monotonic outputs without overriding the
+            affect-driven ordering.
         """
         valence = float(np.clip(getattr(affect, "valence", 0.0), -1.0, 1.0))
         arousal = float(np.clip(getattr(affect, "arousal", 0.0), -1.0, 1.0))
@@ -122,6 +131,17 @@ class PolicyHead:
 
         prosody_f0_shift = cfg.prosody_f0_base + cfg.prosody_f0_valence_gain * valence
         prosody_f0_shift = float(np.clip(prosody_f0_shift, *cfg.prosody_f0_bounds))
+
+        if prospective:
+            pdc_temp = prospective.get("T")
+            if pdc_temp is not None:
+                blend = 0.5 * temperature + 0.5 * float(pdc_temp)
+                temperature = float(np.clip(blend, *cfg.temp_bounds))
+            story_energy = float(prospective.get("E_story", 0.0))
+            warmth = float(np.clip(warmth + 0.25 * story_energy, *cfg.warmth_bounds))
+            prosody_energy = float(
+                np.clip(prosody_energy + 0.2 * story_energy, *cfg.prosody_bounds)
+            )
 
         # Gesture amplitude reacts to arousal but damped by |kappa| (absorbing boundary).
         gesture_amp = float(np.clip(0.5 + 0.5 * arousal - 0.3 * abs(kappa), 0.0, 1.0))
