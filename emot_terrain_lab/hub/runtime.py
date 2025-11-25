@@ -17,6 +17,14 @@ import hashlib
 import numpy as np
 from pathlib import Path
 
+try:
+    from eqnet.mask_layer import MaskLayer, MaskPersonaProfile, load_persona_profile
+except Exception:  # pragma: no cover - optional dependency
+    MaskLayer = None  # type: ignore
+    MaskPersonaProfile = None  # type: ignore
+    load_persona_profile = None  # type: ignore
+
+from eqnet.logs.moment_log import MomentLogEntry, MomentLogWriter
 from eqnet.modules.prospective_drive_core import PDCConfig, ProspectiveDriveCore
 from emot_terrain_lab.terrain.emotion import AXES
 from .perception import PerceptionBridge, PerceptionConfig, AffectSample
@@ -36,6 +44,76 @@ except ImportError:
 
 
 @dataclass
+class MaskLayerConfig:
+    """Runtime-level controls for the persona mask layer."""
+
+    enabled: bool = False
+    persona: Dict[str, Any] = field(default_factory=dict)
+    log_path: str = ""
+
+
+
+def apply_mask_layer(
+    user_text: str,
+    context: Optional[str],
+    *,
+    mask_cfg: MaskLayerConfig,
+    prospective: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, Optional[str], Dict[str, Any]]:
+    """Pass prompts through the mask layer when available."""
+
+    persona_meta: Dict[str, Any] = {}
+    if not getattr(mask_cfg, "enabled", False) or MaskLayer is None:
+        return user_text, context, persona_meta
+
+    persona_payload = getattr(mask_cfg, "persona", None)
+    profile = None
+    if load_persona_profile is not None:
+        try:
+            profile = load_persona_profile(persona_payload)
+        except Exception:
+            profile = None
+    elif MaskPersonaProfile is not None:
+        if isinstance(persona_payload, MaskPersonaProfile):
+            profile = persona_payload
+        elif isinstance(persona_payload, dict):
+            try:
+                profile = MaskPersonaProfile(**persona_payload)
+            except Exception:
+                profile = None
+        elif isinstance(persona_payload, str):
+            profile = MaskPersonaProfile()
+
+    if profile is None:
+        return user_text, context, persona_meta
+
+    layer = MaskLayer(profile)
+    inner_spec = {"pdc": prospective or {}, "phi_snapshot": None}
+    dialog_context = {"base_context": context or ""}
+    try:
+        prompt_obj = layer.build_prompt(inner_spec=inner_spec, dialog_context=dialog_context)
+    except Exception:
+        return user_text, context, persona_meta
+
+    persona_meta = dict(prompt_obj.persona_meta or {})
+    masked_context = _merge_mask_prompt(prompt_obj.system_prompt, context)
+    return user_text, masked_context, persona_meta
+
+
+
+def _merge_mask_prompt(system_prompt: Optional[str], context: Optional[str]) -> Optional[str]:
+    if not system_prompt:
+        return context
+    snippet = system_prompt.strip()
+    if not snippet:
+        return context
+    if not context:
+        return snippet
+    return f"{snippet}\n\n---\n\n{context.strip()}"
+
+
+
+@dataclass
 class RuntimeConfig:
     perception: PerceptionConfig = field(default_factory=PerceptionConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
@@ -43,6 +121,8 @@ class RuntimeConfig:
     use_eqnet_core: bool = False
     eqnet_state_dir: str = "data/state_hub"
     robot: RobotBridgeConfig = field(default_factory=RobotBridgeConfig)
+    mask_layer: MaskLayerConfig = field(default_factory=MaskLayerConfig)
+    moment_log_path: Optional[str] = "logs/moment_log.jsonl"
 
 
 class TalkMode(Enum):
@@ -65,12 +145,68 @@ class GateContext:
     force_listen: bool = False
 
 
+class FastAckState:
+    """Minimal state container for fast acknowledgement sampling."""
+
+    def __init__(self) -> None:
+        self.last_choice: str = "silence"
+
+
+class ArousalTracker:
+    """Track the previous arousal value to compute delta responses."""
+
+    def __init__(self) -> None:
+        self.last_arousal: float = 0.0
+
+
 _ACK_TEMPLATES: Dict[TalkMode, str] = {
     TalkMode.WATCH: "うん、ここで待っているよ。いつでも合図してね。",
     TalkMode.SOOTHE: "表情が少し硬いかも。深呼吸して、肩の力を抜こうか。私はここにいるよ。",
     TalkMode.ASK: "さっきより元気が少なめに見える。何かあった？話せる範囲で教えてね。",
     TalkMode.TALK: "続きを整えよう。どこから話そうか。",
 }
+
+
+def _softmax(logits: np.ndarray) -> np.ndarray:
+    shifted = logits - float(np.max(logits))
+    exp_values = np.exp(shifted)
+    denom = float(np.sum(exp_values))
+    if denom <= 0.0:
+        size = logits.size or 1
+        return np.full(size, 1.0 / size)
+    return exp_values / denom
+
+
+def sample_fast_ack(
+    arousal: float,
+    distance: float,
+    state: FastAckState,
+    tracker: ArousalTracker,
+) -> str:
+    """Return 'silence' / 'breath' / 'ack' based on continuous inputs."""
+
+    arousal_clamped = float(np.clip(arousal, 0.0, 1.0))
+    distance_clamped = float(np.clip(distance, 0.0, 1.0))
+    delta = arousal_clamped - tracker.last_arousal
+    tracker.last_arousal = arousal_clamped
+
+    logits = np.array([0.0, 0.0, 0.0], dtype=float)
+    logits[0] += 2.0 * (1.0 - arousal_clamped)
+    logits[2] += 2.0 * arousal_clamped
+    logits[1] += 0.5 + 0.5 * (1.0 - distance_clamped)
+
+    if state.last_choice == "ack":
+        logits[2] -= 0.5
+    elif state.last_choice == "silence":
+        logits[0] -= 0.3
+
+    if delta > 0.3:
+        logits[2] += 0.5
+
+    probs = _softmax(logits)
+    choice = np.random.choice(["silence", "breath", "ack"], p=probs)
+    state.last_choice = choice
+    return choice
 
 
 def _decide_talk_mode(ctx: GateContext) -> TalkMode:
@@ -143,7 +279,10 @@ class EmotionalHubRuntime:
         self._last_gate_context: Dict[str, Any] = {}
         self.eqnet_system: Optional[EmotionalMemorySystem] = None
         if self.config.use_eqnet_core:
-            self.eqnet_system = EmotionalMemorySystem(self.config.eqnet_state_dir)
+            self.eqnet_system = EmotionalMemorySystem(
+                self.config.eqnet_state_dir,
+                moment_log_path=self.config.moment_log_path,
+            )
         self._pdc = ProspectiveDriveCore(PDCConfig(dim=len(AXES)))
         self._pdc_memory_fallback = _NullProspectiveMemory(len(AXES))
         self._last_prospective: Optional[Dict[str, Any]] = None
@@ -168,6 +307,22 @@ class EmotionalHubRuntime:
                 self._memory_ref_log_path.parent.mkdir(parents=True, exist_ok=True)
             except Exception:
                 self._memory_ref_log_path = None
+
+        self._fast_ack_state = FastAckState()
+        self._arousal_tracker = ArousalTracker()
+        self._last_persona_meta: Dict[str, Any] = {}
+        self._last_fast_ack_sample: Optional[Dict[str, Any]] = None
+        self._heart_rate = 0.85
+        self._heart_phase = 0.0
+        self._heart_last_ts = time.time()
+        self._heart_base_rate = 0.85
+        self._heart_gain = 0.45
+        self._moment_log_writer = MomentLogWriter(self.config.moment_log_path)
+        self._turn_id = 0
+        self._session_id = None
+        runtime_session = getattr(self._runtime_cfg, 'session', None) if self._runtime_cfg else None
+        if runtime_session is not None:
+            self._session_id = getattr(runtime_session, 'session_id', None)
 
     # ------------------------------------------------------------------ #
     # Main entrypoints
@@ -250,6 +405,8 @@ class EmotionalHubRuntime:
         if self._pending_text_affect is not None:
             affect = self._pending_text_affect
             self._pending_text_affect = None
+        heart_rate, heart_phase = self._update_heart_state(float(getattr(affect, 'arousal', 0.0)))
+        heart_snapshot = {'rate': heart_rate, 'phase': heart_phase}
         metrics = self._update_metrics(affect, fast_only=fast_only)
         # Merge external mood metrics if provided (env or file)
         metrics = self._merge_mood_metrics(metrics)
@@ -348,7 +505,7 @@ class EmotionalHubRuntime:
 
         ack_for_fast: Optional[str] = None
         if fast_only and text_input:
-            ack_for_fast = _ACK_TEMPLATES.get(self._talk_mode, _ACK_TEMPLATES[TalkMode.WATCH])
+            ack_for_fast = self._sample_fast_ack_text(affect, gate_ctx)
 
         ack_text: Optional[str] = None
         if self._talk_mode in (TalkMode.SOOTHE, TalkMode.ASK):
@@ -358,6 +515,7 @@ class EmotionalHubRuntime:
 
         response: Optional[HubResponse] = None
         memory_reference: Optional[Dict[str, Any]] = None
+        persona_meta: Dict[str, Any] = {}
 
         if fast_only:
             ack_payload = ack_for_fast or ack_text
@@ -374,6 +532,8 @@ class EmotionalHubRuntime:
                 "talk_mode": self._talk_mode.name.lower(),
                 "gate_context": self._last_gate_context,
                 "prospective": self._serialize_prospective(prospective),
+                "heart": heart_snapshot,
+                "persona_meta": persona_meta,
             }
 
         should_call_llm = text_input and self._talk_mode == TalkMode.TALK
@@ -406,9 +566,16 @@ class EmotionalHubRuntime:
                         value = prospective.get(key)
                         if isinstance(value, np.ndarray):
                             llm_controls[f"pdc_{key}"] = value.tolist()
+                masked_user_text, masked_context, persona_meta = apply_mask_layer(
+                    user_text or "",
+                    context,
+                    mask_cfg=self.config.mask_layer,
+                    prospective=prospective,
+                )
+
                 response = self.llm.generate(
-                    user_text=user_text or "",
-                    context=context,
+                    user_text=masked_user_text,
+                    context=masked_context,
                     controls=llm_controls,
                     intent=intent or self.llm.config.default_intent,
                     slos={"p95_ms": 180.0},
@@ -425,6 +592,18 @@ class EmotionalHubRuntime:
                 }
             )
 
+        self._last_persona_meta = dict(persona_meta)
+        if not fast_only:
+            self._log_moment_entry(
+                affect=affect,
+                metrics=metrics,
+                heart_snapshot=heart_snapshot,
+                prospective=prospective,
+                response=response,
+                user_text=user_text,
+                persona_meta=persona_meta,
+            )
+
         return {
             "affect": affect,
             "controls": controls,
@@ -436,6 +615,8 @@ class EmotionalHubRuntime:
             "talk_mode": self._talk_mode.name.lower(),
             "gate_context": self._last_gate_context,
             "prospective": self._serialize_prospective(prospective),
+            "heart": heart_snapshot,
+            "persona_meta": persona_meta,
         }
 
     # ------------------------------------------------------------------ #
@@ -443,6 +624,20 @@ class EmotionalHubRuntime:
     # ------------------------------------------------------------------ #
 
     @property
+    def last_persona_meta(self) -> Dict[str, Any]:
+
+        return self._last_persona_meta
+
+    @property
+    def last_fast_ack_sample(self) -> Optional[Dict[str, Any]]:
+        return self._last_fast_ack_sample
+
+
+    @property
+    def heart_state(self) -> Dict[str, float]:
+        return {"rate": self._heart_rate, "phase": self._heart_phase}
+
+
     def last_controls(self) -> Optional[AffectControls]:
         return self._last_controls
 
@@ -465,6 +660,21 @@ class EmotionalHubRuntime:
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #
+
+
+def _update_heart_state(self, arousal: float) -> Tuple[float, float]:
+    """Update the synthetic heart oscillator from the latest arousal."""
+    now = time.time()
+    dt = 0.0
+    if self._heart_last_ts is not None:
+        dt = max(now - self._heart_last_ts, 0.0)
+    self._heart_last_ts = now
+    arousal_unit = float(np.clip(arousal, 0.0, 1.0))
+    rate = float(np.clip(self._heart_base_rate + self._heart_gain * arousal_unit, 0.2, 3.0))
+    self._heart_rate = rate
+    phase = float((self._heart_phase + rate * min(dt, 2.0)) % 1.0)
+    self._heart_phase = phase
+    return rate, phase
 
     def _update_metrics(self, affect: AffectSample, fast_only: bool = False) -> Dict[str, float]:
         """
@@ -609,13 +819,117 @@ class EmotionalHubRuntime:
             value = prospective.get(key)
             if isinstance(value, np.ndarray):
                 payload[key] = value.tolist()
-        if "jerk_p95" in prospective:
-            payload["jerk_p95"] = float(prospective["jerk_p95"])
-        return payload
+    if "jerk_p95" in prospective:
+        payload["jerk_p95"] = float(prospective["jerk_p95"])
+    return payload
 
+def _numeric_metrics_snapshot(self, metrics: Dict[str, float]) -> Dict[str, float]:
+    snapshot: Dict[str, float] = {}
+    for key, value in metrics.items():
+        if isinstance(value, (int, float, np.floating)):
+            snapshot[key] = float(value)
+    return snapshot
+
+def _snapshot_fast_ack(self) -> Optional[Dict[str, Any]]:
+    if not self._last_fast_ack_sample:
+        return None
+    snapshot: Dict[str, Any] = {}
+    for key, value in self._last_fast_ack_sample.items():
+        if isinstance(value, (int, float, np.floating)):
+            snapshot[key] = float(value)
+        else:
+            snapshot[key] = value
+    return snapshot
+
+def _serialize_response_meta(self, response: Optional[HubResponse]) -> Optional[Dict[str, Any]]:
+    if not response:
+        return None
+    controls_used = {
+        key: float(val)
+        for key, val in response.controls_used.items()
+        if isinstance(val, (int, float, np.floating))
+    }
+    return {
+        "model": response.model,
+        "trace_id": response.trace_id,
+        "latency_ms": float(response.latency_ms),
+        "controls_used": controls_used,
+        "safety": dict(response.safety),
+    }
+
+def _log_moment_entry(
+    self,
+    *,
+    affect: AffectSample,
+    metrics: Dict[str, float],
+    heart_snapshot: Dict[str, float],
+    prospective: Optional[Dict[str, Any]],
+    response: Optional[HubResponse],
+    user_text: Optional[str],
+    persona_meta: Dict[str, Any],
+) -> None:
+    if not self._moment_log_writer.enabled:
+        return
+    heart_rate = heart_snapshot.get("rate")
+    heart_phase = heart_snapshot.get("phase")
+    persona_payload = dict(persona_meta) if persona_meta else None
+    entry = MomentLogEntry(
+        ts=time.time(),
+        turn_id=self._turn_id,
+        session_id=self._session_id,
+        talk_mode=self._talk_mode.name.lower(),
+        mood={
+            "valence": float(getattr(affect, "valence", 0.0)),
+            "arousal": float(getattr(affect, "arousal", 0.0)),
+        },
+        metrics=self._numeric_metrics_snapshot(metrics),
+        gate_context=dict(self._last_gate_context),
+        prospective=self._serialize_prospective(prospective),
+        heart_rate=float(heart_rate) if heart_rate is not None else None,
+        heart_phase=float(heart_phase) if heart_phase is not None else None,
+        fast_ack=self._snapshot_fast_ack(),
+        persona_meta=persona_payload,
+        user_text=user_text if user_text else None,
+        llm_text=response.text if response else None,
+        response_meta=self._serialize_response_meta(response),
+    )
+    try:
+        self._moment_log_writer.write(entry)
+        self._turn_id += 1
+    except Exception:
+        pass
+
+# ------------------------------------------------------------------ #
+# Memory reference helpers
     # ------------------------------------------------------------------ #
-    # Memory reference helpers
-    # ------------------------------------------------------------------ #
+
+    def _sample_fast_ack_text(self, affect: AffectSample, gate_ctx: GateContext) -> Optional[str]:
+        arousal = float(np.clip(getattr(affect, "arousal", 0.0), 0.0, 1.0))
+        distance = self._estimate_interpersonal_distance(gate_ctx)
+        previous_arousal = self._arousal_tracker.last_arousal
+        choice = sample_fast_ack(arousal, distance, self._fast_ack_state, self._arousal_tracker)
+        self._last_fast_ack_sample = {
+            "arousal": arousal,
+            "delta": arousal - previous_arousal,
+            "distance": distance,
+            "last_choice": self._fast_ack_state.last_choice,
+            "choice": choice,
+        }
+        if choice == "silence":
+            return None
+        if choice == "breath":
+            return "..."
+        return _ACK_TEMPLATES.get(self._talk_mode, _ACK_TEMPLATES[TalkMode.WATCH])
+
+    def _estimate_interpersonal_distance(self, gate_ctx: GateContext) -> float:
+        distance = 0.7
+        if gate_ctx.engaged:
+            distance -= 0.2
+        distance -= min(0.25, gate_ctx.face_motion * 2.5)
+        distance -= min(0.25, gate_ctx.voice_energy * 1.5)
+        if gate_ctx.force_listen:
+            distance += 0.2
+        return float(np.clip(distance, 0.0, 1.0))
 
     def _maybe_memory_reference(self, user_text: str) -> Optional[Dict[str, Any]]:
         cfg = self._memory_ref_cfg

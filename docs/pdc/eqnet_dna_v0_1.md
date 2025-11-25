@@ -157,6 +157,8 @@ This v0.1 spec stays lightweight: operators are differentiable, states are low-d
 ## 7. What PDC Enables
 - PDC surfaces a compact state (`m_t`, `m_past_hat`, `m_future_hat`, `E_story`, `T`, `jerk_p95`) every timestep so dashboards/Gradio demos can show how the inner field drifts instead of guessing from text alone.
 - Guard logic can use `E_story` and `jerk_p95` directly: a single JSON blob from Runtime now tells safety panels whether the agent is overheating (future bias) or oscillating (large jerk).
-- Policy/LLM stay as renderers. They receive prospective state as seasoning, which keeps decision power inside Φ/Ψ/K/M while still giving expressive speech and gestures.
-- Persona configs change the gains (`alpha_past`, `beta_future`, `lambda_decay`, temperature gain) to mint  “different organisms”  without touching the LLM prompt.
+- Policy/LLM stay as renderers. They receive prospective state as seasoning, which keeps decision power inside Phi/Psi/K/M while still giving expressive speech and gestures.
+- Persona configs change the gains (`alpha_past`, `beta_future`, `lambda_decay`, temperature gain) to mint  "different organisms"  without touching the LLM prompt.
 - Integrations such as the Gradio demo can display the `Prospective State` panel (see `run_pipeline` outputs) to debug moods, making tuning iterations short and observable.
+
+See `mask_layer_design.md` for the persona/mask integration plan that keeps inner (Phi/Psi/PDC) immutable while exposing outer/tension transparently. That document also outlines the Trait → Regulation → Expression layering so psychological traits map cleanly onto runtime controls.

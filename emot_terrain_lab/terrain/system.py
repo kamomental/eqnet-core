@@ -3,7 +3,7 @@ import os
 import json
 import numpy as np
 from pathlib import Path
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional
 from datetime import datetime, timedelta, date
 from .emotion import AXES, extract_emotion
 from .field import EmotionField, FieldParams
@@ -18,9 +18,10 @@ from .memory_palace import MemoryPalace, MemoryNode
 from .ethics import EthicsManager
 from .catalyst import CatalystManager, CatalystParams
 from .community import CommunityOrchestrator, CommunityProfile, Turn
+from eqnet.logs.moment_log import aggregate_daily_moment_metrics
 
 class EmotionalMemorySystem:
-    def __init__(self, state_dir: str, *, metrics_sink: Callable[[Dict[str, float]], None] | None = None, metrics_log_path: str | Path | None = None):
+    def __init__(self, state_dir: str, *, metrics_sink: Callable[[Dict[str, float]], None] | None = None, metrics_log_path: str | Path | None = None, moment_log_path: str | Path | None = None):
         self.state_dir = Path(state_dir)
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.terrain = EmotionalTerrain()
@@ -68,6 +69,13 @@ class EmotionalMemorySystem:
         self.rest_history_limit = int(os.getenv("REST_HISTORY_LIMIT", "128"))
         self._rest_history = []
         self._field_metrics_sink = metrics_sink
+        self._moment_log_path: Optional[Path] = None
+        if moment_log_path:
+            self._moment_log_path = Path(moment_log_path)
+        else:
+            env_moment = os.getenv("MOMENT_LOG_PATH")
+            if env_moment:
+                self._moment_log_path = Path(env_moment)
         self._field_metrics_log_path = Path(metrics_log_path) if metrics_log_path else None
         if self._field_metrics_log_path is not None:
             self._field_metrics_log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -474,6 +482,10 @@ class EmotionalMemorySystem:
             metrics = self.field_metrics_log[-1].copy()
         elif not metrics:
             metrics = self.field.compute_metrics()
+        metrics = dict(metrics) if metrics else {}
+        moment_metrics = self._moment_metrics_for_day(timestamp.date())
+        if moment_metrics:
+            metrics.update(moment_metrics)
         top_axes = self._top_axes_from_experiences(timestamp.date())
         catalysts = self._catalyst_highlights_for_day(timestamp.date())
         quotes = self._gentle_quotes_for_day(timestamp.date())
@@ -491,23 +503,31 @@ class EmotionalMemorySystem:
             use_llm,
         )
 
-    def _aggregate_metrics_for_day(self, day: date) -> Dict[str, float]:
-        entries = []
-        for record in self.field_metrics_log:
-            try:
-                ts = datetime.fromisoformat(record.get("timestamp", ""))
-            except Exception:
-                continue
-            if ts.date() == day:
-                entries.append(record)
-        if not entries:
+def _aggregate_metrics_for_day(self, day: date) -> Dict[str, float]:
+    entries = []
+    for record in self.field_metrics_log:
+        try:
+            ts = datetime.fromisoformat(record.get("timestamp", ""))
+        except Exception:
+            continue
+        if ts.date() == day:
+            entries.append(record)
+    if not entries:
+        return {}
+    keys = {key for item in entries for key in item.keys() if key != "timestamp"}
+    aggregated: Dict[str, float] = {}
+    for key in keys:
+        values = [float(item.get(key, 0.0)) for item in entries]
+        aggregated[key] = float(np.mean(values))
+    return aggregated
+
+    def _moment_metrics_for_day(self, day: date) -> Dict[str, float]:
+        if not self._moment_log_path:
             return {}
-        keys = {key for item in entries for key in item.keys() if key != "timestamp"}
-        aggregated: Dict[str, float] = {}
-        for key in keys:
-            values = [float(item.get(key, 0.0)) for item in entries]
-            aggregated[key] = float(np.mean(values))
-        return aggregated
+        try:
+            return aggregate_daily_moment_metrics(self._moment_log_path, day)
+        except Exception:
+            return {}
 
     def _experiences_for_day(self, day: date) -> List[dict]:
         matches: List[dict] = []
