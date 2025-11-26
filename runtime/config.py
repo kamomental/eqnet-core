@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 
@@ -88,6 +88,11 @@ class CultureCfg:
     tag: str = field(default="default")
     politeness: float = field(default=0.5)
     intimacy: float = field(default=0.5)
+    place_id: Optional[str] = field(default=None)
+    partner_id: Optional[str] = field(default=None)
+    object_id: Optional[str] = field(default=None)
+    object_role: Optional[str] = field(default=None)
+    activity_tag: Optional[str] = field(default=None)
     feedback: "CultureFeedbackCfg" = field(default_factory=lambda: CultureFeedbackCfg())
 
 

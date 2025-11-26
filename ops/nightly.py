@@ -1407,6 +1407,13 @@ def _summarize_culture_stats(log_path: Path | None) -> Optional[Dict[str, Dict[s
     buckets: Dict[str, Dict[str, List[float]]] = defaultdict(
         lambda: {"valence": [], "arousal": [], "rho": [], "politeness": [], "intimacy": []}
     )
+
+    def _to_float(value: object) -> Optional[float]:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
     try:
         for line in log_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -1416,16 +1423,43 @@ def _summarize_culture_stats(log_path: Path | None) -> Optional[Dict[str, Dict[s
                 row = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            tag = row.get("culture_tag") or "unknown"
-            buckets[tag]["valence"].append(float(row.get("valence", 0.0)))
-            buckets[tag]["arousal"].append(float(row.get("arousal", 0.0)))
-            buckets[tag]["rho"].append(float(row.get("rho", 0.0)))
-            if row.get("politeness") is not None:
-                buckets[tag]["politeness"].append(float(row.get("politeness")))
-            if row.get("intimacy") is not None:
-                buckets[tag]["intimacy"].append(float(row.get("intimacy")))
+            mood = row.get("mood") if isinstance(row.get("mood"), dict) else None
+            metrics = row.get("metrics") if isinstance(row.get("metrics"), dict) else None
+            tag = row.get("culture_tag") or row.get("tag") or "unknown"
+            valence_val = row.get("valence")
+            if valence_val is None and mood:
+                valence_val = mood.get("valence")
+            arousal_val = row.get("arousal")
+            if arousal_val is None and mood:
+                arousal_val = mood.get("arousal")
+            valence = _to_float(valence_val)
+            arousal = _to_float(arousal_val)
+            if valence is None or arousal is None:
+                continue
+            rho_val = row.get("rho")
+            if rho_val is None and metrics:
+                rho_val = metrics.get("rho") or metrics.get("R")
+            rho = _to_float(rho_val)
+            if rho is None:
+                rho = 0.0
+            buckets[tag]["valence"].append(valence)
+            buckets[tag]["arousal"].append(arousal)
+            buckets[tag]["rho"].append(rho)
+            politeness_val = row.get("politeness")
+            if politeness_val is None and metrics:
+                politeness_val = metrics.get("politeness")
+            politeness = _to_float(politeness_val)
+            if politeness is not None:
+                buckets[tag]["politeness"].append(politeness)
+            intimacy_val = row.get("intimacy")
+            if intimacy_val is None and metrics:
+                intimacy_val = metrics.get("intimacy")
+            intimacy = _to_float(intimacy_val)
+            if intimacy is not None:
+                buckets[tag]["intimacy"].append(intimacy)
     except Exception:
         return None
+
     summary: Dict[str, Dict[str, float]] = {}
     for tag, data in buckets.items():
         if not data["valence"]:
@@ -1442,6 +1476,7 @@ def _summarize_culture_stats(log_path: Path | None) -> Optional[Dict[str, Dict[s
             entry["mean_intimacy"] = mean(data["intimacy"])
         summary[tag] = entry
     return summary or None
+
 
 
 
@@ -1492,6 +1527,11 @@ def _generate_telemetry_section(
     culture_cfg_snapshot = cfg_dict.get("culture", {}) if isinstance(cfg_dict, dict) else {}
 
     affective_log_path = Path(emotion_cfg.get("affective_log_path", "memory/affective_log.jsonl"))
+    moment_log_candidate = cfg_dict.get("moment_log_path") if isinstance(cfg_dict, dict) else None
+    if isinstance(moment_log_candidate, str) and moment_log_candidate.strip():
+        culture_log_path = Path(moment_log_candidate)
+    else:
+        culture_log_path = affective_log_path
     run_seed = _extract_run_seed(telemetry_log)
     if run_seed is not None:
         report["run_seed"] = run_seed
@@ -1581,7 +1621,7 @@ def _generate_telemetry_section(
             report.setdefault("artifacts", {}).setdefault("stats", {})["affective"] = str(affective_stats_path)
 
     min_culture_samples = int(float(alerts_cfg.get("min_culture_samples", 0))) if isinstance(alerts_cfg, dict) else 0
-    culture_stats = _summarize_culture_stats(affective_log_path)
+    culture_stats = _summarize_culture_stats(culture_log_path)
     culture_for_plot: Dict[str, Dict[str, float]] = {}
     if culture_stats:
         report["culture_stats"] = culture_stats

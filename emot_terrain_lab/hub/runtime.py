@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 End-to-end runtime scaffold that ties perception, EQNet metrics, policy
 controls, and the LLM hub together.
@@ -6,6 +6,7 @@ controls, and the LLM hub together.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional, Dict, Any, Tuple
@@ -24,6 +25,11 @@ except Exception:  # pragma: no cover - optional dependency
     MaskPersonaProfile = None  # type: ignore
     load_persona_profile = None  # type: ignore
 
+from eqnet.culture_model import (
+    CultureContext,
+    promote_to_monument_if_needed,
+    update_climate_from_event,
+)
 from eqnet.logs.moment_log import MomentLogEntry, MomentLogWriter
 from eqnet.modules.prospective_drive_core import PDCConfig, ProspectiveDriveCore
 from emot_terrain_lab.terrain.emotion import AXES
@@ -160,10 +166,10 @@ class ArousalTracker:
 
 
 _ACK_TEMPLATES: Dict[TalkMode, str] = {
-    TalkMode.WATCH: "うん、ここで待っているよ。いつでも合図してね。",
-    TalkMode.SOOTHE: "表情が少し硬いかも。深呼吸して、肩の力を抜こうか。私はここにいるよ。",
-    TalkMode.ASK: "さっきより元気が少なめに見える。何かあった？話せる範囲で教えてね。",
-    TalkMode.TALK: "続きを整えよう。どこから話そうか。",
+    TalkMode.WATCH: "縺・ｓ縲√％縺薙〒蠕・▲縺ｦ縺・ｋ繧医ゅ＞縺､縺ｧ繧ょ粋蝗ｳ縺励※縺ｭ縲・,
+    TalkMode.SOOTHE: "陦ｨ諠・′蟆代＠遑ｬ縺・°繧ゅよｷｱ蜻ｼ蜷ｸ縺励※縲∬か縺ｮ蜉帙ｒ謚懊％縺・°縲らｧ√・縺薙％縺ｫ縺・ｋ繧医・,
+    TalkMode.ASK: "縺輔▲縺阪ｈ繧雁・豌励′蟆代↑繧√↓隕九∴繧九ゆｽ輔°縺ゅ▲縺滂ｼ溯ｩｱ縺帙ｋ遽・峇縺ｧ謨吶∴縺ｦ縺ｭ縲・,
+    TalkMode.TALK: "邯壹″繧呈紛縺医ｈ縺・ゅ←縺薙°繧芽ｩｱ縺昴≧縺九・,
 }
 
 
@@ -323,6 +329,7 @@ class EmotionalHubRuntime:
         runtime_session = getattr(self._runtime_cfg, 'session', None) if self._runtime_cfg else None
         if runtime_session is not None:
             self._session_id = getattr(runtime_session, 'session_id', None)
+        self._culture_recurrence: Dict[Tuple[str, str, str, str], int] = defaultdict(int)
 
     # ------------------------------------------------------------------ #
     # Main entrypoints
@@ -395,7 +402,7 @@ class EmotionalHubRuntime:
         context:
             Optional contextual text (e.g., RAG snippets).
         intent:
-            Intent label for the hub router (qa/chitchat/code…).
+            Intent label for the hub router (qa/chitchat/code窶ｦ).
         fast_only:
             When true, skips heavy operations (memory reference lookup, LLM call)
             so that the caller can issue a quick acknowledgement before the full
@@ -559,6 +566,18 @@ class EmotionalHubRuntime:
                     "prosody_energy": controls.prosody_energy,
                     "spoiler_mode": "warn",
                 }
+                behavior_mod = None
+                try:
+                    culture_state = compute_culture_state(self._current_culture_context())
+                    behavior_mod = culture_to_behavior(culture_state)
+                except Exception:
+                    behavior_mod = None
+                if behavior_mod:
+                    llm_controls["culture_tone"] = behavior_mod.tone
+                    llm_controls["culture_empathy"] = behavior_mod.empathy_level
+                    llm_controls["culture_directness"] = behavior_mod.directness
+                    llm_controls["culture_joke_ratio"] = behavior_mod.joke_ratio
+
                 if prospective:
                     llm_controls["pdc_story"] = float(prospective.get("E_story", 0.0))
                     llm_controls["pdc_temperature"] = float(prospective.get("T", controls.temperature))
@@ -572,6 +591,20 @@ class EmotionalHubRuntime:
                     mask_cfg=self.config.mask_layer,
                     prospective=prospective,
                 )
+                if behavior_mod:
+                    persona_meta.setdefault(
+                        "culture_behavior",
+                        {
+                            "tone": behavior_mod.tone,
+                            "empathy": behavior_mod.empathy_level,
+                            "directness": behavior_mod.directness,
+                            "joke_ratio": behavior_mod.joke_ratio,
+                        },
+                    )
+                    hint_line = self._culture_behavior_hint(behavior_mod)
+                    masked_context = f"{hint_line}
+
+{masked_context.strip()}" if masked_context else hint_line
 
                 response = self.llm.generate(
                     user_text=masked_user_text,
@@ -857,6 +890,104 @@ def _serialize_response_meta(self, response: Optional[HubResponse]) -> Optional[
         "safety": dict(response.safety),
     }
 
+def _current_culture_tag(self) -> str:
+    return self._current_culture_context().culture_tag
+
+
+    def _current_culture_context(self) -> CultureContext:
+        culture_cfg = getattr(self._runtime_cfg, "culture", None) if self._runtime_cfg else None
+        ctx = CultureContext(
+            culture_tag=getattr(culture_cfg, "tag", None) if culture_cfg else None,
+            place_id=getattr(culture_cfg, "place_id", None) if culture_cfg else None,
+            partner_id=getattr(culture_cfg, "partner_id", None) if culture_cfg else None,
+            object_id=getattr(culture_cfg, "object_id", None) if culture_cfg else None,
+            object_role=getattr(culture_cfg, "object_role", None) if culture_cfg else None,
+            activity_tag=getattr(culture_cfg, "activity_tag", None) if culture_cfg else None,
+        )
+        return ctx.normalized()
+
+
+    def _bump_culture_recurrence(self, ctx: CultureContext) -> int:
+        key = (
+            ctx.culture_tag or "",
+            ctx.place_id or "",
+            ctx.partner_id or "",
+            ctx.object_id or "",
+        )
+        self._culture_recurrence[key] += 1
+        return self._culture_recurrence[key]
+
+
+    def _feed_culture_models(
+        self,
+        entry: MomentLogEntry,
+        ctx: CultureContext,
+        user_text: Optional[str],
+    ) -> None:
+        metrics = entry.metrics or {}
+        culture_cfg = getattr(self._runtime_cfg, "culture", None) if self._runtime_cfg else None
+
+        def _coerce(value: Any, default: float) -> float:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        def _pick_metric(keys: Tuple[str, ...], default: float) -> float:
+            for key in keys:
+                if key in metrics and metrics[key] is not None:
+                    return _coerce(metrics[key], default)
+            return default
+
+        baseline_intimacy = float(getattr(culture_cfg, "intimacy", 0.5)) if culture_cfg else 0.5
+        baseline_politeness = float(getattr(culture_cfg, "politeness", 0.5)) if culture_cfg else 0.5
+
+        event = {
+            "ts": entry.ts,
+            "culture_tag": ctx.culture_tag,
+            "place_id": ctx.place_id,
+            "partner_id": ctx.partner_id,
+            "object_id": ctx.object_id,
+            "object_role": ctx.object_role,
+            "activity_tag": ctx.activity_tag,
+            "valence": _coerce(entry.mood.get("valence"), 0.0),
+            "arousal": _coerce(entry.mood.get("arousal"), 0.0),
+            "rho": _pick_metric(("rho", "rho_norm", "R"), 0.5),
+            "intimacy": _coerce(metrics.get("intimacy"), baseline_intimacy),
+            "politeness": _coerce(metrics.get("politeness"), baseline_politeness),
+        }
+        entry.metrics.setdefault("rho", event["rho"])
+        entry.metrics.setdefault("politeness", event["politeness"])
+        entry.metrics.setdefault("intimacy", event["intimacy"])
+        recurrence_count = self._bump_culture_recurrence(ctx)
+        text_bits = [chunk for chunk in (user_text, entry.llm_text) if chunk]
+        text_blob = " ".join(text_bits)
+        try:
+            update_climate_from_event(event, context=ctx)
+            promote_to_monument_if_needed(
+                event,
+                text=text_blob,
+                recurrence_count=recurrence_count,
+                context=ctx,
+            )
+        except Exception:
+            pass
+
+    def _culture_behavior_hint(self, behavior: BehaviorMod) -> str:
+        tone_hints = {
+            "polite": "声の端々を少し丁寧にして、言い切りも和らげてください。",
+            "casual": "肩の力を抜いた柔らかい語尾で、距離を縮めるように話してください。",
+            "neutral": "標準的な語尾で落ち着いたトーンを保ってください。",
+        }
+        tone_line = tone_hints.get(behavior.tone, tone_hints["neutral"])
+        empathy_line = "気持ちの背景を一度言い添えると安心できます。" if behavior.empathy_level >= 0.65 else "共感は一言添える程度で十分です。"
+        joke_line = "軽いユーモアを 1 行だけ差し込んでも大丈夫。" if behavior.joke_ratio >= 0.4 else "冗談は控えめにして、落ち着いた語り口にしてください。"
+        return (
+            f"[culture-field] {tone_line} {empathy_line} "
+            f"Directness≈{behavior.directness:.2f}, joke_ratio≈{behavior.joke_ratio:.2f}. {joke_line}"
+        )
+
+
 def _log_moment_entry(
     self,
     *,
@@ -873,6 +1004,7 @@ def _log_moment_entry(
     heart_rate = heart_snapshot.get("rate")
     heart_phase = heart_snapshot.get("phase")
     persona_payload = dict(persona_meta) if persona_meta else None
+    culture_ctx = self._current_culture_context()
     entry = MomentLogEntry(
         ts=time.time(),
         turn_id=self._turn_id,
@@ -887,12 +1019,19 @@ def _log_moment_entry(
         prospective=self._serialize_prospective(prospective),
         heart_rate=float(heart_rate) if heart_rate is not None else None,
         heart_phase=float(heart_phase) if heart_phase is not None else None,
+        culture_tag=culture_ctx.culture_tag,
+        place_id=culture_ctx.place_id,
+        partner_id=culture_ctx.partner_id,
+        object_id=culture_ctx.object_id,
+        object_role=culture_ctx.object_role,
+        activity_tag=culture_ctx.activity_tag,
         fast_ack=self._snapshot_fast_ack(),
         persona_meta=persona_payload,
         user_text=user_text if user_text else None,
         llm_text=response.text if response else None,
         response_meta=self._serialize_response_meta(response),
     )
+    self._feed_culture_models(entry, culture_ctx, user_text)
     try:
         self._moment_log_writer.write(entry)
         self._turn_id += 1
@@ -1005,3 +1144,4 @@ def _log_moment_entry(
                 handle.write("\n")
         except Exception:
             pass
+

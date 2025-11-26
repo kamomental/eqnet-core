@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 import os
 import json
 import numpy as np
@@ -18,7 +18,12 @@ from .memory_palace import MemoryPalace, MemoryNode
 from .ethics import EthicsManager
 from .catalyst import CatalystManager, CatalystParams
 from .community import CommunityOrchestrator, CommunityProfile, Turn
-from eqnet.logs.moment_log import aggregate_daily_moment_metrics
+from eqnet.logs.moment_log import (
+    MomentLogEntry,
+    compute_daily_breath_metrics,
+    compute_daily_culture_stats,
+    iter_moment_entries_for_day,
+)
 
 class EmotionalMemorySystem:
     def __init__(self, state_dir: str, *, metrics_sink: Callable[[Dict[str, float]], None] | None = None, metrics_log_path: str | Path | None = None, moment_log_path: str | Path | None = None):
@@ -51,12 +56,12 @@ class EmotionalMemorySystem:
             self.community = CommunityOrchestrator(CommunityProfile.default())
         self._load_state()
         self.field.params.locale = locale
-        # Skala有効化
+        # Skala譛牙柑蛹・
         self.use_skala = os.getenv("USE_SKALA", "0") == "1"
         self.skala_alpha = float(os.getenv("SKALA_ALPHA", "0.2"))
         self.skala_win = int(os.getenv("SKALA_WIN", "7"))
         self.skala_scales = tuple(int(x) for x in os.getenv("SKALA_SCALES", "3,5,9,17").split(","))
-        self._recent = []  # 直近ベクトルのバッファ
+        self._recent = []  # 逶ｴ霑代・繧ｯ繝医Ν縺ｮ繝舌ャ繝輔ぃ
         self.fatigue_entropy_threshold = float(os.getenv("FATIGUE_ENTROPY_THRESHOLD", "8.5"))
         self.fatigue_enthalpy_threshold = float(os.getenv("FATIGUE_ENTHALPY_THRESHOLD", "0.6"))
         self.fatigue_damp_factor = float(os.getenv("FATIGUE_DAMP_FACTOR", "0.5"))
@@ -483,9 +488,13 @@ class EmotionalMemorySystem:
         elif not metrics:
             metrics = self.field.compute_metrics()
         metrics = dict(metrics) if metrics else {}
-        moment_metrics = self._moment_metrics_for_day(timestamp.date())
-        if moment_metrics:
+        moment_entries = self._moment_entries_for_day(timestamp.date())
+        moment_metrics: Dict[str, float] = {}
+        culture_stats = None
+        if moment_entries:
+            moment_metrics = compute_daily_breath_metrics(moment_entries)
             metrics.update(moment_metrics)
+            culture_stats = compute_daily_culture_stats(moment_entries)
         top_axes = self._top_axes_from_experiences(timestamp.date())
         catalysts = self._catalyst_highlights_for_day(timestamp.date())
         quotes = self._gentle_quotes_for_day(timestamp.date())
@@ -501,6 +510,7 @@ class EmotionalMemorySystem:
             self.story_graph.loop_alert,
             self._fatigue_active,
             use_llm,
+            culture_stats=culture_stats,
         )
 
 def _aggregate_metrics_for_day(self, day: date) -> Dict[str, float]:
@@ -521,13 +531,13 @@ def _aggregate_metrics_for_day(self, day: date) -> Dict[str, float]:
         aggregated[key] = float(np.mean(values))
     return aggregated
 
-    def _moment_metrics_for_day(self, day: date) -> Dict[str, float]:
+    def _moment_entries_for_day(self, day: date) -> List[MomentLogEntry]:
         if not self._moment_log_path:
-            return {}
+            return []
         try:
-            return aggregate_daily_moment_metrics(self._moment_log_path, day)
+            return list(iter_moment_entries_for_day(self._moment_log_path, day))
         except Exception:
-            return {}
+            return []
 
     def _experiences_for_day(self, day: date) -> List[dict]:
         matches: List[dict] = []
@@ -695,4 +705,7 @@ def _aggregate_metrics_for_day(self, day: date) -> Dict[str, float]:
             blended = 0.6 * phi_vec + 0.4 * psi_vec
             return blended
         return accum / weight_sum
+
+
+
 
