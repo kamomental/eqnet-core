@@ -25,6 +25,8 @@ EQNet は「情動地形（S/H/ρ）→ 認知制御（Ignition）→ Telemetry 
   `theta_on/off` と `dwell_steps` により Talk ↔ Soothe が揺れにくくなり、会話のテンポが安定。
 - **CI アーティファクトとして共有可能**  
   Nightly レポート・プロット・JSONL が CI で必ず落ちてくるため、内面ログをチーム全員で追いかけられる。
+- **文化フィールド v2（climate + monument）**  
+  `eqnet/culture_model.py` が MomentLog から culture_summary と BehaviorMod を生成し、`scripts/backfill_culture_monuments.py` で過去ログも一括スキャン可能。Diary/observer まで同じ一行コメントが流れる。
 
 ---
 
@@ -73,3 +75,6 @@ python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMM
 - **データ**: `telemetry/*.jsonl`, `reports/*.md`, `reports/plots/*.png`
 
 「同じログで同じ結果を再現できる」状態が整った今、次はヒステリシスの自動最適化と文化ゲインの導入に集中できます。情動地形・TalkMode・Nightly が一本でつながったことで、実験から運用までを滑らかに展開できる土台が揃いました。***
+
+8. Culture Field Update
+MomentLog から culture_summary と BehaviorMod を生成する eqnet/culture_model.py を導入し、scripts/backfill_culture_monuments.py で過去ログも一括スキャンできるようになりました。

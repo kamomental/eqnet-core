@@ -117,4 +117,14 @@ Threshold tuning for PERSONAL/FICTION monument promotion and diarized bullet lim
 
 Integrating Σ/Ψ gating so CultureState also influences mood gain scheduling.
 
-Use this document as the reference when wiring eqnet/culture_model.py, runtime logging hooks, and diary/translator consumers. It should stay close to the implementation so engineers can ship without re-deriving the design from chat logs.
+Use this document as the reference when wiring eqnet/culture_model.py, runtime logging hooks, and diary/translator consumers. It should stay close to the implementation so engineers can ship without re-deriving the design from chat logs.## Status Snapshot
+
+**Implemented**
+- scripts/backfill_culture_monuments.py rescans any MomentLog JSONL and emits a JSON dump of the resulting monuments, so pre-cutover history can be migrated with a single command.
+- Each MomentLog entry now stores behavior_mod (tone/empathy/directness/joke_ratio); runtime also injects the same payload into the LLM context, which makes downstream validation/analytics trivial.
+- DiaryEntry.culture_summary is surfaced in scripts/diary_viewer.py and scripts/export_sqlite.py, so both the textual viewer and SQLite exports carry the one-line culture commentary for dashboards or clients. observer_markdown can render the same lines when state["culture_summary"] is provided.
+
+**Next work**
+- Wire a persistent storage backend for climates/monuments (current module is in-memory) once rollout freezes.
+- Add lightweight analytics (histograms, alerts) on the new behavior_mod field or feed culture_summary into observer/PR tools automatically.
+- Continue schema cleanup for object_id/object_role and finalize the ops story for trimming/merging monuments.

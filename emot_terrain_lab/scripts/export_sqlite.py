@@ -33,6 +33,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             info_flux REAL,
             tags TEXT,
             highlights TEXT,
+            culture_summary TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
@@ -43,12 +44,17 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    try:
+        conn.execute("ALTER TABLE diary_entries ADD COLUMN culture_summary TEXT;")
+    except sqlite3.OperationalError:
+        pass
+
 
 
 def upsert_diary(conn: sqlite3.Connection, entries: Iterable[Dict[str, Any]]) -> None:
     sql = """
-    INSERT INTO diary_entries (day, text, entropy, enthalpy, info_flux, tags, highlights, created_at, updated_at)
-    VALUES (:day, :text, :entropy, :enthalpy, :info_flux, :tags, :highlights, :created_at, :updated_at)
+    INSERT INTO diary_entries (day, text, entropy, enthalpy, info_flux, tags, highlights, culture_summary, created_at, updated_at)
+    VALUES (:day, :text, :entropy, :enthalpy, :info_flux, :tags, :highlights, :culture_summary, :created_at, :updated_at)
     ON CONFLICT(day) DO UPDATE SET
         text = excluded.text,
         entropy = excluded.entropy,
@@ -56,6 +62,7 @@ def upsert_diary(conn: sqlite3.Connection, entries: Iterable[Dict[str, Any]]) ->
         info_flux = excluded.info_flux,
         tags = excluded.tags,
         highlights = excluded.highlights,
+        culture_summary = excluded.culture_summary,
         updated_at = excluded.updated_at;
     """
     now = datetime.utcnow().isoformat()
@@ -71,6 +78,7 @@ def upsert_diary(conn: sqlite3.Connection, entries: Iterable[Dict[str, Any]]) ->
                 "info_flux": metrics.get("info_flux"),
                 "tags": ",".join(entry.get("tags", [])),
                 "highlights": ",".join(entry.get("highlights", [])),
+                "culture_summary": json.dumps(entry.get("culture_summary", {}), ensure_ascii=False) if entry.get("culture_summary") else None,
                 "created_at": now,
                 "updated_at": now,
             }

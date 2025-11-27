@@ -45,9 +45,10 @@ DEFAULT_GATE_CFG = {
 
 _DEFAULT_DISCLAIMER_CFG = ObserverDisclaimerCfg()
 _DISCLAIMER_SOFTENERS = {
-    "ja": ("仮", "推測", "違", "教えて", "ください", "受け止め"),
+    "ja": ("kari", "suisoku", "moshi", "oshiete", "kudasai", "uketomete"),
     "en": ("hypothesis", "guess", "if", "please", "correct me"),
 }
+
 _MAX_DISCLAIMER_LEN = 140
 _OBSERVER_CFG_CACHE: Optional[ObserverDisclaimerCfg] = None
 
@@ -144,11 +145,6 @@ def _template_disclaimer(
 
 def _culture_bucket(culture: str) -> str:
     culture = (culture or "en-us").lower()
-    if culture.startswith("ja"):
-        return "ja"
-    return "en"
-
-
 def _validate_disclaimer(text: str, culture: str) -> bool:
     if not text:
         return False
@@ -159,71 +155,29 @@ def _validate_disclaimer(text: str, culture: str) -> bool:
     return any(token in text for token in softeners)
 
 
-def _payload_for_llm(state: Dict[str, Any], tone: str, culture: str) -> Dict[str, Any]:
-    offer = state.get("offer_gate", {})
-    evidence = state.get("evidence", {})
-    cues = evidence.get("cues", [])
-    eq_fields = evidence.get("eqnet_fields", {})
-    intents = state.get("intent_hypotheses", [])
-    top_intent = intents[0]["label"] if intents else None
-    payload = {
-        "tone": tone,
-        "culture": culture,
-        "ses": offer.get("ses", 0.0),
-        "threshold": offer.get("threshold", 0.55),
-        "allowed": offer.get("suggestion_allowed", False),
-        "reason": offer.get("suppress_reason", "intent_bias"),
-        "recent_reject_s": offer.get("recent_reject_s", None),
-        "intent": top_intent,
-        "cues": cues,
-        "fields": eq_fields,
-        "conflict_level": state.get("conflict_level"),
-        "msg_goal": "observer_disclaimer",
-    }
-    return payload
-
-
-def _llm_system_prompt(tone: str, culture: str) -> str:
-    return (
-        "You are the observer layer of EQNet. You must respond with a short single sentence "
-        "that clearly states this is a hypothesis and invites correction if it is wrong. "
-        "Respect the specified tone and culture. Never promise outcomes, never blame the user, "
-        "and avoid imperative instructions when suggestion eligibility is false. "
-        f"TONE={tone}, CULTURE={culture}. Response must be JSON with keys 'disclaimer','style','lang'."
-    )
-
-
-def _attempt_llm_disclaimer(
-    state: Dict[str, Any],
-    tone: str,
-    culture: str,
-    cfg: ObserverDisclaimerCfg,
-) -> Optional[str]:
-    payload = _payload_for_llm(state, tone, culture)
-    user_prompt = json.dumps(payload, ensure_ascii=False)
-    try:
-        result = chat_json(_llm_system_prompt(tone, culture), user_prompt, temperature=0.2, top_p=0.9)
-    except Exception:
-        return None
-    if not result:
-        return None
-    text = result.get("disclaimer")
-    lang = result.get("lang")
-    if isinstance(text, str) and isinstance(lang, str):
-        if lang.lower().startswith(culture.split("-")[0].lower()) and _validate_disclaimer(text, culture):
-            return text.strip()
-    return None
-
 
 def _fixed_disclaimer_text(culture: str | None = None, tone: str | None = None) -> str:
     tone = (tone or "").lower()
     culture = (culture or "").lower()
     if culture.startswith("ja"):
         if tone == "support":
-            return "いま感じた手がかりをそっとまとめています。違和感があればすぐ教えてくださいね。"
+            return "感じ取った手がかりをそっとまとめてお伝えします。違和感があれば遠慮なく教えてくださいね。"
         if tone == "polite":
-            return "ただいまの仮説です。もし違っていれば遠慮なくお知らせください。"
-        return "これはいま感じ取った仮説だよ。もし違っていたら遠慮なくつっこんでね。"
+            return "これは仮説です。違っていたら遠慮なく教えてください。"
+        return "これは感じ取った仮説だよ。違っていれば遠慮なく指摘してね。"
+    if tone == "support":
+        return "This is an observation-based hypothesis. Please let me know if it feels off; I'll stay with you."
+    if tone == "polite":
+        return "This is an interpretable hypothesis. Kindly correct me if it does not feel right."
+    return "This is a working hypothesis. If it feels off, please tell me and I will keep listening."
+
+
+    if culture.startswith("ja"):
+        if tone == "support":
+            return "感じ取った手がかりをそっとまとめてお伝えします。違和感があれば遠慮なく教えてくださいね。"
+        if tone == "polite":
+            return "これは仮説です。もし違っていたら遠慮なくお知らせくださいね。"
+        return "いま感じ取った仮説だよ。もし違っていたら遠慮なくつっこんでね。"
     if tone == "support":
         return "This is an observation-based hypothesis. Please let me know if it feels off; I'll stay with you."
     if tone == "polite":
@@ -280,8 +234,8 @@ def plutchik_scores(valence: float, arousal: float) -> Dict[str, float]:
 def _intent_hypotheses(user_text: str, valence: float, arousal: float) -> List[Tuple[str, float]]:
     text_norm = user_text.strip().lower()
     intents: List[Tuple[str, float]] = []
-    question = bool("?" in user_text or re.search(r"(how|why|what|どうして|どうやって)", text_norm))
-    guidance_keywords = ("help", "助けて", "どうすれば", "どうしたら", "教えて", "手伝って")
+    question = bool("?" in user_text or re.search(r"(how|why|what|縺ｩ縺・＠縺ｦ|縺ｩ縺・ｄ縺｣縺ｦ)", text_norm))
+    guidance_keywords = ("help", "蜉ｩ縺代※", "縺ｩ縺・☆繧後・", "縺ｩ縺・＠縺溘ｉ", "謨吶∴縺ｦ", "謇倶ｼ昴▲縺ｦ")
     if any(keyword in text_norm for keyword in guidance_keywords):
         intents.append(("seek_guidance", 0.72))
     if valence < -0.2:
@@ -290,14 +244,14 @@ def _intent_hypotheses(user_text: str, valence: float, arousal: float) -> List[T
         intents.append(("seek_information", 0.58))
     if not intents:
         intents.append(("thinking_aloud", 0.48))
-    if re.search(r"(どうすれば|どうしたら|助けて|手伝って|help me|please advise)", text_norm):
+    if re.search(r"(縺ｩ縺・☆繧後・|縺ｩ縺・＠縺溘ｉ|蜉ｩ縺代※|謇倶ｼ昴▲縺ｦ|help me|please advise)", text_norm):
         intents.insert(0, ("seek_guidance", 0.82))
     return intents
 
 
 def _cues_from_context(user_text: str, valence: float, arousal: float) -> List[str]:
     cues: List[str] = []
-    if "..." in user_text or "…" in user_text:
+    if "..." in user_text or "窶ｦ" in user_text:
         cues.append("hesitation_tokens")
     if "?" in user_text:
         cues.append("questioning_speech")
@@ -329,10 +283,10 @@ def _choose_action(intents: List[Tuple[str, float]], conflict: float) -> Dict[st
 
 def _estimate_urgency(user_text: str) -> float:
     text_norm = user_text.lower()
-    urgent_keywords = ("助けて", "緊急", "危険", "大変", "至急", "urgent", "danger", "emergency")
+    urgent_keywords = ("help me", "urgent", "danger", "emergency", "asap")
     if any(keyword in text_norm for keyword in urgent_keywords):
         return 0.85
-    if "deadline" in text_norm or "締切" in text_norm:
+    if "deadline" in text_norm:
         return 0.65
     return 0.25 if "?" in text_norm else 0.0
 
@@ -494,7 +448,7 @@ def observer_markdown(state: Dict[str, Any], tone: str | None = None, culture: s
     if intents:
         lines.append("- Intent hypotheses:")
         for hyp in intents[:3]:
-            lines.append(f"  • {hyp['label']} ({hyp['confidence']*100:.0f}%)")
+            lines.append(f"  窶｢ {hyp['label']} ({hyp['confidence']*100:.0f}%)")
     lines.append(f"- Conflict level: {state.get('conflict_level', 0.0):.2f}")
     if allowed:
         action = state.get("suggested_action", {})
@@ -506,10 +460,22 @@ def observer_markdown(state: Dict[str, Any], tone: str | None = None, culture: s
     lines.append(f"- Evidence cues: {cues}")
     eq_fields = evidence.get("eqnet_fields", {})
     lines.append(f"- EQNet fields: {eq_fields}")
+    culture_summary = state.get("culture_summary")
+    if culture_summary:
+        lines.append("")
+        lines.append("**Culture cues**")
+        summary_lines = culture_summary.get("lines") or []
+        if summary_lines:
+            for item in summary_lines[:3]:
+                lines.append(f"- {item}")
+        else:
+            tag = culture_summary.get("tag")
+            stats = culture_summary.get("stats") or {}
+            if tag:
+                lines.append(f"- {tag}: valence {stats.get('mean_valence', 0.0):+.2f}")
     lines.append("")
     lines.append(generate_disclaimer(state, tone, culture))
     return "\n".join(lines)
-
 
 __all__ = [
     "plutchik_scores",

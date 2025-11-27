@@ -31,14 +31,16 @@ class DiaryTable(DataTable):
         self.entries = entries
 
     def on_mount(self) -> None:
-        self.add_columns("Day", "Entropy", "Enthalpy", "Tags")
+        self.add_columns("Day", "Entropy", "Enthalpy", "Tags", "Culture")
         for entry in self.entries:
             metrics = entry.get("metrics", {})
+            culture = (entry.get("culture_summary") or {}).get("tag") or "-"
             self.add_row(
                 entry.get("day", ""),
                 f"{metrics.get('entropy', 0):.2f}",
                 f"{metrics.get('enthalpy', 0):.4f}",
                 ", ".join(entry.get("tags", [])),
+                culture,
             )
         if self.rows:
             self.cursor_type = "row"
@@ -86,6 +88,12 @@ class DiaryViewerApp(App):
             "",
             entry.get("text", "").strip(),
         ]
+        culture_summary = entry.get("culture_summary") or {}
+        culture_lines = culture_summary.get("lines") or []
+        if culture_lines:
+            lines.append("")
+            lines.append("[b]Culture[/b]:")
+            lines.extend(culture_lines)
         self.text.update("\n".join(lines))
 
 

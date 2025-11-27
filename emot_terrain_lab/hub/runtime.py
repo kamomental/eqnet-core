@@ -26,7 +26,10 @@ except Exception:  # pragma: no cover - optional dependency
     load_persona_profile = None  # type: ignore
 
 from eqnet.culture_model import (
+    BehaviorMod,
     CultureContext,
+    compute_culture_state,
+    culture_to_behavior,
     promote_to_monument_if_needed,
     update_climate_from_event,
 )
@@ -543,6 +546,7 @@ class EmotionalHubRuntime:
                 "persona_meta": persona_meta,
             }
 
+        behavior_mod: Optional[BehaviorMod] = None
         should_call_llm = text_input and self._talk_mode == TalkMode.TALK
         if should_call_llm:
             memory_reference = self._maybe_memory_reference(user_text or "")
@@ -635,6 +639,7 @@ class EmotionalHubRuntime:
                 response=response,
                 user_text=user_text,
                 persona_meta=persona_meta,
+                behavior_mod=behavior_mod,
             )
 
         return {
@@ -998,6 +1003,7 @@ def _log_moment_entry(
     response: Optional[HubResponse],
     user_text: Optional[str],
     persona_meta: Dict[str, Any],
+    behavior_mod: Optional[BehaviorMod],
 ) -> None:
     if not self._moment_log_writer.enabled:
         return
@@ -1005,6 +1011,14 @@ def _log_moment_entry(
     heart_phase = heart_snapshot.get("phase")
     persona_payload = dict(persona_meta) if persona_meta else None
     culture_ctx = self._current_culture_context()
+    behavior_payload = None
+    if behavior_mod:
+        behavior_payload = {
+            "tone": behavior_mod.tone,
+            "empathy": float(behavior_mod.empathy_level),
+            "directness": float(behavior_mod.directness),
+            "joke_ratio": float(behavior_mod.joke_ratio),
+        }
     entry = MomentLogEntry(
         ts=time.time(),
         turn_id=self._turn_id,
@@ -1030,6 +1044,7 @@ def _log_moment_entry(
         user_text=user_text if user_text else None,
         llm_text=response.text if response else None,
         response_meta=self._serialize_response_meta(response),
+        behavior_mod=behavior_payload,
     )
     self._feed_culture_models(entry, culture_ctx, user_text)
     try:
@@ -1144,4 +1159,5 @@ def _log_moment_entry(
                 handle.write("\n")
         except Exception:
             pass
+
 

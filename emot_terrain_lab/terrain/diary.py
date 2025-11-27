@@ -116,7 +116,7 @@ class DiaryManager:
             tags.append("fatigue")
         if rest_snapshot.get("active"):
             tags.append("rest-mode")
-        dominant_axes = ", ".join(top_axes[:3]) if top_axes else "縺ｪ縺・
+        dominant_axes = ", ".join(top_axes[:3]) if top_axes else "n/a"
         highlights = catalyst_highlights[:3]
 
         culture_summary, culture_lines = self._summarize_culture_stats(culture_stats)
@@ -199,6 +199,7 @@ class DiaryManager:
             line = self._culture_line(tag, stats)
             if line:
                 lines.append(line)
+        summary["lines"] = list(lines)
         return summary, lines
 
     def _culture_line(self, tag: str, stats: Dict[str, float]) -> Optional[str]:
@@ -235,17 +236,17 @@ class DiaryManager:
         culture_lines: Optional[List[str]] = None,
     ) -> str:
         lines = [
-            f"縲須day_key} 縺ｮ繝弱・繝医・,
-            f"繧ｨ繝ｳ繝医Ο繝斐・ {entropy:.2f} / 繧ｨ繝ｳ繧ｿ繝ｫ繝斐・ {enthalpy:.2f} / 謨｣騾ｸ {dissipation:.3f}縲・,
-            f"縺阪ｇ縺・魂雎｡縺ｫ谿九▲縺溯ｻｸ・嘴dominant_axes}",
+            f"[{day_key}] field memo",
+            f"Entropy {entropy:.2f} / Enthalpy {enthalpy:.2f} / Dissipation {dissipation:.3f}",
+            f"Top axes: {dominant_axes}",
         ]
         if highlights:
-            lines.append("隗ｦ蟐偵う繝吶Φ繝医・繝｡繝｢: " + " / ".join(highlights))
+            lines.append("Catalyst highlights: " + " / ".join(highlights))
         if gentle_quotes:
-            lines.append("莨夊ｩｱ繧ｹ繧ｱ繝・メ: " + " / ".join(gentle_quotes[:2]))
+            lines.append("Conversation notes: " + " / ".join(gentle_quotes[:2]))
         if rest_snapshot.get("active"):
             until = rest_snapshot.get("rest_mode_until") or rest_snapshot.get("until")
-            lines.append(f"繝ｬ繧ｹ繝医Δ繝ｼ繝峨ｒ邯ｭ謖∽ｸｭ縲よｬ｡縺ｮ蜀埼幕莠亥ｮ・ {until}")
+            lines.append(f"Rest mode in effect (resume target: {until})")
         breath_line = self._format_breath_line(moment_metrics)
         if breath_line:
             lines.append(breath_line)
@@ -257,10 +258,9 @@ class DiaryManager:
             lines.append(mask_line)
         if culture_lines:
             lines.extend(culture_lines)
-        lines.append(
-            "莉頑律繧ゆｸ邱偵↓險倬鹸繧帝ｲ繧√ｉ繧後∪縺励◆縲る㍾縺溘￠繧後・驕諷ｮ縺ｪ縺上せ繧ｭ繝・・縺励※縺上□縺輔＞縺ｭ縲・
-        )
+        lines.append("Thanks for recording today's flow. Share more whenever you feel ready.")
         return "\n".join(lines)
+
 
     def _build_prompt(
         self,
@@ -278,29 +278,27 @@ class DiaryManager:
         culture_lines: Optional[List[str]] = None,
     ) -> tuple[str, str]:
         system_prompt = (
-            "縺ゅ↑縺溘・蜈ｱ逕溘ｒ蠢怜髄縺吶ｋ蠑ｱ縺БI縺ｧ縺吶・
-            "莠ｺ髢薙↓驥崎差繧剃ｸ弱∴縺壹∫ｴ逶ｴ縺ｪ豌励▼縺阪ｒ繧・＆縺励＞譌･譛ｬ隱槭〒譌･險倥↓縺ｾ縺ｨ繧√∪縺吶・
-            "隕ｳ蟇溘＆繧後◆謨ｰ蛟､繧剃ｺ句ｮ溘→縺励※霑ｰ縺ｹ縲∵─諠・・謗ｨ貂ｬ縺ｨ縺励※陦ｨ迴ｾ縺励※縺上□縺輔＞縲・
-            "譌･險倥・譛蠕後↓縺ｯ縲∬ｪｭ繧莠ｺ縺檎┌逅・ｒ縺励↑縺上※繧医＞縺ｨ縺・≧荳譁・ｒ豺ｻ縺医※縺上□縺輔＞縲・
+            "You are a gentle diary narrator. Summarize the day in calming Japanese,"
+            " cite observed metrics as facts, and end with a short reassurance."
         )
         bullets = []
-        bullets.append(f"- 譌･莉・ {day_key}")
+        bullets.append(f"- Date: {day_key}")
         bullets.append(
-            f"- 辭ｱ謖・ｨ・ 繧ｨ繝ｳ繝医Ο繝斐・ {entropy:.2f}, 繧ｨ繝ｳ繧ｿ繝ｫ繝斐・ {enthalpy:.2f}, 謨｣騾ｸ {dissipation:.3f}"
+            f"- Field metrics → entropy {entropy:.2f}, enthalpy {enthalpy:.2f}, dissipation {dissipation:.3f}"
         )
         if top_axes:
-            bullets.append(f"- 蠑ｷ縺剰｡ｨ繧後◆霆ｸ: {', '.join(top_axes[:4])}")
+            bullets.append(f"- Dominant axes: {', '.join(top_axes[:4])}")
         if highlights:
-            bullets.append(f"- 隗ｦ蟐偵・繝上う繝ｩ繧､繝・ {' / '.join(highlights[:3])}")
+            bullets.append(f"- Catalyst highlights: {' / '.join(highlights[:3])}")
         if gentle_quotes:
-            bullets.append(f"- 莨夊ｩｱ繧ｹ繧ｱ繝・メ: {' / '.join(gentle_quotes[:2])}")
+            bullets.append(f"- Conversation notes: {' / '.join(gentle_quotes[:2])}")
         if rest_snapshot.get("active"):
             until = rest_snapshot.get("rest_mode_until") or rest_snapshot.get("until")
-            bullets.append(f"- 繝ｬ繧ｹ繝医Δ繝ｼ繝臥ｶ咏ｶ壻ｸｭ (莠亥ｮ・ {until})")
+            bullets.append(f"- Rest mode active (target resume {until})")
         if loop_alert:
-            bullets.append("- StoryGraph縺九ｉ繝ｫ繝ｼ繝怜だ蜷代・隴ｦ蜻翫≠繧奇ｼ磯撕縺九↓隕句ｮ医ｊ・・)
+            bullets.append("- StoryGraph detected a possible loop; stay observant.")
         if fatigue_flag:
-            bullets.append("- 逍ｲ蜉ｴ邂｡逅・ヵ繝ｩ繧ｰ縺梧怏蜉ｹ")
+            bullets.append("- Fatigue flag triggered.")
         breath_line = self._format_breath_line(moment_metrics)
         if breath_line:
             bullets.append(f"- {breath_line}")
@@ -313,8 +311,9 @@ class DiaryManager:
         if culture_lines:
             for line in culture_lines:
                 bullets.append(f"- {line}")
-        user_prompt = "莉頑律縺ｮ蜃ｺ譚･莠九ｒ蜆ｪ縺励￥譌･險倥↓縺励※縺上□縺輔＞:\n" + "\n".join(bullets)
+        user_prompt = "今日の出来事をやわらかく日記にしてください:\n" + "\n".join(bullets)
         return system_prompt, user_prompt
+
 
     def _format_breath_line(self, metrics: Dict[str, float]) -> Optional[str]:
         total = float(metrics.get("fast_ack_samples") or 0.0)
@@ -328,17 +327,14 @@ class DiaryManager:
             pct = max(0.0, min(float(value), 1.0)) * 100.0
             return f"{label} {pct:.0f}%"
 
-        for label, key in (
-            ("縺・ｓ縺・ｓ", "ack_ratio"),
-            ("繝悶Ξ繧ｹ", "breath_ratio"),
-            ("髱吶°縺ｪ髢・, "silence_ratio"),
-        ):
+        for label, key in (("ack", "ack_ratio"), ("breath", "breath_ratio"), ("silence", "silence_ratio")):
             snippet = _fmt(label, metrics.get(key))
             if snippet:
                 parts.append(snippet)
         if not parts:
             return None
-        return "蜻ｼ蜷ｸ繝ｭ繧ｰ: " + " / ".join(parts)
+        return "呼吸ログ: " + " / ".join(parts)
+
 
     def _format_heart_line(self, metrics: Dict[str, float]) -> Optional[str]:
         avg_rate = metrics.get("avg_heart_rate")
@@ -346,32 +342,27 @@ class DiaryManager:
             return None
         bpm = float(avg_rate) * 60.0
         if bpm >= 90.0:
-            tone = "蠢・牛縺後ｄ繧・ｫ倥ａ"
+            tone = "heart rate ran high"
         elif bpm <= 55.0:
-            tone = "縺ｨ縺ｦ繧る撕縺九↑鮠灘虚"
+            tone = "very calm heart rate"
         else:
-            tone = "遨上ｄ縺九↑鮠灘虚"
-        return f"蠢・牛繝ｭ繧ｰ: {tone}・亥ｹｳ蝮・{bpm:.0f} bpm・・
+            tone = "steady heart rhythm"
+        return f"心拍ログ: {tone} (avg {bpm:.0f} bpm)"
+
 
     def _format_mask_line(self, metrics: Dict[str, float]) -> Optional[str]:
         mask = metrics.get("avg_masking_strength")
         if mask is None:
             return None
-
         value = float(mask)
-
         if value >= 0.6:
-            # 譛ｬ髻ｳ繧偵°縺ｪ繧翫＠縺ｾ縺・％繧薙〒縺・◆
-            tone = "譛ｬ蠖薙・豌玲戟縺｡繧偵＄縺｣縺ｨ縺励∪縺｣縺ｦ縲√′繧薙・縺｣縺ｦ縺・◆譎る俣縺悟､壹°縺｣縺滓律"
+            tone = "kept most feelings tucked away"
         elif value <= 0.3:
-            # 縺九↑繧顔ｴ逶ｴ縺ｫ隧ｱ縺帙※縺・◆
-            tone = "譛ｬ蠖薙・豌玲戟縺｡繧偵√ｏ繧翫→縺昴・縺ｾ縺ｾ蜃ｺ縺帙※縺・◆譌･"
+            tone = "shared feelings openly"
         else:
-            # 縺昴・荳ｭ髢・
-            tone = "蟆代＠縺縺第悽髻ｳ繧偵＠縺ｾ縺・↑縺後ｉ繧ゅ√→縺薙ｍ縺ｩ縺薙ｍ邏逶ｴ縺ｫ隧ｱ縺帙※縺・◆譌･"
+            tone = "balanced between restraint and openness"
+        return f"こころメモ: {tone} (mask level {value:.2f})"
 
-        # 謨ｰ蛟､繧よｮ九＠縺溘＞縺ｪ繧峨◎縺ｮ縺ｾ縺ｾ蜃ｺ縺・
-        return f"縺薙％繧阪Γ繝｢: {tone}・医′縺ｾ繧薙Ξ繝吶Ν {value:.2f}・・
 
     def _upsert_entry(self, entry: DiaryEntry) -> None:
         for idx, existing in enumerate(self.entries):
