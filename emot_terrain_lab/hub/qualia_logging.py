@@ -1,4 +1,4 @@
-"""Telemetry helpers for recording QualiaState snapshots."""
+ï»¿"""Telemetry helpers for recording QualiaState snapshots."""
 
 from __future__ import annotations
 
@@ -24,8 +24,8 @@ def append_qualia_telemetry(
 
     Notes
     -----
-    - ‚±‚ÌƒƒO‚Í Ethical & Legal Guardrails ‚É]‚¢AƒZƒ‹ƒtƒPƒA^Œ¤‹†^
-      ƒtƒBƒNƒVƒ‡ƒ“—p“r‚ÉŒÀ’è‚µ‚Äˆµ‚¤‚±‚ÆB
+    - ã“ã®ãƒ­ã‚°ã¯ Ethical & Legal Guardrails ã«å¾“ã„ã€ã‚»ãƒ«ãƒ•ã‚±ã‚¢ï¼ç ”ç©¶ï¼
+      ãƒ•ã‚£ã‚¯ã‚·ãƒ§ãƒ³ç”¨é€”ã«é™å®šã—ã¦æ‰±ã†ã“ã¨ã€‚
     """
 
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -43,3 +43,4 @@ def append_qualia_telemetry(
 
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
+

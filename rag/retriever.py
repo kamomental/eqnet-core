@@ -9,12 +9,20 @@ import json
 
 import torch
 
-from emot_terrain_lab.rag.indexer import (
-    IndexedDocument,
-    NumericConstraint,
-    NumericMeasurement,
-    RagIndex,
-)
+try:
+    from emot_terrain_lab.rag.indexer import (
+        IndexedDocument,
+        NumericConstraint,
+        NumericMeasurement,
+        RagIndex,
+    )
+except ImportError:  # fallback to local package when running in-place
+    from .indexer import (
+        IndexedDocument,
+        NumericConstraint,
+        NumericMeasurement,
+        RagIndex,
+    )
 
 
 @dataclass(frozen=True)

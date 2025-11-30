@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, List
 import os
 import json
 import time
@@ -169,10 +169,10 @@ class ArousalTracker:
 
 
 _ACK_TEMPLATES: Dict[TalkMode, str] = {
-    TalkMode.WATCH: "縺・ｓ縲√％縺薙〒蠕・▲縺ｦ縺・ｋ繧医ゅ＞縺､縺ｧ繧ょ粋蝗ｳ縺励※縺ｭ縲・,
-    TalkMode.SOOTHE: "陦ｨ諠・′蟆代＠遑ｬ縺・°繧ゅよｷｱ蜻ｼ蜷ｸ縺励※縲∬か縺ｮ蜉帙ｒ謚懊％縺・°縲らｧ√・縺薙％縺ｫ縺・ｋ繧医・,
-    TalkMode.ASK: "縺輔▲縺阪ｈ繧雁・豌励′蟆代↑繧√↓隕九∴繧九ゆｽ輔°縺ゅ▲縺滂ｼ溯ｩｱ縺帙ｋ遽・峇縺ｧ謨吶∴縺ｦ縺ｭ縲・,
-    TalkMode.TALK: "邯壹″繧呈紛縺医ｈ縺・ゅ←縺薙°繧芽ｩｱ縺昴≧縺九・,
+    TalkMode.WATCH: "I'm right here listening quietly; just wave if you need me.",
+    TalkMode.SOOTHE: "Let's take a slow breath together. I'm here and you're safe.",
+    TalkMode.ASK: "Something feels different; want to tell me what's on your mind?",
+    TalkMode.TALK: "Okay, let's pick up the thread. Where should we start?",
 }
 
 
@@ -606,9 +606,11 @@ class EmotionalHubRuntime:
                         },
                     )
                     hint_line = self._culture_behavior_hint(behavior_mod)
-                    masked_context = f"{hint_line}
-
-{masked_context.strip()}" if masked_context else hint_line
+                    masked_context = (
+                        f"{hint_line}\n\n{masked_context.strip()}"
+                        if masked_context
+                        else hint_line
+                    )
 
                 response = self.llm.generate(
                     user_text=masked_user_text,
@@ -978,6 +980,30 @@ def _current_culture_tag(self) -> str:
         except Exception:
             pass
 
+    def _infer_emotion_tag(self, affect: AffectSample) -> str:
+        valence = float(getattr(affect, "valence", 0.0))
+        arousal = float(getattr(affect, "arousal", 0.0))
+        if valence > 0.45 and arousal < 0.4:
+            return "joy"
+        if valence > 0.35 and arousal >= 0.4:
+            return "anticipation"
+        if valence < -0.35 and arousal > 0.2:
+            return "anger"
+        if valence < -0.35:
+            return "sadness"
+        if arousal > 0.6:
+            return "surprise"
+        return "calm"
+
+    def _qualia_vec_snapshot(self) -> Optional[List[float]]:
+        try:
+            vec = np.asarray(self._last_E, dtype=float).reshape(-1)
+        except Exception:
+            return None
+        if vec.size == 0:
+            return None
+        return [float(v) for v in vec.tolist()]
+
     def _culture_behavior_hint(self, behavior: BehaviorMod) -> str:
         tone_hints = {
             "polite": "声の端々を少し丁寧にして、言い切りも和らげてください。",
@@ -993,65 +1019,69 @@ def _current_culture_tag(self) -> str:
         )
 
 
-def _log_moment_entry(
-    self,
-    *,
-    affect: AffectSample,
-    metrics: Dict[str, float],
-    heart_snapshot: Dict[str, float],
-    prospective: Optional[Dict[str, Any]],
-    response: Optional[HubResponse],
-    user_text: Optional[str],
-    persona_meta: Dict[str, Any],
-    behavior_mod: Optional[BehaviorMod],
-) -> None:
-    if not self._moment_log_writer.enabled:
-        return
-    heart_rate = heart_snapshot.get("rate")
-    heart_phase = heart_snapshot.get("phase")
-    persona_payload = dict(persona_meta) if persona_meta else None
-    culture_ctx = self._current_culture_context()
-    behavior_payload = None
-    if behavior_mod:
-        behavior_payload = {
-            "tone": behavior_mod.tone,
-            "empathy": float(behavior_mod.empathy_level),
-            "directness": float(behavior_mod.directness),
-            "joke_ratio": float(behavior_mod.joke_ratio),
-        }
-    entry = MomentLogEntry(
-        ts=time.time(),
-        turn_id=self._turn_id,
-        session_id=self._session_id,
-        talk_mode=self._talk_mode.name.lower(),
-        mood={
-            "valence": float(getattr(affect, "valence", 0.0)),
-            "arousal": float(getattr(affect, "arousal", 0.0)),
-        },
-        metrics=self._numeric_metrics_snapshot(metrics),
-        gate_context=dict(self._last_gate_context),
-        prospective=self._serialize_prospective(prospective),
-        heart_rate=float(heart_rate) if heart_rate is not None else None,
-        heart_phase=float(heart_phase) if heart_phase is not None else None,
-        culture_tag=culture_ctx.culture_tag,
-        place_id=culture_ctx.place_id,
-        partner_id=culture_ctx.partner_id,
-        object_id=culture_ctx.object_id,
-        object_role=culture_ctx.object_role,
-        activity_tag=culture_ctx.activity_tag,
-        fast_ack=self._snapshot_fast_ack(),
-        persona_meta=persona_payload,
-        user_text=user_text if user_text else None,
-        llm_text=response.text if response else None,
-        response_meta=self._serialize_response_meta(response),
-        behavior_mod=behavior_payload,
-    )
-    self._feed_culture_models(entry, culture_ctx, user_text)
-    try:
-        self._moment_log_writer.write(entry)
-        self._turn_id += 1
-    except Exception:
-        pass
+    def _log_moment_entry(
+        self,
+        *,
+        affect: AffectSample,
+        metrics: Dict[str, float],
+        heart_snapshot: Dict[str, float],
+        prospective: Optional[Dict[str, Any]],
+        response: Optional[HubResponse],
+        user_text: Optional[str],
+        persona_meta: Dict[str, Any],
+        behavior_mod: Optional[BehaviorMod],
+    ) -> None:
+        if not self._moment_log_writer.enabled:
+            return
+        heart_rate = heart_snapshot.get("rate")
+        heart_phase = heart_snapshot.get("phase")
+        persona_payload = dict(persona_meta) if persona_meta else None
+        culture_ctx = self._current_culture_context()
+        behavior_payload = None
+        if behavior_mod:
+            behavior_payload = {
+                "tone": behavior_mod.tone,
+                "empathy": float(behavior_mod.empathy_level),
+                "directness": float(behavior_mod.directness),
+                "joke_ratio": float(behavior_mod.joke_ratio),
+            }
+        emotion_tag = self._infer_emotion_tag(affect)
+        qualia_vec = self._qualia_vec_snapshot()
+        entry = MomentLogEntry(
+            ts=time.time(),
+            turn_id=self._turn_id,
+            session_id=self._session_id,
+            talk_mode=self._talk_mode.name.lower(),
+            mood={
+                "valence": float(getattr(affect, "valence", 0.0)),
+                "arousal": float(getattr(affect, "arousal", 0.0)),
+            },
+            metrics=self._numeric_metrics_snapshot(metrics),
+            gate_context=dict(self._last_gate_context),
+            prospective=self._serialize_prospective(prospective),
+            heart_rate=float(heart_rate) if heart_rate is not None else None,
+            heart_phase=float(heart_phase) if heart_phase is not None else None,
+            culture_tag=culture_ctx.culture_tag,
+            place_id=culture_ctx.place_id,
+            partner_id=culture_ctx.partner_id,
+            object_id=culture_ctx.object_id,
+            object_role=culture_ctx.object_role,
+            activity_tag=culture_ctx.activity_tag,
+            fast_ack=self._snapshot_fast_ack(),
+            persona_meta=persona_payload,
+            user_text=user_text if user_text else None,
+            llm_text=response.text if response else None,
+            response_meta=self._serialize_response_meta(response),
+            behavior_mod=behavior_payload,
+            emotion_tag=emotion_tag,
+            qualia_vec=qualia_vec,
+        )
+        self._feed_culture_models(entry, culture_ctx, user_text)
+        try:
+            self._moment_log_writer.write(entry)
+            self._turn_id += 1
+        except Exception:
+            pass
 
 # ------------------------------------------------------------------ #
 # Memory reference helpers

@@ -1,4 +1,4 @@
-"""Life indicator (identity / qualia / meta-awareness) dataclasses."""
+Ôªø"""Life indicator dataclasses (identity / qualia / meta-awareness)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 @dataclass
 class LifeIndicator:
-    """Day-level snapshot of EQNet's "ê∂ñΩìx" vector."""
+    """Day-level snapshot of EQNet's wellbeing vector."""
 
     identity_score: float
     qualia_score: float

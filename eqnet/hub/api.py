@@ -109,10 +109,12 @@ class EQNetHub:
                 "meta": self.persona.meta,
             }
         if latest_q:
+            vec = latest_q.qualia_vec
+            dim = int(vec.shape[0]) if hasattr(vec, "shape") else len(vec)
             state["latest_qualia"] = {
                 "timestamp": latest_q.timestamp.isoformat(),
-                "dimension": latest_q.dim,
-                "qualia_vec": latest_q.qualia_vec.tolist(),
+                "dimension": dim,
+                "qualia_vec": vec.tolist(),
             }
         if latest_li:
             state["life_indicator"] = {
@@ -125,6 +127,17 @@ class EQNetHub:
         return state
 
     # --- internal helpers -------------------------------------------------
+
+
+    def latest_qualia_state(self) -> Optional[QualiaState]:
+        """Return the most recent QualiaState if available."""
+
+        return self._latest_qualia_state
+
+    def latest_policy_prior(self) -> PolicyPrior:
+        """Return the last computed PolicyPrior (default when None)."""
+
+        return self._latest_policy_prior or PolicyPrior()
 
     def _to_moment_entry(self, raw_event: Any, raw_text: str) -> Any:
         # TODO: raw_event/raw_text を MomentLogEntry に変換
@@ -163,6 +176,21 @@ class EQNetHub:
         self.config.state_dir.mkdir(parents=True, exist_ok=True)
         path = self.config.state_dir / "policy-prior-latest.json"
         path.write_text(json.dumps(pp.__dict__, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _write_nightly_report(self, date_obj: date, li: LifeIndicator, pp: PolicyPrior) -> None:
+        """Persist a lightweight nightly summary for inspection."""
+
+        self.config.reports_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "life_indicator": {
+                "identity": li.identity_score,
+                "qualia": li.qualia_score,
+                "meta_awareness": li.meta_awareness_score,
+            },
+            "policy_prior": pp.__dict__,
+        }
+        path = self.config.reports_dir / f"nightly-{date_obj.strftime('%Y%m%d')}.json"
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
 
     def _load_latest_life_indicator(self) -> Optional[LifeIndicator]:
         # TODO: state_dir から最新ファイルを読み込む

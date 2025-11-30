@@ -41,6 +41,17 @@ speech:
     default:
       type: neutral
       prob: 0.15
+  greetings:
+    first_time:
+      - "{viewer_name}、はじめまして！来てくれてうれしいよ。"
+    returning:
+      - "{viewer_name}、今日も来てくれてありがとう。"
+    streak:
+      - "{viewer_name}、連日来てくれて心強いよ。"
+    comeback:
+      - "{viewer_name}、久しぶり！元気だった？"
+    default:
+      - "{viewer_name}、コメントありがとう。"
 qfs:
   initial_policy_prior:
     risk_aversion: 0.3

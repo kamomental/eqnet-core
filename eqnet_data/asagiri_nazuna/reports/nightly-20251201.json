@@ -1,0 +1,13 @@
+{
+  "life_indicator": {
+    "identity": 0.2,
+    "qualia": 0.34929012438526735,
+    "meta_awareness": 0.0
+  },
+  "policy_prior": {
+    "warmth": 0.5,
+    "directness": 0.5,
+    "self_disclosure": 0.5,
+    "calmness": 0.5
+  }
+}

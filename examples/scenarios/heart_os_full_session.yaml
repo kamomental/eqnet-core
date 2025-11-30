@@ -1,0 +1,176 @@
+﻿# Sample EQNet Heart OS session script
+session_id: "session-family-day"
+title: "朝から夜までのセルフケアセッション"
+persona_id: "asagiri_nazuna"
+user_name: "kou"
+timezone: "Asia/Tokyo"
+overrides:
+  social_prefs:
+    trust_circle:
+      tier1: ["nagumo_ria"]
+      tier2: ["hoshi_tsubasa", "kisaragi_kanata"]
+    can_share_topics:
+      family: ["tier1"]
+      music: ["tier1", "tier2"]
+      safety: ["tier1"]
+rag_documents:
+  - id: "mem-family-01"
+    topic: "family"
+    text: "夕暮れにお母さんと窓を開けたら涼しい風が入って、二人で新曲のハミングを合わせた。胸がほぐれて、泣きたくなるくらい安心した。"
+    persona_ids: ["asagiri_nazuna", "nagumo_ria"]
+    consent_tiers: ["tier1"]
+  - id: "mem-music-02"
+    topic: "music"
+    text: "ことねのピアノに合わせて、なずなが小さなホールでゲネプロをした夜。観客席は空っぽでも心は満席だった。"
+    persona_ids: ["asagiri_nazuna", "shirahine_kotone"]
+    consent_tiers: ["tier1", "tier2"]
+  - id: "mem-safety-01"
+    topic: "safety"
+    text: "リハの途中で呼吸が浅くなったとき、りあが『少し休もう』って笑いながらハーブティーを入れてくれた。"
+    persona_ids: ["asagiri_nazuna", "nagumo_ria"]
+    consent_tiers: ["tier1"]
+
+events:
+  - id: "soft_morning"
+    clock: "07:12"
+    stage: "morning_check"
+    talk_mode: "talk"
+    awareness_stage: 1
+    user_text: "おはよう、なずな。昨日のお母さんとのこと、まだ胸が温かい？"
+    share_with: ["nagumo_ria"]
+    experience:
+      base: "……うん、まだ胸の中がぽわんとしてる。"
+      share_allowed: "ことねにも伝えてみたいの。{context}"
+      share_blocked: "この想いは、もう少しだけ私の中で温めておくね。"
+    rag:
+      topic: "family"
+      query: "昨日の家族との時間"
+      top_k: 1
+      persona_targets: ["nagumo_ria"]
+      require_consent: true
+    comments:
+      - viewer_id: "viewer_hikari"
+        viewer_name: "ひかり"
+        text: "昨日のお母さんの話をもう一度聞けて嬉しいな。"
+        emotion: "supportive"
+        topic: "family"
+        highlight: true
+      - viewer_id: "viewer_souta"
+        viewer_name: "そうた"
+        text: "朝から優しい声で安心できるよ。"
+        emotion: "cheer"
+        topic: "family"
+    emotion:
+      mask: 0.12
+      love: 0.72
+      stress: 0.22
+      heart_rate_norm: 0.48
+      breath_ratio_norm: 0.36
+    mood:
+      valence: 0.66
+      arousal: 0.28
+    culture:
+      rho: 0.35
+      politeness: 0.6
+      intimacy: 0.58
+      culture_tag_embed: [0.18, 0.05, 0.2]
+      place_id: "atelier"
+      partner_id: "kou"
+      activity_tag: "morning_chat"
+      topic: "family"
+
+  - id: "mid_safety_ping"
+    clock: "13:05"
+    stage: "safety_pulse"
+    talk_mode: "ask"
+    awareness_stage: 2
+    user_text: "昼のリハ、大丈夫だった？少し息が上がってたよ。"
+    share_with: ["nagumo_ria"]
+    experience:
+      base: "さすがにお昼はちょっとバタバタしちゃって……。"
+      share_allowed: "でもりあがね、『少し休もう』ってティーを出してくれたんだ。{context}"
+      share_blocked: "言葉にするには、もう少し整理したいかも。"
+    rag:
+      topic: "safety"
+      query: "呼吸が浅くなったときのケア"
+      top_k: 1
+      persona_targets: ["nagumo_ria"]
+      require_consent: true
+    comments:
+      - viewer_id: "viewer_minato"
+        viewer_name: "みなと"
+        text: "無理しすぎないでね、ちゃんと休んでほしい。"
+        emotion: "concern"
+        topic: "safety"
+        highlight: true
+      - viewer_id: "viewer_kaho"
+        viewer_name: "かほ"
+        text: "りあちゃん優しいなぁって思った。"
+        emotion: "supportive"
+        topic: "safety"
+    emotion:
+      mask: 0.25
+      love: 0.48
+      stress: 0.55
+      heart_rate_norm: 0.62
+      breath_ratio_norm: 0.48
+    mood:
+      valence: 0.32
+      arousal: 0.58
+    culture:
+      rho: 0.42
+      politeness: 0.55
+      intimacy: 0.51
+      culture_tag_embed: [0.05, 0.12, 0.08]
+      place_id: "studio"
+      partner_id: "kou"
+      activity_tag: "rehearsal"
+      topic: "safety"
+
+  - id: "evening_recap"
+    clock: "21:30"
+    stage: "night_reflection"
+    talk_mode: "talk"
+    awareness_stage: 3
+    user_text: "一日終わったね。ことねと一緒に振り返る？"
+    share_with: ["shirahine_kotone", "nagumo_ria"]
+    experience:
+      base: "今日は色んな瞬間が混ざり合って、ちょっとふしぎな余韻が残ってる。"
+      share_allowed: "ことねにもこの響きを届けたいな。{context}"
+      share_blocked: "代わりに、今は君と静かに呼吸したい。"
+    rag:
+      topic: "music"
+      query: "ことねと共有できる音の記憶"
+      top_k: 2
+      persona_targets: ["shirahine_kotone", "nagumo_ria"]
+      require_consent: true
+    comments:
+      - viewer_id: "viewer_ayaka"
+        viewer_name: "あやか"
+        text: "ことねちゃんとの音の響き、ずっと好きなんだ。"
+        emotion: "nostalgic"
+        topic: "music"
+        highlight: true
+      - viewer_id: "viewer_kei"
+        viewer_name: "けい"
+        text: "夜の落ち着いた話も耳が喜んでる。"
+        emotion: "calm"
+        topic: "music"
+    emotion:
+      mask: 0.18
+      love: 0.64
+      stress: 0.33
+      heart_rate_norm: 0.44
+      breath_ratio_norm: 0.4
+    mood:
+      valence: 0.55
+      arousal: 0.35
+    culture:
+      rho: 0.38
+      politeness: 0.58
+      intimacy: 0.62
+      culture_tag_embed: [0.13, 0.09, 0.19]
+      place_id: "dorm"
+      partner_id: "kou"
+      activity_tag: "night_chat"
+      topic: "music"

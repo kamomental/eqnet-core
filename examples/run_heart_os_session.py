@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 """EQNet Heart OS本番体験用のセッションランナー。"""
 from __future__ import annotations
 
@@ -27,6 +27,16 @@ from eqnet.logs.moment_log import MomentLogEntry, MomentLogWriter
 from eqnet.persona.loader import PersonaConfig, load_persona_from_dir
 from eqnet.qualia_model import FutureReplayConfig, ReplayMode, simulate_future
 from eqnet.runtime.policy import PolicyPrior, apply_imagery_update
+from eqnet.heart_os.session_config import HeartOSSessionConfig
+from eqnet.heart_os.session_state import SessionState
+from eqnet.heart_os.memory_hints import (
+    MemoryHint,
+    build_memory_hints,
+    build_kg_facts_from_rag_docs,
+    build_place_memory_hints,
+)
+from eqnet.memory import MemoryStore, TerrainState
+from eqnet.memory.moment_knn import MomentKNNIndex
 from rag.indexer import IndexedDocument, RagIndex
 from rag.retriever import RagRetriever, RetrievalHit
 
@@ -84,6 +94,19 @@ class ScenarioEvent:
     mood: Dict[str, float]
     culture: Dict[str, Any]
     gate_context: Dict[str, Any]
+    comments: List[Dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class ViewerSessionInfo:
+    viewer_id: str
+    viewer_name: str
+    first_seen: datetime
+    last_comment: datetime
+    comment_count: int = 0
+    history: List[str] = field(default_factory=list)
+    last_emotion: Optional[str] = None
+    last_addressed: Optional[datetime] = None
 
 
 @dataclass
@@ -125,6 +148,7 @@ def load_scenario(path: Path) -> Scenario:
             mood=_float_dict(entry.get("mood")),
             culture=dict(entry.get("culture") or {}),
             gate_context=dict(entry.get("gate_context") or {}),
+            comments=list(entry.get("comments") or []),
         )
         events.append(event)
     return Scenario(
@@ -192,6 +216,22 @@ class GraphMemoryRAG:
                     filtered.append(hit)
             hits = filtered
         return hits
+
+
+def load_viewer_stats(path: Path) -> Dict[str, Any]:
+    if not path or not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_viewer_stats(path: Path, stats: Dict[str, Any]) -> None:
+    if not path:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 class ConsentGate:
@@ -266,6 +306,7 @@ class HeartOSSessionRunner:
         embed_fn: Callable[[str], Sequence[float]],
         rag: Optional[GraphMemoryRAG],
         moment_writer: MomentLogWriter,
+        viewer_stats_path: Path,
     ) -> None:
         self.scenario = scenario
         self.hub = manager.for_user(scenario.persona_id)
@@ -274,10 +315,34 @@ class HeartOSSessionRunner:
         self.embed_fn = embed_fn
         self.rag = rag
         self.moment_writer = moment_writer
+        self.viewer_stats_path = viewer_stats_path
+        self.viewer_stats = load_viewer_stats(viewer_stats_path)
         overrides = scenario.overrides.get("social_prefs") if scenario.overrides else None
         self.consent_gate = ConsentGate(persona, overrides)
-        self._qualia_history: List[Any] = []
+        base_mode = (scenario.overrides or {}).get("conversation_mode", "stream")
+        if base_mode not in ("stream", "meet"):
+            base_mode = "stream"
+        base_voice = (scenario.overrides or {}).get("voice_style", "normal")
+        if base_voice not in ("normal", "whisper"):
+            base_voice = "normal"
+        self.session_config = HeartOSSessionConfig(
+            session_id=scenario.session_id,
+            persona_id=scenario.persona_id,
+            conversation_mode=base_mode,
+            default_voice_style=base_voice,
+            metadata={"title": scenario.title},
+        )
+        self.session_state = SessionState.from_config(self.session_config)
+        self._qualia_history = self.session_state.qualia_history
         self._records: List[Dict[str, Any]] = []
+        self._viewer_session_state = self.session_state.viewer_sessions
+        self._viewer_topic_counts: Dict[str, Dict[str, int]] = {}
+        self._anchor_limit = 2
+        self.knn_index = MomentKNNIndex()
+        memory_dir = Path("eqnet_data") / "memory"
+        self.memory_store = MemoryStore(memory_dir)
+        episodes, monuments = self.memory_store.load_all()
+        self.terrain_state = TerrainState(episodes=episodes, monuments=monuments)
 
     def run(self) -> Dict[str, Any]:
         print(f"=== {self.scenario.title} / persona={self.scenario.persona_id} ===")
@@ -285,6 +350,7 @@ class HeartOSSessionRunner:
             record = self._run_event(turn_idx, event)
             self._records.append(record)
         future_summary = self._finalize()
+        self._update_viewer_stats()
         return {
             "events": self._records,
             "state": self.hub.query_state(),
@@ -292,8 +358,11 @@ class HeartOSSessionRunner:
         }
 
     def _run_event(self, turn_idx: int, event: ScenarioEvent) -> Dict[str, Any]:
+        self.session_state.tick_voice_style()
         timestamp = self._timestamp(event.clock)
         allowed, blocked = self.consent_gate.filter_targets(event.rag.get("topic") if event.rag else None, event.share_with)
+        processed_comments = self._process_event_comments(event, timestamp)
+        anchor_comments = self._select_anchor_comments(processed_comments)
         rag_hits: List[RetrievalHit] = []
         context_text: Optional[str] = None
         if event.rag and (allowed or not event.rag.get("require_consent", True)):
@@ -311,14 +380,64 @@ class HeartOSSessionRunner:
         else:
             context_text = event.experience.get("base") if event.experience else None
         persona_line = self._render_persona_line(event, context_text, blocked)
+        persona_line = self._maybe_add_anchor_mentions(persona_line, anchor_comments)
+
+        rag_doc_ids = [hit.doc_id for hit in rag_hits]
+        kg_facts = build_kg_facts_from_rag_docs(
+            rag_doc_ids,
+            context_text or "",
+            self.session_state.latest_emotion_tag,
+        )
+        embedding = self.embed_fn(event.user_text)
+        neighbors = self.knn_index.search(embedding, k=3)
+        moment_topic = (event.rag.get("topic") if event.rag else event.culture.get("topic")) if event.culture else None
+        memory_hints = build_memory_hints(
+            mode=self.session_state.conversation_mode,
+            emotion_tag=self.session_state.latest_emotion_tag,
+            kg_facts=kg_facts,
+            neighbors=neighbors,
+            moment_topic=moment_topic,
+            voice_style=self.session_state.voice_style,
+        )
+        place_id = None
+        if event.culture and isinstance(event.culture, dict):
+            place_id = event.culture.get("place_id")
+        if not place_id and event.rag:
+            place_id = event.rag.get("place_id")
+        if place_id:
+            l3_hints = build_place_memory_hints(place_id, getattr(self, "terrain_state", None))
+            if l3_hints:
+                memory_hints.extend(l3_hints)
+        meta_hints = self._build_meta_hints(blocked)
+        if meta_hints:
+            memory_hints.extend(meta_hints)
+        prompt_context = self._build_prompt(event, persona_line, memory_hints)
 
         moment = DemoMoment(timestamp, event.awareness_stage, event.emotion, event.culture)
         self.hub.log_moment(moment, event.user_text)
         latest_q = self.hub.latest_qualia_state()
         if latest_q is not None:
-            self._qualia_history.append(latest_q)
+            emotion_tag = self._infer_emotion_tag(event)
+            self.session_state.update_qualia(latest_q, emotion_tag=emotion_tag)
 
-        self._log_moment(turn_idx, event, timestamp, persona_line, allowed, blocked, rag_hits)
+        self._log_moment(
+            turn_idx,
+            event,
+            timestamp,
+            persona_line,
+            allowed,
+            blocked,
+            rag_hits,
+            anchor_comments,
+            memory_hints,
+        )
+        self.knn_index.add(
+            embedding=embedding,
+            moment_id=event.id,
+            topic=(event.rag.get("topic") if event.rag else None) or event.culture.get("topic"),
+            summary=event.user_text,
+            emotion_tag=self.session_state.latest_emotion_tag,
+        )
 
         print(f"[{event.clock}] {event.id} ({event.stage})")
         print(f"  ユーザー : {event.user_text}")
@@ -337,6 +456,8 @@ class HeartOSSessionRunner:
             "context": context_text,
             "rag_docs": [hit.doc_id for hit in rag_hits],
             "blocked": blocked,
+            "memory_hints": [hint.to_payload() for hint in memory_hints],
+            "prompt": prompt_context,
         }
 
     def _render_persona_line(
@@ -402,6 +523,171 @@ class HeartOSSessionRunner:
             if isinstance(rule, dict):
                 return rule
         return None
+
+    def _process_event_comments(self, event: ScenarioEvent, timestamp: datetime) -> List[Dict[str, Any]]:
+        processed: List[Dict[str, Any]] = []
+        for payload in event.comments or []:
+            viewer_id = str(payload.get("viewer_id") or "").strip()
+            if not viewer_id:
+                continue
+            viewer_name = str(payload.get("viewer_name") or viewer_id)
+            text = str(payload.get("text") or "")
+            info = self._update_viewer_session_entry(viewer_id, viewer_name, text, payload, event, timestamp)
+            status = self._classify_viewer_status(viewer_id, info)
+            processed.append(
+                {
+                    "viewer_id": viewer_id,
+                    "viewer_name": viewer_name,
+                    "text": text,
+                    "status": status,
+                    "past_snippet": self._recent_history_snippet(info, text),
+                    "topic": payload.get("topic") or (event.rag or {}).get("topic"),
+                    "highlight": bool(payload.get("highlight")),
+                }
+            )
+        return processed
+
+    def _update_viewer_session_entry(
+        self,
+        viewer_id: str,
+        viewer_name: str,
+        text: str,
+        payload: Dict[str, Any],
+        event: ScenarioEvent,
+        timestamp: datetime,
+    ) -> ViewerSessionInfo:
+        info = self._viewer_session_state.get(viewer_id)
+        if info is None:
+            info = ViewerSessionInfo(
+                viewer_id=viewer_id,
+                viewer_name=viewer_name,
+                first_seen=timestamp,
+                last_comment=timestamp,
+            )
+            self._viewer_session_state[viewer_id] = info
+        info.viewer_name = viewer_name
+        info.last_comment = timestamp
+        info.comment_count += 1
+        snippet = text.strip()
+        if snippet:
+            info.history.append(snippet)
+            info.history = info.history[-5:]
+        emotion = payload.get("emotion")
+        if emotion:
+            info.last_emotion = str(emotion)
+        topic = payload.get("topic") or (event.rag or {}).get("topic")
+        if topic:
+            topics = self._viewer_topic_counts.setdefault(viewer_id, {})
+            topics[topic] = topics.get(topic, 0) + 1
+        return info
+
+    def _select_anchor_comments(self, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not candidates:
+            return []
+        preferred = [c for c in candidates if c.get("highlight")]
+        ordered = preferred or candidates
+        anchors: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+        for comment in ordered:
+            viewer_id = comment.get("viewer_id")
+            if viewer_id in seen:
+                continue
+            anchors.append(comment)
+            seen.add(viewer_id)
+            if len(anchors) >= self._anchor_limit:
+                break
+        return anchors
+
+    def _classify_viewer_status(self, viewer_id: str, info: ViewerSessionInfo) -> str:
+        stats = self.viewer_stats.get(viewer_id)
+        if not stats:
+            return "first_time" if info.comment_count <= 1 else "returning"
+        try:
+            last_seen = date.fromisoformat(stats.get("last_seen", ""))
+            delta = (self.session_date - last_seen).days
+        except ValueError:
+            delta = 0
+        if stats.get("visit_count", 0) <= 1 and info.comment_count <= 1:
+            return "first_time"
+        if delta >= 7:
+            return "comeback"
+        if int(stats.get("consecutive_days", 1)) >= 3:
+            return "streak"
+        return "returning"
+
+    def _recent_history_snippet(self, info: ViewerSessionInfo, current_text: str) -> Optional[str]:
+        for previous in reversed(info.history[:-1]):
+            if previous != current_text.strip():
+                return previous
+        return None
+
+    def _maybe_add_anchor_mentions(self, base_line: str, anchors: Sequence[Dict[str, Any]]) -> str:
+        if not anchors:
+            return base_line
+        parts = [base_line]
+        for anchor in anchors:
+            mention = self._build_anchor_line(anchor)
+            if mention:
+                parts.append(mention)
+        return " ".join(part for part in parts if part.strip())
+
+    def _build_anchor_line(self, anchor: Dict[str, Any]) -> str:
+        viewer_name = anchor.get("viewer_name") or anchor.get("viewer_id", "")
+        greeting = self._lookup_greeting(anchor.get("status", ""), viewer_name)
+        snippet = anchor.get("text", "").strip()
+        if len(snippet) > 40:
+            snippet = f"{snippet[:37]}..."
+        pieces: List[str] = []
+        if greeting:
+            pieces.append(greeting)
+        elif viewer_name:
+            pieces.append(f"{viewer_name}、")
+        past = anchor.get("past_snippet")
+        if past:
+            pieces.append(f"前に『{past}』って言ってくれてたよね。")
+        if snippet:
+            pieces.append(f"今の『{snippet}』も心に響いたよ。")
+        return " ".join(pieces).strip()
+
+    def _lookup_greeting(self, status: str, viewer_name: str) -> Optional[str]:
+        speech = self.persona.speech if self.persona and self.persona.speech else {}
+        greetings = speech.get("greetings") or {}
+        options = greetings.get(status) or greetings.get("default") or []
+        if not options:
+            return None
+        template = str(random.choice(options))
+        return template.replace("{viewer_name}", viewer_name)
+
+    def _update_viewer_stats(self) -> None:
+        if not self.viewer_stats_path:
+            return
+        stats = dict(self.viewer_stats)
+        for viewer_id, info in self._viewer_session_state.items():
+            entry = dict(stats.get(viewer_id) or {})
+            entry["visit_count"] = int(entry.get("visit_count", 0)) + 1
+            prev_last = entry.get("last_seen")
+            consecutive = int(entry.get("consecutive_days", 0))
+            if prev_last:
+                try:
+                    prev_date = date.fromisoformat(prev_last)
+                    delta = (self.session_date - prev_date).days
+                except ValueError:
+                    delta = 0
+                consecutive = consecutive + 1 if delta == 1 else 1
+            else:
+                consecutive = 1
+            entry["consecutive_days"] = consecutive
+            entry["last_seen"] = self.session_date.isoformat()
+            if info.last_emotion:
+                entry["last_emotion"] = info.last_emotion
+            topics = self._viewer_topic_counts.get(viewer_id)
+            if topics:
+                fav = sorted(topics.items(), key=lambda kv: (-kv[1], kv[0]))
+                entry["fav_topics"] = [name for name, _ in fav[:3]]
+            stats[viewer_id] = entry
+        save_viewer_stats(self.viewer_stats_path, stats)
+        self.viewer_stats = stats
+
     def _log_moment(
         self,
         turn_idx: int,
@@ -411,6 +697,8 @@ class HeartOSSessionRunner:
         allowed: Sequence[str],
         blocked: Sequence[str],
         rag_hits: Sequence[RetrievalHit],
+        anchor_comments: Sequence[Dict[str, Any]],
+        memory_hints: Sequence[MemoryHint],
     ) -> None:
         if not self.moment_writer.enabled:
             return
@@ -431,6 +719,9 @@ class HeartOSSessionRunner:
                 "blocked_targets": list(blocked),
             }
         )
+        qualia_vec = None
+        if self.session_state.qualia_state is not None:
+            qualia_vec = self.session_state.qualia_state.qualia_vec.astype(float).tolist()
         entry = MomentLogEntry(
             ts=timestamp.timestamp(),
             turn_id=turn_idx,
@@ -453,12 +744,77 @@ class HeartOSSessionRunner:
                 "share_with": event.share_with,
                 "allowed": list(allowed),
                 "blocked": list(blocked),
+                "viewer_mentions": [comment.get("viewer_id") for comment in anchor_comments if comment.get("viewer_id")],
+                "memory_hints": [hint.to_payload() for hint in memory_hints],
             },
             user_text=event.user_text,
             llm_text=persona_line,
             response_meta={"context_docs": [hit.doc_id for hit in rag_hits]},
+            behavior_mod=None,
+            emotion_tag=self.session_state.latest_emotion_tag,
+            qualia_vec=qualia_vec,
         )
         self.moment_writer.write(entry)
+
+    def _build_meta_hints(self, blocked: Sequence[str]) -> List[MemoryHint]:
+        hints: List[MemoryHint] = []
+        if blocked:
+            hints.append(
+                MemoryHint(
+                    type="blocked_share",
+                    source="meta",
+                    intent="ack_only",
+                    confidence=0.7,
+                    emotion_tag=self.session_state.latest_emotion_tag or "love",
+                    text=(
+                        "ことね本人にはまだすべてをそのまま届けられていないけれど、"
+                        "一緒に振り返りたいという願いはちゃんとここにある。"
+                    ),
+                )
+            )
+        return hints
+
+    def _build_prompt(
+        self,
+        event: ScenarioEvent,
+        persona_line: str,
+        memory_hints: Sequence[MemoryHint],
+    ) -> Dict[str, Any]:
+        mode = self.session_state.conversation_mode
+        voice = self.session_state.voice_style
+        emotion_tag = self.session_state.latest_emotion_tag or "neutral"
+        system_parts = [
+            self.persona.system_prompt if hasattr(self.persona, "system_prompt") else "",
+            f"conversation_mode: {mode}",
+            f"voice_style: {voice}",
+            f"current_emotion: {emotion_tag}",
+            "Memory hints are supportive context. Prioritise the user's latest words.",
+            "intent=='expand' → elaborate gently; intent=='ack_only' → mirror softly.",
+        ]
+        system_prompt = "\n".join(part for part in system_parts if part)
+        return {
+            "system": system_prompt,
+            "live_context": {
+                "user_text": event.user_text,
+                "persona_candidate": persona_line,
+                "stage": event.stage,
+            },
+            "memory_hints": [hint.to_payload() for hint in memory_hints],
+        }
+
+    @staticmethod
+    def _infer_emotion_tag(event: ScenarioEvent) -> str:
+        emotion = event.emotion or {}
+        love = float(emotion.get("love", 0.0))
+        stress = float(emotion.get("stress", 0.0))
+        mask = float(emotion.get("mask", 0.0))
+        if love >= stress and love > 0.45:
+            return "joy"
+        if stress > love and stress > 0.5:
+            return "fear"
+        if mask > 0.6:
+            return "sadness"
+        return "calm"
 
     def _timestamp(self, clock: str) -> datetime:
         hhmm = parse_clock(clock)
@@ -515,6 +871,9 @@ def main() -> None:
     session_date = parse_iso_date(args.session_date)
     embed_fn = resolve_embed_fn(args.embed_fn)
 
+    args.base_dir.mkdir(parents=True, exist_ok=True)
+    viewer_stats_path = args.base_dir / "viewer_stats.json"
+
     manager = EQNetHubManager(args.base_dir, embed_text_fn=embed_fn, persona_dir=args.persona_dir)
     persona = load_persona_from_dir(args.persona_dir, scenario.persona_id)
     if persona is None:
@@ -532,6 +891,7 @@ def main() -> None:
         embed_fn=embed_fn,
         rag=rag,
         moment_writer=writer,
+        viewer_stats_path=viewer_stats_path,
     )
     report = runner.run()
 
