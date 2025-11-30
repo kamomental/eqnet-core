@@ -22,6 +22,25 @@ speech:
     use_emoji: true
     samples: ["😊", "✨", "🌸"]
   demo_text: "今日はみんなとたくさん笑えた気がする。"
+  fillers:
+    gentle:
+      - "うん、深呼吸してから話すね。"
+      - "んーっと、まずは落ち着いて…"
+      - "少し胸がふわっとするけど…"
+    neutral:
+      - "えっとね、"
+      - "あのさ、"
+      - "ねぇ、聞いてくれる？"
+  filler_rules:
+    safety_pulse:
+      type: gentle
+      prob: 0.75
+    night_reflection:
+      type: neutral
+      prob: 0.35
+    default:
+      type: neutral
+      prob: 0.15
 qfs:
   initial_policy_prior:
     risk_aversion: 0.3
