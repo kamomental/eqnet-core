@@ -34,6 +34,7 @@ from eqnet.culture_model import (
     update_climate_from_event,
 )
 from eqnet.logs.moment_log import MomentLogEntry, MomentLogWriter
+from eqnet.hub.streaming_sensor import StreamingSensorState
 from eqnet.modules.prospective_drive_core import PDCConfig, ProspectiveDriveCore
 from emot_terrain_lab.terrain.emotion import AXES
 from .perception import PerceptionBridge, PerceptionConfig, AffectSample
@@ -286,6 +287,7 @@ class EmotionalHubRuntime:
         self._prev_affect_vec: Optional[np.ndarray] = None
         self._prev_prev_affect_vec: Optional[np.ndarray] = None
         self._last_gate_context: Dict[str, Any] = {}
+        self._last_sensor_snapshot: Optional[StreamingSensorState] = None
         self.eqnet_system: Optional[EmotionalMemorySystem] = None
         if self.config.use_eqnet_core:
             self.eqnet_system = EmotionalMemorySystem(
@@ -348,6 +350,16 @@ class EmotionalHubRuntime:
             self._engaged_override = None
         else:
             self._engaged_override = bool(engaged)
+
+    def on_sensor_tick(self, raw_frame: Dict[str, Any]) -> None:
+        """Ingest a raw sensor frame and update the fused snapshot."""
+        if not isinstance(raw_frame, dict):
+            return
+        try:
+            snapshot = StreamingSensorState.from_raw(raw_frame)
+        except Exception:
+            return
+        self._last_sensor_snapshot = snapshot
 
     def current_talk_mode(self) -> TalkMode:
         return self._talk_mode
@@ -420,6 +432,7 @@ class EmotionalHubRuntime:
         metrics = self._update_metrics(affect, fast_only=fast_only)
         # Merge external mood metrics if provided (env or file)
         metrics = self._merge_mood_metrics(metrics)
+        metrics = self._merge_sensor_metrics(metrics)
         prospective: Optional[Dict[str, Any]] = None
         if self._pdc is not None:
             phi_vec = np.array(self._last_E, dtype=float)
@@ -498,6 +511,11 @@ class EmotionalHubRuntime:
         }
         if prospective:
             self._last_gate_context["pdc_story"] = float(prospective.get("E_story", 0.0))
+        sensor_snapshot = self._last_sensor_snapshot
+        if sensor_snapshot is not None:
+            flag = sensor_snapshot.metrics.get("body_state_flag")
+            if flag:
+                self._last_gate_context["body_state_flag"] = flag
 
         controls = self.policy.affect_to_controls(affect, metrics, prospective=prospective)
         if self._talk_mode == TalkMode.SOOTHE:
@@ -815,6 +833,16 @@ def _update_heart_state(self, arousal: float) -> Tuple[float, float]:
         except Exception:
             # best-effort merge only
             pass
+        return out
+
+    def _merge_sensor_metrics(self, metrics: Dict[str, float]) -> Dict[str, float]:
+        snapshot = self._last_sensor_snapshot
+        if snapshot is None:
+            return metrics
+        out = dict(metrics)
+        for key, value in snapshot.metrics.items():
+            if isinstance(value, (int, float, np.floating)):
+                out[key] = float(value)
         return out
 
     def _metrics_from_text_affect(self, sample: AffectSample) -> Dict[str, float]:
@@ -1189,5 +1217,13 @@ def _current_culture_tag(self) -> str:
                 handle.write("\n")
         except Exception:
             pass
+
+
+
+
+
+
+
+
 
 
