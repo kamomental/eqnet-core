@@ -145,7 +145,7 @@ astpath.override_rate > 0.2 なら Nightly が即座に soft_hint へフェイ�
 4. **AKOrN ミニマムゲート**: 位相 8 本 → R_local ベースで温度/探索率を最適化し、整定 −20%、誤点火 −30%、p95 ≤ 200ms を目標。
 5. **Theory of Mind 安全化**: `intent_trust` / `collision_rate` を `.ltx` に連携し、自律度ダウンを自動化。
 6. **MCP 半自動化**: 温度/時定数の idempotent リコンフィグだけ自動、モデル学習は夜間カナリアで安全化。
-7. **Fast-path Release Plan**: config/fastpath.yaml で enforce_actions: record_only を初期値に固定し、Nightly fastpath.override_rate が <0.2 で安定したら soft_hint → b_test を config/overrides/fastpath.yaml で段階解放。ops/jobs/fastpath_metrics.py のベースラインレポートを dashboard に貼り、profile 別 coverage/override を追跡する。
+7. **Fast-path Release Plan**: config/fastpath.yaml で enforce_actions: record_only を初期値に固定し、Nightly fastpath.override_rate が <0.2 で安定したら soft_hint → b_test を config/overrides/fastpath.yaml で段階解放。ops/jobs/fastpath_metrics.py のベースラインレポートを dashboard に貼り、profile 別 coverage/override を追跡する。
 
 ---
 
@@ -170,7 +170,6 @@ astpath.override_rate > 0.2 なら Nightly が即座に soft_hint へフェイ�
 - `docs/eqnet_overview.md` — 全体像と fast-path/慈悲/自己想定ループの説明。
 - `docs/emotion_sensibility.md` — Σ・Ψ・love_mode の運用ガイド。
 - `docs/eqnet_poster*.md` — ユースケース/体験紹介。
-- `docs/fastpath_release.md` ?EFAST-path ??????????E
 - `rules/eqnet_kpi.ltx`, `metrics/kpi.py`, `ops/nightly.py` — 閾値と監査の具体構成。
 
 ---
