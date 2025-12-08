@@ -61,3 +61,4 @@ gradio
 mediapipe
 opencv-python
 requests
+streamlit

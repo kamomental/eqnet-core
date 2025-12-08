@@ -1,8 +1,7 @@
-﻿@echo off
-REM Launch the Streamlit telemetry viewer
+@echo off
+REM Launch the Streamlit telemetry viewer (auto-activates .venv if present)
 pushd %~dp0
-IF NOT DEFINED STREAMLIT_BROWSER GOTO run
-SET STREAMLIT_BROWSER=%STREAMLIT_BROWSER%
-:run
+IF EXIST .venv\Scripts\activate.bat (CALL .venv\Scripts\activate.bat)
 streamlit run tools\eqnet_telemetry_viewer.py %*
 popd
+
