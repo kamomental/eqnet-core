@@ -70,6 +70,8 @@ class SelfReporter:
                 "tension": tension,
             },
         }
+        if imagery_positive:
+            payload["imagery_positive"] = True
         if tag:
             payload["tag"] = tag
         if episode.get("timestamp"):
@@ -104,3 +106,5 @@ class SelfReporter:
 
 
 __all__ = ["SelfReporter"]
+
+

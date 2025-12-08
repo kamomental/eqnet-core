@@ -2,7 +2,13 @@ from datetime import datetime
 
 import numpy as np
 
-from eqnet.qualia_model import FutureReplayConfig, ReplayMode, simulate_future
+from eqnet.qualia_model import (
+    FutureReplayConfig,
+    ReplayMode,
+    compute_future_risk,
+    compute_future_hopefulness,
+    simulate_future,
+)
 from eqnet.runtime.state import QualiaState
 
 
@@ -47,3 +53,50 @@ def test_fog_scales_noise_variance() -> None:
         norms_high.append(np.linalg.norm(high[-1] - high[0]))
 
     assert np.mean(norms_high) > np.mean(norms_low)
+
+def test_compute_future_risk_thresholds() -> None:
+    cfg = FutureReplayConfig(steps=2, noise_scale=0.0, window=1)
+    history: list[QualiaState] = []
+    ts = datetime.utcnow()
+    for offset in (0.0, 0.05, 0.1):
+        history.append(
+            QualiaState(
+                timestamp=ts,
+                qualia_vec=np.array([0.8 - offset, 0.1 + offset], dtype=float),
+                membrane_state={"fog_level": 0.3},
+            )
+        )
+    risk = compute_future_risk(
+        history,
+        cfg,
+        stress_index=1,
+        stress_threshold=0.12,
+        body_index=0,
+        body_threshold=0.75,
+    )
+    assert 0.0 <= risk <= 1.0
+    assert risk > 0.0
+
+def test_compute_future_hopefulness_positive() -> None:
+    cfg = FutureReplayConfig(steps=2, noise_scale=0.0, window=1)
+    ts = datetime.utcnow()
+    history = [
+        QualiaState(
+            timestamp=ts,
+            qualia_vec=np.array([0.1, 0.2], dtype=float),
+            membrane_state={"fog_level": 0.2},
+        ),
+        QualiaState(
+            timestamp=ts,
+            qualia_vec=np.array([0.12, 0.22], dtype=float),
+            membrane_state={"fog_level": 0.2},
+        ),
+    ]
+    hope = compute_future_hopefulness(
+        history,
+        cfg,
+        intention_vec=np.array([0.05, 0.08], dtype=float),
+    )
+    assert 0.0 <= hope <= 1.0
+    assert hope > 0.0
+

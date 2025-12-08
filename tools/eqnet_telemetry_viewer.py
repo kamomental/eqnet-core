@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """Streamlit viewer for EQNet telemetry logs.
 
@@ -10,14 +10,30 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+try:
+    from emot_terrain_lab.terrain.emotion import AXES as _EMOTION_AXES  # type: ignore
+except Exception:  # pragma: no cover - viewer fallback
+    _EMOTION_AXES = [
+        "sensory",
+        "temporal",
+        "spatial",
+        "affective",
+        "cognitive",
+        "social",
+        "meta",
+        "agency",
+        "recursion",
+    ]
+
 LOG_DIR = Path("logs")
 KPI_COLUMNS = ["body.R", "affect.love", "value.intent_trust", "fastpath.override_rate"]
+AXES_COLUMNS = list(_EMOTION_AXES)
 
 
 def load_jsonl(path: Path, source: str) -> pd.DataFrame:
@@ -58,6 +74,31 @@ def ensure_time_column(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     return df, "step"
 
 
+def _expand_axis_column(
+    df: pd.DataFrame,
+    column_name: str,
+    axis_labels: Iterable[str],
+) -> pd.DataFrame:
+    if column_name not in df.columns:
+        return df
+    axis_labels = list(axis_labels)
+    expanded: list[list[Optional[float]]] = []
+    for value in df[column_name].tolist():
+        if isinstance(value, list):
+            vals = [float(v) if isinstance(v, (int, float)) else None for v in value]
+        else:
+            vals = []
+        if len(vals) < len(axis_labels):
+            vals = vals + [None] * (len(axis_labels) - len(vals))
+        else:
+            vals = vals[: len(axis_labels)]
+        expanded.append(vals)
+    columns = [f"{column_name}_{axis}" for axis in axis_labels]
+    expanded_df = pd.DataFrame(expanded, columns=columns)
+    df = df.drop(columns=[column_name]).reset_index(drop=True)
+    return pd.concat([df, expanded_df], axis=1)
+
+
 def main() -> None:
     st.title("EQNet Telemetry Viewer")
     st.sidebar.header("Settings")
@@ -69,6 +110,8 @@ def main() -> None:
     df_fast = load_jsonl(base_dir / "fastpath_state.jsonl", "fastpath")
     df_self = load_jsonl(base_dir / "self_report.jsonl", "self")
     df_narr = load_jsonl(base_dir / "narrative_log.jsonl", "narrative")
+    df_moment = load_jsonl(base_dir / "moment_log.jsonl", "moment")
+    df_risk = load_jsonl(base_dir / "future_risk.jsonl", "future_risk")
 
     if df_kpi.empty:
         st.warning("kpi_rollup.jsonl が見つからないか、空です。")
@@ -82,9 +125,14 @@ def main() -> None:
     dfl = prepare_df(df_learner, episode_id)
     dff = prepare_df(df_fast, episode_id)
     dfs = prepare_df(df_self, episode_id)
+    dfmom = prepare_df(df_moment, episode_id)
+    dfr = prepare_df(df_risk, episode_id)
 
     st.subheader(f"Episode: {episode_id or 'all'}")
     dfk, t_col = ensure_time_column(dfk)
+    dfmom = expand_metrics(dfmom)
+    dfmom = _expand_axis_column(dfmom, 'emotion_axes_sensor', AXES_COLUMNS)
+    dfmom = _expand_axis_column(dfmom, 'emotion_axes_blended', AXES_COLUMNS)
 
     st.markdown("### KPI 時系列")
     for col in KPI_COLUMNS:
@@ -108,6 +156,39 @@ def main() -> None:
         st.info("Learner hooks not recorded for this selection.")
 
     st.markdown("### FAST-path State")
+    st.markdown("### Future Risk")
+    if dfr.empty:
+        st.info("future_risk.jsonl not found or empty.")
+    else:
+        dfr_plot, t_risk = ensure_time_column(dfr.copy())
+        fig_risk = px.line(dfr_plot, x=t_risk, y="future_risk_stress", title="Predicted future risk")
+        st.plotly_chart(fig_risk, use_container_width=True)
+        compare_cols = [col for col in ("body.R", "tension") if col in dfk.columns]
+        if compare_cols:
+            fig_actual = px.line(dfk, x=t_col, y=compare_cols, title="Actual body metrics")
+            st.plotly_chart(fig_actual, use_container_width=True)
+
+    st.markdown("### Sensor Trace")
+    if dfmom.empty:
+        st.info("moment_log.jsonl not found or empty.")
+    else:
+        dfmom_plot, t_moment = ensure_time_column(dfmom.copy())
+        heart_cols = [col for col in ("heart_rate", "activity_level") if col in dfmom_plot.columns]
+        if heart_cols:
+            fig_hr = px.line(dfmom_plot, x=t_moment, y=heart_cols, title="Heart rate & activity")
+            st.plotly_chart(fig_hr, use_container_width=True)
+        hr_decomp = [col for col in ("heart_rate_motion", "heart_rate_emotion") if col in dfmom_plot.columns]
+        if hr_decomp:
+            fig_decomp = px.line(dfmom_plot, x=t_moment, y=hr_decomp, title="HR decomposition")
+            st.plotly_chart(fig_decomp, use_container_width=True)
+        sensor_cols = [col for col in dfmom_plot.columns if col.startswith("emotion_axes_sensor_")]
+        if sensor_cols:
+            fig_sensor = px.line(dfmom_plot, x=t_moment, y=sensor_cols, title="Sensor-derived axes")
+            st.plotly_chart(fig_sensor, use_container_width=True)
+        blended_cols = [col for col in dfmom_plot.columns if col.startswith("emotion_axes_blended_")]
+        if blended_cols:
+            fig_blend = px.line(dfmom_plot, x=t_moment, y=blended_cols, title="Blended emotion axes")
+            st.plotly_chart(fig_blend, use_container_width=True)
     if not dff.empty:
         if "override_rate" in dff.columns:
             dff_plot, t_fast = ensure_time_column(dff.copy())
@@ -148,3 +229,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+

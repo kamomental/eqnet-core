@@ -6,10 +6,10 @@ controls, and the LLM hub together.
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Optional, Dict, Any, Tuple, List, Mapping
 import os
 import json
 import time
@@ -36,6 +36,14 @@ from eqnet.culture_model import (
 )
 from eqnet.logs.moment_log import MomentLogEntry, MomentLogWriter
 from eqnet.hub.streaming_sensor import StreamingSensorState
+from eqnet.hub.runtime_sensors import RuntimeSensors
+from eqnet.qualia_model import (
+    FutureReplayConfig,
+    blend_emotion_axes,
+    compute_future_risk,
+    sensor_to_emotion_axes,
+)
+from eqnet.runtime.state import QualiaState
 from eqnet.modules.prospective_drive_core import PDCConfig, ProspectiveDriveCore
 from emot_terrain_lab.terrain.emotion import AXES
 from .perception import PerceptionBridge, PerceptionConfig, AffectSample
@@ -58,7 +66,6 @@ if not logging.getLogger().handlers:
 LOGGER.setLevel(logging.DEBUG)
 
 
-
 @dataclass
 class MaskLayerConfig:
     """Runtime-level controls for the persona mask layer."""
@@ -66,7 +73,6 @@ class MaskLayerConfig:
     enabled: bool = False
     persona: Dict[str, Any] = field(default_factory=dict)
     log_path: str = ""
-
 
 
 def apply_mask_layer(
@@ -107,7 +113,9 @@ def apply_mask_layer(
     inner_spec = {"pdc": prospective or {}, "phi_snapshot": None}
     dialog_context = {"base_context": context or ""}
     try:
-        prompt_obj = layer.build_prompt(inner_spec=inner_spec, dialog_context=dialog_context)
+        prompt_obj = layer.build_prompt(
+            inner_spec=inner_spec, dialog_context=dialog_context
+        )
     except Exception:
         return user_text, context, persona_meta
 
@@ -116,8 +124,9 @@ def apply_mask_layer(
     return user_text, masked_context, persona_meta
 
 
-
-def _merge_mask_prompt(system_prompt: Optional[str], context: Optional[str]) -> Optional[str]:
+def _merge_mask_prompt(
+    system_prompt: Optional[str], context: Optional[str]
+) -> Optional[str]:
     if not system_prompt:
         return context
     snippet = system_prompt.strip()
@@ -126,7 +135,6 @@ def _merge_mask_prompt(system_prompt: Optional[str], context: Optional[str]) -> 
     if not context:
         return snippet
     return f"{snippet}\n\n---\n\n{context.strip()}"
-
 
 
 @dataclass
@@ -200,7 +208,13 @@ class EmotionCore:
             limit = min(vec.size, self.dim)
             self._phi[:limit] = vec[:limit]
 
-    def step(self, base_rate: float, gain: float, noise_scale: float = 0.02, damp: float = 0.0) -> np.ndarray:
+    def step(
+        self,
+        base_rate: float,
+        gain: float,
+        noise_scale: float = 0.02,
+        damp: float = 0.0,
+    ) -> np.ndarray:
         base = float(max(base_rate, 0.0))
         gain = float(max(gain, 0.0))
         noise = np.random.normal(
@@ -314,7 +328,9 @@ class _NullProspectiveMemory:
     def sample_success_vector(self, phi_t: np.ndarray) -> np.ndarray:
         return self._fit(phi_t)
 
-    def sample_future_template(self, phi_t: np.ndarray, psi_t: np.ndarray | None = None) -> np.ndarray:
+    def sample_future_template(
+        self, phi_t: np.ndarray, psi_t: np.ndarray | None = None
+    ) -> np.ndarray:
         phi_vec = self._fit(phi_t)
         psi_vec = self._fit(psi_t) if psi_t is not None else np.zeros_like(phi_vec)
         return 0.6 * phi_vec + 0.4 * psi_vec
@@ -351,7 +367,25 @@ class EmotionalHubRuntime:
         self._last_gate_context: Dict[str, Any] = {}
         self._last_life_indicator: float = 0.0
         self._last_eqframe: Optional[EQFrame] = None
-        self._last_sensor_snapshot: Optional[StreamingSensorState] = None
+        self._runtime_sensors = RuntimeSensors()
+        self._last_sensor_axes: Optional[List[float]] = None
+        self._last_blended_axes: Optional[List[float]] = None
+        self._future_history = deque(maxlen=16)
+        self._future_risk_cfg = FutureReplayConfig(steps=4, noise_scale=0.2, window=3)
+        self._future_risk_trigger = float(
+            os.getenv("EQNET_FUTURE_RISK_TRIGGER", "0.45")
+        )
+        self._future_stress_cutoff = float(
+            os.getenv("EQNET_FUTURE_STRESS_CUTOFF", "0.6")
+        )
+        self._future_body_cutoff = float(os.getenv("EQNET_FUTURE_BODY_CUTOFF", "0.4"))
+        self._future_risk_log_path = Path("logs/future_risk.jsonl")
+        self._last_future_risk: Optional[float] = None
+        self._imagery_history = deque(maxlen=16)
+        self._future_hope_cfg = FutureReplayConfig(steps=4, noise_scale=0.15, window=3)
+        self._future_hope_trigger = float(os.getenv("EQNET_FUTURE_HOPE_TRIGGER", "0.25"))
+        self._future_hope_log_path = Path("logs/future_imagery.jsonl")
+        self._last_future_hope: Optional[float] = None
         self.eqnet_system: Optional[EmotionalMemorySystem] = None
         if self.config.use_eqnet_core:
             self.eqnet_system = EmotionalMemorySystem(
@@ -368,13 +402,21 @@ class EmotionalHubRuntime:
                 self._runtime_cfg = load_runtime_cfg()
             except Exception:
                 self._runtime_cfg = None
-        self._model_cfg = getattr(self._runtime_cfg, "model", None) if self._runtime_cfg else None
+        self._model_cfg = (
+            getattr(self._runtime_cfg, "model", None) if self._runtime_cfg else None
+        )
         self._assoc_kernel_cfg = (
-            getattr(self._model_cfg, "assoc_kernel", None) if self._model_cfg is not None else None
+            getattr(self._model_cfg, "assoc_kernel", None)
+            if self._model_cfg is not None
+            else None
         )
         self._memory_ref_cfg = getattr(self._runtime_cfg, "memory_reference", None)
         self._memory_ref_log_path: Optional[Path] = None
-        self.perceived_affect: Dict[str, float] = {"valence": 0.0, "arousal": 0.0, "confidence": 0.0}
+        self.perceived_affect: Dict[str, float] = {
+            "valence": 0.0,
+            "arousal": 0.0,
+            "confidence": 0.0,
+        }
         self._pending_text_affect: Optional[AffectSample] = None
         self._memory_ref_cooldown_until = 0.0
         if self._memory_ref_cfg and hasattr(self._memory_ref_cfg, "log_path"):
@@ -396,10 +438,14 @@ class EmotionalHubRuntime:
         self._moment_log_writer = MomentLogWriter(self.config.moment_log_path)
         self._turn_id = 0
         self._session_id = None
-        runtime_session = getattr(self._runtime_cfg, 'session', None) if self._runtime_cfg else None
+        runtime_session = (
+            getattr(self._runtime_cfg, "session", None) if self._runtime_cfg else None
+        )
         if runtime_session is not None:
-            self._session_id = getattr(runtime_session, 'session_id', None)
-        self._culture_recurrence: Dict[Tuple[str, str, str, str], int] = defaultdict(int)
+            self._session_id = getattr(runtime_session, "session_id", None)
+        self._culture_recurrence: Dict[Tuple[str, str, str, str], int] = defaultdict(
+            int
+        )
         self._default_persona_meta = self._build_default_persona_meta()
 
     # ------------------------------------------------------------------ #
@@ -417,7 +463,9 @@ class EmotionalHubRuntime:
         else:
             self._engaged_override = bool(engaged)
 
-    def set_heart_params(self, *, base_rate: Optional[float] = None, gain: Optional[float] = None) -> None:
+    def set_heart_params(
+        self, *, base_rate: Optional[float] = None, gain: Optional[float] = None
+    ) -> None:
         """Allow external callers (e.g., UI sliders) to tune the heart loop."""
 
         if base_rate is not None:
@@ -460,18 +508,21 @@ class EmotionalHubRuntime:
         if not isinstance(raw_frame, dict):
             return
         try:
-            snapshot = StreamingSensorState.from_raw(raw_frame)
+            self._runtime_sensors.tick(raw_frame)
         except Exception:
             return
-        self._last_sensor_snapshot = snapshot
 
     def current_talk_mode(self) -> TalkMode:
         return self._talk_mode
 
-    def observe_video(self, frame: np.ndarray, timestamp: Optional[float] = None) -> None:
+    def observe_video(
+        self, frame: np.ndarray, timestamp: Optional[float] = None
+    ) -> None:
         self.perception.ingest_video_frame(frame, timestamp=timestamp)
 
-    def observe_audio(self, chunk: np.ndarray, timestamp: Optional[float] = None) -> None:
+    def observe_audio(
+        self, chunk: np.ndarray, timestamp: Optional[float] = None
+    ) -> None:
         self.perception.ingest_audio_chunk(chunk, timestamp=timestamp)
 
     def observe_text(
@@ -531,8 +582,10 @@ class EmotionalHubRuntime:
         if self._pending_text_affect is not None:
             affect = self._pending_text_affect
             self._pending_text_affect = None
-        heart_rate, heart_phase = self._update_heart_state(float(getattr(affect, 'arousal', 0.0)))
-        heart_snapshot = {'rate': heart_rate, 'phase': heart_phase}
+        heart_rate, heart_phase = self._update_heart_state(
+            float(getattr(affect, "arousal", 0.0))
+        )
+        heart_snapshot = {"rate": heart_rate, "phase": heart_phase}
         metrics = self._update_metrics(affect, fast_only=fast_only)
         # Merge external mood metrics if provided (env or file)
         metrics = self._merge_mood_metrics(metrics)
@@ -545,13 +598,16 @@ class EmotionalHubRuntime:
             try:
                 prospective = self._pdc.step(phi_vec, psi_vec, memory_iface)
             except Exception:
-                prospective = self._pdc.step(phi_vec, psi_vec, self._pdc_memory_fallback)
+                prospective = self._pdc.step(
+                    phi_vec, psi_vec, self._pdc_memory_fallback
+                )
             prospective["jerk_p95"] = self._pdc.compute_jerk_p95()
             metrics = dict(metrics)
             metrics.setdefault("pdc_story", prospective["E_story"])
             metrics.setdefault("pdc_temperature", prospective["T"])
             self._last_prospective = prospective
         self._last_metrics = metrics
+        self._update_emotion_axes_from_sensors(affect, metrics)
 
         affect_vec = np.array([affect.valence, affect.arousal], dtype=float)
         delta_m = 0.0
@@ -561,7 +617,9 @@ class EmotionalHubRuntime:
         if self._prev_prev_affect_vec is not None and self._prev_affect_vec is not None:
             jerk = float(
                 np.linalg.norm(
-                    affect_vec - 2.0 * self._prev_affect_vec + self._prev_prev_affect_vec
+                    affect_vec
+                    - 2.0 * self._prev_affect_vec
+                    + self._prev_prev_affect_vec
                 )
             )
         self._prev_prev_affect_vec = self._prev_affect_vec
@@ -614,21 +672,37 @@ class EmotionalHubRuntime:
             "force_listen": self._force_listen,
         }
         if prospective:
-            self._last_gate_context["pdc_story"] = float(prospective.get("E_story", 0.0))
-        sensor_snapshot = self._last_sensor_snapshot
+            self._last_gate_context["pdc_story"] = float(
+                prospective.get("E_story", 0.0)
+            )
+        sensor_snapshot = self._runtime_sensors.snapshot
         if sensor_snapshot is not None:
             flag = sensor_snapshot.metrics.get("body_state_flag")
             if flag:
                 self._last_gate_context["body_state_flag"] = flag
+        updated_mode = self._apply_future_risk(metrics, self._talk_mode)
+        if updated_mode is not self._talk_mode:
+            self._talk_mode = updated_mode
+            self._last_gate_context["mode"] = self._talk_mode.name.lower()
+        updated_mode = self._apply_future_imagery(metrics, self._talk_mode)
+        if updated_mode is not self._talk_mode:
+            self._talk_mode = updated_mode
+            self._last_gate_context["mode"] = self._talk_mode.name.lower()
 
-        controls = self.policy.affect_to_controls(affect, metrics, prospective=prospective)
+        controls = self.policy.affect_to_controls(
+            affect, metrics, prospective=prospective
+        )
         if self._talk_mode == TalkMode.SOOTHE:
             controls.temperature = float(np.clip(controls.temperature, 0.25, 0.55))
-            controls.pause_ms = int(np.clip(controls.pause_ms + 150, *self.policy.config.pause_bounds))
+            controls.pause_ms = int(
+                np.clip(controls.pause_ms + 150, *self.policy.config.pause_bounds)
+            )
             controls.prosody_energy = float(min(controls.prosody_energy, -0.05))
             controls.gesture_amplitude = float(min(controls.gesture_amplitude, 0.35))
         elif self._talk_mode == TalkMode.ASK:
-            controls.pause_ms = int(np.clip(controls.pause_ms + 120, *self.policy.config.pause_bounds))
+            controls.pause_ms = int(
+                np.clip(controls.pause_ms + 120, *self.policy.config.pause_bounds)
+            )
             controls.prosody_energy = float(max(controls.prosody_energy, 0.05))
         elif self._talk_mode == TalkMode.WATCH:
             controls.gesture_amplitude = float(min(controls.gesture_amplitude, 0.25))
@@ -655,9 +729,12 @@ class EmotionalHubRuntime:
                 response = self._wrap_ack_response(ack_payload, self._talk_mode)
             eqframe = self._record_eqframe(None, persona_meta)
             metrics = dict(metrics)
-            metrics["phi_norm"] = float(eqframe.inner_spec.get("phi", {}).get("norm", 0.0))
+            metrics["phi_norm"] = float(
+                eqframe.inner_spec.get("phi", {}).get("norm", 0.0)
+            )
             metrics["tension_score"] = eqframe.tension_score
             self._last_metrics = metrics
+            self._update_emotion_axes_from_sensors(affect, metrics)
             return {
                 "affect": affect,
                 "controls": controls,
@@ -699,7 +776,9 @@ class EmotionalHubRuntime:
                 }
                 behavior_mod = None
                 try:
-                    culture_state = compute_culture_state(self._current_culture_context())
+                    culture_state = compute_culture_state(
+                        self._current_culture_context()
+                    )
                     behavior_mod = culture_to_behavior(culture_state)
                 except Exception:
                     behavior_mod = None
@@ -711,7 +790,9 @@ class EmotionalHubRuntime:
 
                 if prospective:
                     llm_controls["pdc_story"] = float(prospective.get("E_story", 0.0))
-                    llm_controls["pdc_temperature"] = float(prospective.get("T", controls.temperature))
+                    llm_controls["pdc_temperature"] = float(
+                        prospective.get("T", controls.temperature)
+                    )
                     for key in ("m_t", "m_past_hat", "m_future_hat"):
                         value = prospective.get(key)
                         if isinstance(value, np.ndarray):
@@ -745,9 +826,12 @@ class EmotionalHubRuntime:
                     persona_id = persona_cfg.get("id")
                 eqframe = self._record_eqframe(persona_id, persona_meta)
                 metrics = dict(metrics)
-                metrics["phi_norm"] = float(eqframe.inner_spec.get("phi", {}).get("norm", 0.0))
+                metrics["phi_norm"] = float(
+                    eqframe.inner_spec.get("phi", {}).get("norm", 0.0)
+                )
                 metrics["tension_score"] = eqframe.tension_score
                 self._last_metrics = metrics
+                self._update_emotion_axes_from_sensors(affect, metrics)
                 response = self.llm.generate(
                     user_text=masked_user_text,
                     context=masked_context,
@@ -808,11 +892,9 @@ class EmotionalHubRuntime:
     def last_fast_ack_sample(self) -> Optional[Dict[str, Any]]:
         return self._last_fast_ack_sample
 
-
     @property
     def heart_state(self) -> Dict[str, float]:
         return {"rate": self._heart_rate, "phase": self._heart_phase}
-
 
     def last_controls(self) -> Optional[AffectControls]:
         return self._last_controls
@@ -855,11 +937,17 @@ class EmotionalHubRuntime:
             dt = max(now - self._heart_last_ts, 0.0)
         self._heart_last_ts = now
         arousal_unit = float(np.clip(arousal, 0.0, 1.0))
-        rate = float(np.clip(self._heart_base_rate + self._heart_gain * arousal_unit, 0.2, 3.0))
+        rate = float(
+            np.clip(self._heart_base_rate + self._heart_gain * arousal_unit, 0.2, 3.0)
+        )
         self._heart_rate = rate
         phase = float((self._heart_phase + rate * min(dt, 2.0)) % 1.0)
         self._heart_phase = phase
-        noise_val = noise_scale if noise_scale is not None else max(0.02, 0.01 + 0.02 * abs(arousal))
+        noise_val = (
+            noise_scale
+            if noise_scale is not None
+            else max(0.02, 0.01 + 0.02 * abs(arousal))
+        )
         phi_vec = self._emotion_core.step(
             self._heart_base_rate,
             self._heart_gain,
@@ -888,7 +976,9 @@ class EmotionalHubRuntime:
         inner["pdc"] = serialized or {}
         return inner
 
-    def _compute_tension(self, inner_spec: Dict[str, Any], persona_meta: Dict[str, Any]) -> float:
+    def _compute_tension(
+        self, inner_spec: Dict[str, Any], persona_meta: Dict[str, Any]
+    ) -> float:
         """Simple L2 distance between inner Phi and persona tone hints."""
 
         phi_payload = inner_spec.get("phi", {})
@@ -905,13 +995,15 @@ class EmotionalHubRuntime:
             return 0.0
         return float(np.linalg.norm(phi_vec - tone_arr))
 
-    def _update_life_indicator(self, phi_norm: float, metrics: Dict[str, float]) -> float:
-        heart_rate = float(np.clip(getattr(self, '_heart_rate', 0.0), 0.0, 3.0))
-        rho = float(metrics.get('rho', 0.0)) if metrics else 0.0
-        arousal = float(metrics.get('arousal', 0.0)) if metrics else 0.0
+    def _update_life_indicator(
+        self, phi_norm: float, metrics: Dict[str, float]
+    ) -> float:
+        heart_rate = float(np.clip(getattr(self, "_heart_rate", 0.0), 0.0, 3.0))
+        rho = float(metrics.get("rho", 0.0)) if metrics else 0.0
+        arousal = float(metrics.get("arousal", 0.0)) if metrics else 0.0
         story_energy = 0.0
         if isinstance(self._last_prospective, dict):
-            story_energy = float(self._last_prospective.get('E_story', 0.0))
+            story_energy = float(self._last_prospective.get("E_story", 0.0))
         calm_factor = 1.0 - min(1.0, abs(rho))
         vitality = 0.5 * phi_norm + 0.2 * calm_factor
         vitality += 0.2 * (heart_rate / 3.0)
@@ -921,7 +1013,9 @@ class EmotionalHubRuntime:
         self._last_life_indicator = life_val
         return life_val
 
-    def _record_eqframe(self, persona_id: Optional[str], persona_meta: Dict[str, Any]) -> EQFrame:
+    def _record_eqframe(
+        self, persona_id: Optional[str], persona_meta: Dict[str, Any]
+    ) -> EQFrame:
         """Build and store the latest EQFrame, updating gate context as well."""
 
         persona_meta = persona_meta or dict(self._default_persona_meta)
@@ -952,7 +1046,9 @@ class EmotionalHubRuntime:
         self._last_eqframe = eqframe
         return eqframe
 
-    def _update_metrics(self, affect: AffectSample, fast_only: bool = False) -> Dict[str, float]:
+    def _update_metrics(
+        self, affect: AffectSample, fast_only: bool = False
+    ) -> Dict[str, float]:
         """
         Project affect into a synthetic EQNet state vector. This is a temporary
         shim; real deployments should call into ``EmotionalMemorySystem``.
@@ -969,7 +1065,9 @@ class EmotionalHubRuntime:
                     entropy = float(entry.get("entropy", 0.0))
                     dissipation = float(entry.get("dissipation", 0.0))
                     info_flux = float(entry.get("info_flux", 0.0))
-                    current_emotion = getattr(self.eqnet_system, "current_emotion", None)
+                    current_emotion = getattr(
+                        self.eqnet_system, "current_emotion", None
+                    )
                     if current_emotion is not None:
                         try:
                             vec = np.asarray(current_emotion, dtype=float)
@@ -1027,7 +1125,9 @@ class EmotionalHubRuntime:
         persona_meta = dict(self._last_persona_meta or self._default_persona_meta)
         persona_id = persona_meta.get("persona_id")
         try:
-            eqframe = self._record_eqframe(persona_id=persona_id, persona_meta=persona_meta)
+            eqframe = self._record_eqframe(
+                persona_id=persona_id, persona_meta=persona_meta
+            )
         except Exception:
             eqframe = None
         return {"metrics": metrics, "eqframe": eqframe}
@@ -1120,7 +1220,7 @@ class EmotionalHubRuntime:
         return out
 
     def _merge_sensor_metrics(self, metrics: Dict[str, float]) -> Dict[str, float]:
-        snapshot = self._last_sensor_snapshot
+        snapshot = self._runtime_sensors.snapshot
         if snapshot is None:
             return metrics
         out = dict(metrics)
@@ -1129,6 +1229,146 @@ class EmotionalHubRuntime:
                 out[key] = float(value)
         return out
 
+    def _evaluate_future_risk(self, metrics: Mapping[str, Any]) -> Optional[float]:
+        body_r = float(np.clip(metrics.get("R", metrics.get("rho", 0.5)), 0.0, 1.0))
+        stress_val = float(np.clip(abs(metrics.get("kappa", 0.0)), 0.0, 1.0))
+        vec = np.array([body_r, stress_val], dtype=float)
+        state = QualiaState(timestamp=datetime.utcnow(), qualia_vec=vec)
+        self._future_history.append(state)
+        if len(self._future_history) < 2:
+            return None
+        history = list(self._future_history)
+        return compute_future_risk(
+            history,
+            self._future_risk_cfg,
+            stress_index=1,
+            stress_threshold=self._future_stress_cutoff,
+            body_index=0,
+            body_threshold=self._future_body_cutoff,
+        )
+
+    def _apply_future_risk(
+        self, metrics: Dict[str, float], talk_mode: TalkMode
+    ) -> TalkMode:
+        risk = self._evaluate_future_risk(metrics)
+        if risk is None:
+            return talk_mode
+        metrics.setdefault("future_risk_stress", risk)
+        self._last_future_risk = risk
+        new_mode = talk_mode
+        if risk >= self._future_risk_trigger:
+            new_mode = TalkMode.SOOTHE
+        self._last_gate_context.setdefault("future_risk_stress", risk)
+        if new_mode is not talk_mode:
+            self._last_gate_context["future_risk_triggered"] = True
+        self._log_future_risk(risk, talk_mode, new_mode)
+        return new_mode
+
+    def _log_future_risk(self, risk: float, before: TalkMode, after: TalkMode) -> None:
+        payload = {
+            "ts": time.time(),
+            "session_id": self._session_id,
+            "episode_id": self._session_id,
+            "turn_id": self._turn_id,
+            "future_risk_stress": float(risk),
+            "threshold": self._future_risk_trigger,
+            "stress_cutoff": self._future_stress_cutoff,
+            "body_cutoff": self._future_body_cutoff,
+            "talk_mode_before": before.name.lower(),
+            "talk_mode_after": after.name.lower(),
+        }
+        try:
+            self._future_risk_log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self._future_risk_log_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except Exception:
+            LOGGER.debug("[future-risk] log write failed")
+
+    def _evaluate_future_hope(self, metrics: Mapping[str, Any]) -> Optional[float]:
+        valence = float(metrics.get("valence", 0.0))
+        love = float(metrics.get("affect.love", metrics.get("love", 0.0)))
+        vec = np.array([valence, love], dtype=float)
+        state = QualiaState(timestamp=datetime.utcnow(), qualia_vec=vec)
+        self._imagery_history.append(state)
+        if len(self._imagery_history) < 1:
+            return None
+        intention = self._imagery_intention_vector(valence, love)
+        return compute_future_hopefulness(
+            list(self._imagery_history),
+            self._future_hope_cfg,
+            intention_vec=intention,
+            valence_index=0,
+            love_index=1,
+        )
+
+    def _imagery_intention_vector(self, valence: float, love: float) -> np.ndarray:
+        target_valence = 0.6
+        target_love = 0.7
+        return np.array([target_valence - valence, target_love - love], dtype=float)
+
+    def _apply_future_imagery(self, metrics: Dict[str, float], talk_mode: TalkMode) -> TalkMode:
+        hope = self._evaluate_future_hope(metrics)
+        if hope is None:
+            return talk_mode
+        metrics.setdefault("future_hopefulness", hope)
+        imagery_positive = hope >= self._future_hope_trigger
+        metrics.setdefault("imagery_positive", imagery_positive)
+        self._last_future_hope = hope
+        new_mode = talk_mode
+        if imagery_positive and talk_mode != TalkMode.TALK:
+            new_mode = TalkMode.TALK
+        self._last_gate_context.setdefault("future_hopefulness", hope)
+        if imagery_positive:
+            self._last_gate_context["imagery_positive"] = True
+        self._log_future_hope(hope, talk_mode, new_mode, imagery_positive)
+        return new_mode
+
+    def _log_future_hope(
+        self, hope: float, before: TalkMode, after: TalkMode, imagery_positive: bool
+    ) -> None:
+        payload = {
+            "ts": time.time(),
+            "session_id": self._session_id,
+            "episode_id": self._session_id,
+            "turn_id": self._turn_id,
+            "future_hopefulness": float(hope),
+            "threshold": self._future_hope_trigger,
+            "talk_mode_before": before.name.lower(),
+            "talk_mode_after": after.name.lower(),
+            "imagery_positive": imagery_positive,
+        }
+        try:
+            self._future_hope_log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self._future_hope_log_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except Exception:
+            LOGGER.debug("[future-hope] log write failed")
+
+    def _update_emotion_axes_from_sensors(
+        self,
+        affect: AffectSample,
+        metrics: Mapping[str, Any],
+    ) -> None:
+        text_axes = self._vector_from_affect(affect)
+        snapshot = self._runtime_sensors.snapshot
+        sensor_axes = sensor_to_emotion_axes(snapshot)
+        activity = 0.0
+        privacy = 0.0
+        if snapshot is not None:
+            activity = float(snapshot.metrics.get("activity_level", 0.0))
+            privacy = float(snapshot.metrics.get("body_flag_private", 0.0))
+        fog = float(metrics.get("fog_level", metrics.get("fog", 0.5)))
+        blended = blend_emotion_axes(
+            text_axes,
+            sensor_axes,
+            activity_level=activity,
+            privacy_level=privacy,
+            fog_level=fog,
+        )
+        self._last_sensor_axes = sensor_axes.tolist()
+        self._last_blended_axes = blended.tolist()
+        self._last_E = blended
+
     def _metrics_from_text_affect(self, sample: AffectSample) -> Dict[str, float]:
         valence = float(np.clip(sample.valence, -1.0, 1.0))
         arousal = float(np.clip(sample.arousal, -1.0, 1.0))
@@ -1136,7 +1376,13 @@ class EmotionalHubRuntime:
         R = float(np.clip(0.5 + 0.4 * arousal, 0.0, 1.0))
         kappa = float(np.clip(-0.4 * arousal, -1.0, 1.0))
         ignition = float(np.clip(max(arousal, 0.0) ** 1.3, 0.0, 1.0))
-        return {"H": H, "R": R, "kappa": kappa, "ignition": ignition, "timestamp": sample.timestamp}
+        return {
+            "H": H,
+            "R": R,
+            "kappa": kappa,
+            "ignition": ignition,
+            "timestamp": sample.timestamp,
+        }
 
     def _vector_from_affect(self, sample: AffectSample) -> np.ndarray:
         vec = np.zeros(len(AXES), dtype=float)
@@ -1166,7 +1412,9 @@ class EmotionalHubRuntime:
             idx += 1
         return vec
 
-    def _serialize_prospective(self, prospective: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    def _serialize_prospective(
+        self, prospective: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
         if not prospective:
             return None
         payload: Dict[str, Any] = {
@@ -1199,7 +1447,9 @@ class EmotionalHubRuntime:
                 snapshot[key] = value
         return snapshot
 
-    def _serialize_response_meta(self, response: Optional[HubResponse]) -> Optional[Dict[str, Any]]:
+    def _serialize_response_meta(
+        self, response: Optional[HubResponse]
+    ) -> Optional[Dict[str, Any]]:
         if not response:
             return None
         controls_used = {
@@ -1218,19 +1468,25 @@ class EmotionalHubRuntime:
     def _current_culture_tag(self) -> str:
         return self._current_culture_context().culture_tag
 
-
     def _current_culture_context(self) -> CultureContext:
-        culture_cfg = getattr(self._runtime_cfg, "culture", None) if self._runtime_cfg else None
+        culture_cfg = (
+            getattr(self._runtime_cfg, "culture", None) if self._runtime_cfg else None
+        )
         ctx = CultureContext(
             culture_tag=getattr(culture_cfg, "tag", None) if culture_cfg else None,
             place_id=getattr(culture_cfg, "place_id", None) if culture_cfg else None,
-            partner_id=getattr(culture_cfg, "partner_id", None) if culture_cfg else None,
+            partner_id=(
+                getattr(culture_cfg, "partner_id", None) if culture_cfg else None
+            ),
             object_id=getattr(culture_cfg, "object_id", None) if culture_cfg else None,
-            object_role=getattr(culture_cfg, "object_role", None) if culture_cfg else None,
-            activity_tag=getattr(culture_cfg, "activity_tag", None) if culture_cfg else None,
+            object_role=(
+                getattr(culture_cfg, "object_role", None) if culture_cfg else None
+            ),
+            activity_tag=(
+                getattr(culture_cfg, "activity_tag", None) if culture_cfg else None
+            ),
         )
         return ctx.normalized()
-
 
     def _bump_culture_recurrence(self, ctx: CultureContext) -> int:
         key = (
@@ -1242,7 +1498,6 @@ class EmotionalHubRuntime:
         self._culture_recurrence[key] += 1
         return self._culture_recurrence[key]
 
-
     def _feed_culture_models(
         self,
         entry: MomentLogEntry,
@@ -1250,7 +1505,9 @@ class EmotionalHubRuntime:
         user_text: Optional[str],
     ) -> None:
         metrics = entry.metrics or {}
-        culture_cfg = getattr(self._runtime_cfg, "culture", None) if self._runtime_cfg else None
+        culture_cfg = (
+            getattr(self._runtime_cfg, "culture", None) if self._runtime_cfg else None
+        )
 
         def _coerce(value: Any, default: float) -> float:
             try:
@@ -1264,8 +1521,12 @@ class EmotionalHubRuntime:
                     return _coerce(metrics[key], default)
             return default
 
-        baseline_intimacy = float(getattr(culture_cfg, "intimacy", 0.5)) if culture_cfg else 0.5
-        baseline_politeness = float(getattr(culture_cfg, "politeness", 0.5)) if culture_cfg else 0.5
+        baseline_intimacy = (
+            float(getattr(culture_cfg, "intimacy", 0.5)) if culture_cfg else 0.5
+        )
+        baseline_politeness = (
+            float(getattr(culture_cfg, "politeness", 0.5)) if culture_cfg else 0.5
+        )
 
         event = {
             "ts": entry.ts,
@@ -1329,13 +1590,20 @@ class EmotionalHubRuntime:
             "neutral": "標準的な語尾で落ち着いたトーンを保ってください。",
         }
         tone_line = tone_hints.get(behavior.tone, tone_hints["neutral"])
-        empathy_line = "気持ちの背景を一度言い添えると安心できます。" if behavior.empathy_level >= 0.65 else "共感は一言添える程度で十分です。"
-        joke_line = "軽いユーモアを 1 行だけ差し込んでも大丈夫。" if behavior.joke_ratio >= 0.4 else "冗談は控えめにして、落ち着いた語り口にしてください。"
+        empathy_line = (
+            "気持ちの背景を一度言い添えると安心できます。"
+            if behavior.empathy_level >= 0.65
+            else "共感は一言添える程度で十分です。"
+        )
+        joke_line = (
+            "軽いユーモアを 1 行だけ差し込んでも大丈夫。"
+            if behavior.joke_ratio >= 0.4
+            else "冗談は控えめにして、落ち着いた語り口にしてください。"
+        )
         return (
             f"[culture-field] {tone_line} {empathy_line} "
             f"Directness≈{behavior.directness:.2f}, joke_ratio≈{behavior.joke_ratio:.2f}. {joke_line}"
         )
-
 
     def _log_moment_entry(
         self,
@@ -1392,6 +1660,12 @@ class EmotionalHubRuntime:
             response_meta=self._serialize_response_meta(response),
             behavior_mod=behavior_payload,
             emotion_tag=emotion_tag,
+            emotion_axes_sensor=(
+                list(self._last_sensor_axes) if self._last_sensor_axes else None
+            ),
+            emotion_axes_blended=(
+                list(self._last_blended_axes) if self._last_blended_axes else None
+            ),
             qualia_vec=qualia_vec,
         )
         self._feed_culture_models(entry, culture_ctx, user_text)
@@ -1401,15 +1675,19 @@ class EmotionalHubRuntime:
         except Exception:
             pass
 
-# ------------------------------------------------------------------ #
-# Memory reference helpers
+    # ------------------------------------------------------------------ #
+    # Memory reference helpers
     # ------------------------------------------------------------------ #
 
-    def _sample_fast_ack_text(self, affect: AffectSample, gate_ctx: GateContext) -> Optional[str]:
+    def _sample_fast_ack_text(
+        self, affect: AffectSample, gate_ctx: GateContext
+    ) -> Optional[str]:
         arousal = float(np.clip(getattr(affect, "arousal", 0.0), 0.0, 1.0))
         distance = self._estimate_interpersonal_distance(gate_ctx)
         previous_arousal = self._arousal_tracker.last_arousal
-        choice = sample_fast_ack(arousal, distance, self._fast_ack_state, self._arousal_tracker)
+        choice = sample_fast_ack(
+            arousal, distance, self._fast_ack_state, self._arousal_tracker
+        )
         self._last_fast_ack_sample = {
             "arousal": arousal,
             "delta": arousal - previous_arousal,
@@ -1443,12 +1721,18 @@ class EmotionalHubRuntime:
             or time.time() < self._memory_ref_cooldown_until
         ):
             return None
-        culture_tag = getattr(self._runtime_cfg.culture, "tag", "ja-JP") if self._runtime_cfg else "ja-JP"
+        culture_tag = (
+            getattr(self._runtime_cfg.culture, "tag", "ja-JP")
+            if self._runtime_cfg
+            else "ja-JP"
+        )
         overrides = {}
         per_culture = getattr(cfg, "per_culture", {}) or {}
         if isinstance(per_culture, dict):
             overrides = per_culture.get(culture_tag.lower(), {}) or {}
-        max_reply_chars = int(overrides.get("max_reply_chars", getattr(cfg, "max_reply_chars", 140)))
+        max_reply_chars = int(
+            overrides.get("max_reply_chars", getattr(cfg, "max_reply_chars", 140))
+        )
         result = handle_memory_reference(
             self.eqnet_system,
             user_text,
@@ -1483,7 +1767,9 @@ class EmotionalHubRuntime:
             safety={"rating": "G", "memory_recall": "true"},
         )
 
-    def _log_memory_reference(self, result: Optional[Dict[str, Any]], user_text: str) -> None:
+    def _log_memory_reference(
+        self, result: Optional[Dict[str, Any]], user_text: str
+    ) -> None:
         if not result or not self._memory_ref_log_path:
             return
         record: Dict[str, Any] = {
@@ -1499,7 +1785,9 @@ class EmotionalHubRuntime:
             record["node"] = candidate.get("node")
             record["score"] = candidate.get("score")
             record["affective"] = candidate.get("affective")
-        topic_hash = hashlib.sha1(user_text.strip().lower().encode("utf-8")).hexdigest()[:12]
+        topic_hash = hashlib.sha1(
+            user_text.strip().lower().encode("utf-8")
+        ).hexdigest()[:12]
         record["topic_hash"] = topic_hash
         try:
             with self._memory_ref_log_path.open("a", encoding="utf-8") as handle:
@@ -1507,13 +1795,4 @@ class EmotionalHubRuntime:
                 handle.write("\n")
         except Exception:
             pass
-
-
-
-
-
-
-
-
-
 
