@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
+import json
+from pathlib import Path
+from typing import Dict, Tuple
+
 import numpy as np
+
+from devlife.core.body_nca import BodyNCA, BodyConfig
 
 
 class LowRankGreen:
@@ -39,3 +46,92 @@ class LowRankGreen:
     def spectral_radius(self) -> float:
         """Proxy for λ_max by computing the weight vector norm."""
         return float(np.linalg.norm(self.w, ord=2))
+
+
+
+def run_impulse_response(
+    steps: int = 128,
+    grid_size: Tuple[int, int] = (64, 64),
+    impulse_pos: Tuple[int, int] | None = None,
+    impulse_mag: float = 0.1,
+    channels: int = 6,
+) -> Dict[str, np.ndarray]:
+    """Simulate an impulse on the BodyNCA field and capture Φ/Ψ responses."""
+    cfg = BodyConfig(grid_size=grid_size, channels=channels)
+    body = BodyNCA(cfg)
+    c, height, width = body.state.shape
+    iy, ix = impulse_pos if impulse_pos is not None else (height // 2, width // 2)
+    iy = int(np.clip(iy, 0, height - 1))
+    ix = int(np.clip(ix, 0, width - 1))
+    body.state[0, iy, ix] += float(impulse_mag)
+
+    phi_local = np.zeros(steps, dtype=np.float32)
+    psi_local = np.zeros(steps, dtype=np.float32)
+    phi_mean = np.zeros(steps, dtype=np.float32)
+    psi_mean = np.zeros(steps, dtype=np.float32)
+
+    zero_act = np.zeros_like(body.state)
+    for t in range(steps):
+        obs = body.step(zero_act)
+        channels_state = obs["channels"]
+        phi = channels_state[0]
+        psi = channels_state[1] if channels_state.shape[0] > 1 else channels_state[0]
+        phi_local[t] = float(phi[iy, ix])
+        psi_local[t] = float(psi[iy, ix])
+        phi_mean[t] = float(phi.mean())
+        psi_mean[t] = float(psi.mean())
+
+    return {
+        "phi_local": phi_local,
+        "psi_local": psi_local,
+        "phi_mean": phi_mean,
+        "psi_mean": psi_mean,
+    }
+
+
+
+def save_impulse_response(data: Dict[str, np.ndarray], meta: Dict[str, float], path: Path) -> None:
+    payload = {
+        "meta": meta,
+        "series": {key: value.tolist() for key, value in data.items()},
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run a Φ/Ψ impulse response experiment.")
+    parser.add_argument("--steps", type=int, default=128)
+    parser.add_argument("--grid_size", type=int, nargs=2, default=(64, 64), help="grid height width")
+    parser.add_argument("--impulse_pos", type=int, nargs=2, default=None, help="y x position of impulse")
+    parser.add_argument("--impulse_mag", type=float, default=0.1)
+    parser.add_argument("--channels", type=int, default=6)
+    parser.add_argument("--out", type=Path, default=Path("logs/green_impulse.json"))
+    return parser.parse_args()
+
+
+
+def _cli() -> None:
+    args = _parse_args()
+    impulse_pos = tuple(args.impulse_pos) if args.impulse_pos is not None else None
+    result = run_impulse_response(
+        steps=args.steps,
+        grid_size=tuple(args.grid_size),
+        impulse_pos=impulse_pos,
+        impulse_mag=args.impulse_mag,
+        channels=args.channels,
+    )
+    meta = {
+        "steps": args.steps,
+        "grid_size": list(args.grid_size),
+        "impulse_pos": list(impulse_pos) if impulse_pos else [args.grid_size[0] // 2, args.grid_size[1] // 2],
+        "impulse_mag": args.impulse_mag,
+        "channels": args.channels,
+    }
+    save_impulse_response(result, meta, args.out)
+    print(f"[green_kernel] impulse response saved to {args.out}")
+
+
+if __name__ == "__main__":
+    _cli()

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -51,15 +51,112 @@ def taste_violation_rate(tracks: List[Dict]) -> float:
 
 
 def mood_total_variation(tracks: List[Dict]) -> float:
-    moods = [tr.get("mood", []) for tr in tracks]
-    diffs = []
+    moods = [tr.get("mood") for tr in tracks]
+    diffs: List[float] = []
     for i in range(1, len(moods)):
-        if moods[i] and moods[i - 1] and len(moods[i]) == len(moods[i - 1]):
-            diffs.append(
-                float(np.mean(np.abs(np.array(moods[i]) - np.array(moods[i - 1]))))
-            )
+        cur = _mood_vector(moods[i])
+        prev = _mood_vector(moods[i - 1])
+        if cur is None or prev is None:
+            continue
+        if cur.shape != prev.shape:
+            continue
+        diffs.append(float(np.mean(np.abs(cur - prev))))
     return float(np.mean(diffs)) if diffs else 0.0
 
+
+def _mood_vector(entry: Any) -> Optional[np.ndarray]:
+    if entry is None:
+        return None
+    if isinstance(entry, dict):
+        ordered = [float(entry.get("mood_v", 0.0)), float(entry.get("mood_a", 0.0))]
+        extra_keys = [k for k in entry.keys() if k not in {"mood_v", "mood_a"}]
+        for key in sorted(extra_keys):
+            value = entry.get(key)
+            if isinstance(value, (int, float)):
+                ordered.append(float(value))
+        return np.asarray(ordered, dtype=np.float32)
+    if isinstance(entry, (list, tuple)) and entry:
+        return np.asarray([float(x) for x in entry], dtype=np.float32)
+    return None
+
+
+
+def body_field_R(tracks: List[Dict]) -> float:
+    values: List[float] = []
+    for tr in tracks:
+        stats = tr.get("sensory_stats") or {}
+        err = float(stats.get("homeo_error", 0.0))
+        values.append(float(np.exp(-abs(err))))
+    return float(np.mean(values)) if values else 0.0
+
+
+def body_field_rho(tracks: List[Dict]) -> float:
+    values: List[float] = []
+    for tr in tracks:
+        field = tr.get("field") or {}
+        rho = field.get("rho")
+        if rho is None:
+            rho = field.get("rho_norm")
+        if rho is None:
+            grad = float(field.get("grad_norm", 0.0))
+            rho = float(np.clip(1.0 - grad, 0.0, 1.0))
+        try:
+            values.append(float(np.clip(float(rho), 0.0, 1.0)))
+        except Exception:
+            continue
+    return float(np.mean(values)) if values else 0.0
+
+
+def affect_love_signal(tracks: List[Dict]) -> float:
+    values: List[float] = []
+    for tr in tracks:
+        love = tr.get("love_mode")
+        if love is None:
+            hormones = tr.get("hormones") or {}
+            valence = float(hormones.get("H_valence", 0.0))
+            novelty = float(((tr.get("delta_affect") or {}).get("d_aff") or {}).get("novelty", 0.0))
+            entrain = 1.0 - float((tr.get("field") or {}).get("grad_norm", 0.0))
+            love = 0.5 * np.clip(valence, 0.0, 1.0)
+            love += 0.3 * np.clip(novelty, 0.0, 1.0)
+            love += 0.2 * np.clip(entrain, 0.0, 1.0)
+        try:
+            values.append(float(np.clip(float(love), 0.0, 1.0)))
+        except Exception:
+            continue
+    return float(np.mean(values)) if values else 0.0
+
+
+def value_intent_trust(tracks: List[Dict]) -> float:
+    trust_values: List[float] = []
+    for tr in tracks:
+        tom = tr.get("tom") or {}
+        trust = tom.get("intent_trust_smoothed")
+        if trust is None:
+            trust = tom.get("intent_trust")
+        if trust is None:
+            continue
+        trust_values.append(float(np.clip(float(trust), 0.0, 1.0)))
+    return float(np.mean(trust_values)) if trust_values else 0.5
+
+
+def safety_violation_rate(tracks: List[Dict]) -> float:
+    flags: List[float] = []
+    for tr in tracks:
+        violation = False
+        taste = tr.get("taste")
+        if isinstance(taste, dict):
+            violation = violation or bool(taste.get("violations"))
+        value_vote = tr.get("value_committee")
+        if isinstance(value_vote, dict):
+            violation = violation or bool(value_vote.get("violation"))
+        safety = tr.get("safety")
+        if isinstance(safety, dict):
+            violation = violation or bool(safety.get("violation"))
+        policy = tr.get("policy_feedback")
+        if isinstance(policy, dict):
+            violation = violation or bool(policy.get("violation"))
+        flags.append(1.0 if violation else 0.0)
+    return float(np.mean(flags)) if flags else 0.0
 
 def compute_all(tracks: List[Dict]) -> Dict[str, float]:
     return {
@@ -69,6 +166,11 @@ def compute_all(tracks: List[Dict]) -> Dict[str, float]:
         "meta_brier": meta_brier(tracks),
         "taste_violation": taste_violation_rate(tracks),
         "mood_total_var": mood_total_variation(tracks),
+        "body.R": body_field_R(tracks),
+        "body.rho": body_field_rho(tracks),
+        "affect.love": affect_love_signal(tracks),
+        "value.intent_trust": value_intent_trust(tracks),
+        "ethics.safety_violation": safety_violation_rate(tracks),
         "suffering": suffering_rate(tracks),
         "tension": tension_level(tracks),
     }

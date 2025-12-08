@@ -1,29 +1,33 @@
 version: 1
 locale: ja-JP
+
 register:
   professional:
     soft:
-      - "­‚µ®—‚µ‚Ü‚·‚ËB"
-      - "Šm”F‚³‚¹‚Ä‚­‚¾‚³‚¢B"
+      - "ç¢ºèªã„ãŸã—ã¾ã™ã€‚"
+      - "ã”å®‰å¿ƒãã ã•ã„ã€‚"
     filler:
-      - "‚Å‚Íc"
-      - "‚Ü‚¸c"
+      - "ã§ã¯â€¦"
+      - "ãˆã£ã¨â€¦"
+
   caregiver:
     soft:
-      - "‚¤‚ñc"
-      - "‚È‚é‚Ù‚Çc"
+      - "å¤§ä¸ˆå¤«ã ã‚ˆâ€¦"
+      - "ã‚†ã£ãã‚Šã§ã„ã„ã‹ã‚‰ã­â€¦"
     filler:
-      - "‚¦‚Á‚Æ"
-      - "‚»‚Ìc"
-      - "‚¤[‚ñ"
+      - "ã†ã‚“ã†ã‚“"
+      - "ãã†ã ã­â€¦"
+      - "ãµãµã£"
+
   playful:
     soft:
-      - "‚¦‚Ö‚Ö"
-      - "‚½‚µ‚©‚ÉI"
+      - "ãˆã¸ã¸"
+      - "ã«ã‚ƒã¯ã¯ã£ï¼"
     filler:
-      - "‚¦‚Á‚Æ‚Ë"
-      - "‚¤[‚ñ‚Æ"
-      - "‚ ‚Ì‚Ë"
+      - "ã‚“ã£ã¨ã­"
+      - "ã†ã‚Šã‚ƒãƒ¼"
+      - "ãªã®ã "
+
 rules:
   sentence_start_ok: true
   clause_boundary_ok: true
@@ -34,6 +38,7 @@ rules:
     filler: 120
   max_ssml_break_ms: 260
   max_added_chars: 40
+
 hard_off_domains:
   - medical
   - legal
@@ -42,10 +47,12 @@ hard_off_domains:
   - payment
   - announcement
   - safety_notice
+
 allow_modes:
   - caregiver
   - playful
   - professional
+
 mode_overrides:
   professional:
     prob_scale: 0.6
@@ -54,6 +61,7 @@ mode_overrides:
     max_per_utterance: 1
     max_ssml_break_ms: 200
     max_added_chars: 30
+
   caregiver:
     prob_scale: 1.2
     allow_positions:

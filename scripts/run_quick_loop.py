@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """Run a minimal DevelopmentLoop with Router + Alerts wired for a quick demo.
 
@@ -26,6 +26,9 @@ from devlife.core.policy_neat import SimplePolicy
 from devlife.core.composer_eq import SimpleComposer
 from devlife.runtime.archive import EpisodeArchive
 from devlife.runtime.loop import DevelopmentLoop, StageConfig, SleepConfig
+from actuate.learner_hooks import LearnerHooks
+from devlife.mind.self_model import SelfReporter
+from control.mcp import MCPController, MCPConfig
 from devlife.runtime.alerts import AlertsLogger
 from runtime.router import RuntimeRouter, AutonomyLevel, RouterConfig
 from runtime.config import load_runtime_cfg
@@ -41,7 +44,7 @@ def _resolve_log_path(template: str) -> Path:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--steps", type=int, default=200)
-    ap.add_argument("--ignite_dr", type=float, default=0.02, help="ΔR threshold for ignition")
+    ap.add_argument("--ignite_dr", type=float, default=0.02, help="ﾎ燃 threshold for ignition")
     ap.add_argument("--ignite_ez", type=float, default=0.20, help="entropy_z threshold for ignition")
     ap.add_argument("--ignite_ms_default", type=int, default=250, help="default ignite duration (ms) on trigger")
     ap.add_argument("--tom_trust_thresh", type=float, default=0.30, help="threshold to downshift when intent_trust falls below")
@@ -49,7 +52,16 @@ def main() -> None:
     ap.add_argument("--tom_alpha", type=float, default=0.20, help="ToM EMA alpha")
     ap.add_argument("--tom_med_window", type=int, default=5, help="ToM median filter window")
     ap.add_argument("--tom_rate_limit", type=float, default=0.15, help="ToM rate limit per step (fraction)")
+    ap.add_argument("--love_low", type=float, default=0.45, help="affect.love threshold to trigger tone softening")
+    ap.add_argument("--love_high", type=float, default=0.82, help="affect.love threshold to trigger FAST-path style override")
     ap.add_argument("--selfother_thresh", type=float, default=0.15, help="Self/Other conflict threshold")
+    ap.add_argument("--tag", type=str, default="", help="Optional experiment label recorded into telemetry/logs.")
+    ap.add_argument(
+        "--fastpath_style_profile",
+        action="append",
+        default=None,
+        help="FAST-path profiles allowed to perform style overrides during the run (lab only).",
+    )
     ap.add_argument(
         "--field_metrics_log",
         type=str,
@@ -93,6 +105,19 @@ def main() -> None:
     from devlife.runtime.alerts import AlertsConfig
     alerts = AlertsLogger(AlertsConfig(tom_trust_threshold=args.tom_trust_thresh))
 
+    experiment_tag = args.tag.strip() or None
+    learner_hooks = LearnerHooks(experiment_tag=experiment_tag)
+    self_reporter = SelfReporter()
+    mcp_cfg = MCPConfig(love_low=args.love_low, love_high=args.love_high)
+    mcp = MCPController(
+        config=mcp_cfg,
+        learner_hooks=learner_hooks,
+        self_reporter=self_reporter,
+        router=router,
+        eligible_fastpath_profiles=args.fastpath_style_profile,
+        experiment_tag=experiment_tag,
+    )
+
     # Optional mood integrator for suffering/tension KPIs
     try:
         from devlife.bricks.affect_mood_integrator import MoodIntegrator
@@ -120,7 +145,11 @@ def main() -> None:
     def _telemetry_hook(name, payload):
         if telemetry_event is None:
             return
-        telemetry_event(name, payload, log_path=telemetry_path)
+        data = dict(payload) if isinstance(payload, dict) else payload
+        if experiment_tag and isinstance(data, dict):
+            data = dict(data)
+            data.setdefault("tag", experiment_tag)
+        telemetry_event(name, data, log_path=telemetry_path)
 
     loop = DevelopmentLoop(
         body,
@@ -128,6 +157,7 @@ def main() -> None:
         policy,
         composer,
         archive,
+        log_hook=mcp.handle_episode,
         stages=[StageConfig(name="test", duration_steps=args.steps)],
         sleep=SleepConfig(interval_steps=999999),
         alert_logger=alerts,
@@ -143,7 +173,10 @@ def main() -> None:
     )
     print(f"[info] telemetry log: {telemetry_path}")
     if telemetry_event is not None:
-        telemetry_event("run.seed", {"seed": seed}, log_path=telemetry_path)
+        payload = {"seed": seed}
+        if experiment_tag:
+            payload["tag"] = experiment_tag
+        telemetry_event("run.seed", payload, log_path=telemetry_path)
     if args.field_metrics_log:
         fm_path = Path(args.field_metrics_log)
         if fm_path.exists():
@@ -160,8 +193,16 @@ def main() -> None:
     alerts.downshift_fn = router.downshift
 
     loop.run()
+    print("[info] KPI log -> logs/kpi_rollup.jsonl")
+    print("[info] MCP actions -> logs/mcp_actions.jsonl")
+    print("[info] Learner hooks -> logs/learner_hooks.jsonl")
+    print("[info] Fast-path tracker -> logs/fastpath_state.jsonl")
     print("Run complete. Check logs/episodes/* and logs/alerts.jsonl")
 
 
 if __name__ == "__main__":
     main()
+
+
+
+

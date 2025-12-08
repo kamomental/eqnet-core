@@ -1,9 +1,16 @@
 fastpath:
   enable: true
-  enforce_actions: record_only
+  enforce_actions: soft_hint
   profiles:
     - cleanup
     - rescue_prep
+  profile_releases:
+    cleanup:
+      release_flag: true
+      eligible_for_style_override: true
+    rescue_prep:
+      release_flag: false
+      eligible_for_style_override: false
   ab_test_fraction: 0.15
   ab_test_ttl_scale: 1.15
   ab_test_seed: 2025
