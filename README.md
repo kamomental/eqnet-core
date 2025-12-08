@@ -534,3 +534,14 @@ uvicorn scripts.vision_bridge:app --host 0.0.0.0 --port 8000
 - 追加資料: [FastMCP / Agent-to-Agent ブリッジ](docs/fastmcp_a2a.md)
 
 \n## Offer Gate Notes\n- EQNet uses a dynamic Suggestion Eligibility Score (SES) that considers intent, conflict, history, and recent rejections.\n- Observer Commentary surfaces SES, suppression reasons, and evidence so advice feels optional—not forced.\n- You can tune thresholds via OFFER_GATE_* env vars (see observer.py for defaults).
+
+#### Quick Start – Observation Viewer / Gradio
+
+- \quickstart_viewer.bat\ / \.sh\ — launches the Streamlit telemetry viewer (wraps \streamlit run tools/eqnet_telemetry_viewer.py\). Pass Streamlit flags after the script name.
+- \quickstart_gradio.bat\ / \.sh\ — starts the current Gradio demo (wraps \python gradio_demo_prev.py\).
+- Manual commands:
+  `Bash
+  streamlit run tools/eqnet_telemetry_viewer.py
+  python gradio_demo_prev.py
+  ` 
+- The full observation workflow (tagged runs → self-report → narrative → monuments) is described in \docs/eqnet_observation_loop.md\.

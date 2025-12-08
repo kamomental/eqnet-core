@@ -76,5 +76,30 @@ python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMM
 
 「同じログで同じ結果を再現できる」状態が整った今、次はヒステリシスの自動最適化と文化ゲインの導入に集中できます。情動地形・TalkMode・Nightly が一本でつながったことで、実験から運用までを滑らかに展開できる土台が揃いました。***
 
-8. Culture Field Update
-MomentLog から culture_summary と BehaviorMod を生成する eqnet/culture_model.py を導入し、scripts/backfill_culture_monuments.py で過去ログも一括スキャンできるようになりました。
+## 6. Self-Report + Narrative
+
+devlife/mind/self_model.py において、各 episode の mood / tone / confidence を
+logs/self_report.jsonl に逐次書き出す。
+さらに tools/narrative_rollup.py により、episode 別の自己物語（narrative）が
+1 日・1 週間単位でまとめられ、EQNet の「自己物語レイヤ」と統合される。
+
+Telemetry Viewer / Quickstart
+streamlit run tools/eqnet_telemetry_viewer.py で、
+KPI（感情推移・culture_summary・BehaviorMod・self-report）を可視化可能。
+quickstart_viewer.(bat|sh) で即起動できるショートカットも提供。
+Gradio 版ビューアも quickstart_gradio.(bat|sh) により起動できる。
+
+Monument Logic（自己物語の節目抽出）
+tools/build_monuments.py が Self-Report と Narrative を両方参照し、
+salience（顕著さ）・emotion intensity・反復度 を指標に
+重要なエピソードを Monument として抽出。
+結果は logs/monuments.jsonl に保存され、EQNet の
+Qualia Field / Culture Field / StoryGraph と統合される。
+
+Green Impulse ＆ KPI（情動の推進力解析）
+emot_terrain_lab/core/green_kernel.py と
+tools/analyze_green_impulse.py --emit logs/green_modes.jsonl により、
+"Green Impulse"（情動場のエネルギー流・反応強度・time constant）を
+KPI として算出可能。
+感情の“推進力・復元力・拡散度”を可視化し、
+EQNet の Mood Dynamics の評価・パラメータ調整に利用する。

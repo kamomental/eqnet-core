@@ -16,7 +16,7 @@
 1. **Tag experiments** – run `scripts/run_quick_loop.py` with different `--tag` and affect thresholds to gather KPI/self-report data.
 2. **Narrative rollup** – `python tools/narrative_rollup.py --window <N>` after a batch to produce `logs/narrative_log.jsonl`.
 3. **Monument detection** – `python tools/build_monuments.py --out logs/monuments.jsonl` to capture moments where fast feelings + slow meaning align.
-4. **Viewer pass** – `streamlit run tools/eqnet_telemetry_viewer.py` and filter by tag/episode to inspect the full “heart monitor + self-report + narrative” panel.
+4. **Viewer pass** – `streamlit run tools/eqnet_telemetry_viewer.py` and filter by tag/episode to inspect the full “heart monitor + self-report + narrative” panel. Quick wrappers: `quickstart_viewer.(bat|sh)` executes the Streamlit command, `quickstart_gradio.(bat|sh)` launches the current Gradio demo.
 5. **Green-mode check (optional)** – `python emot_terrain_lab/core/green_kernel.py ...` followed by `python tools/analyze_green_impulse.py ... --emit logs/green_modes.jsonl` when the Lenia/GRN body is re-tuned.
 
 ## 3. Fast vs Slow Memory Signals

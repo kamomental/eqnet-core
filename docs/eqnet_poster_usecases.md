@@ -83,9 +83,9 @@
 
 
 ## 10. Fast-path Override Monitor
-- record_only モードのまま 7 日間の astpath.override_rate を折れ線 + astpath.coverage_rate を積み上げ棒で表示。0.2 を超えた瞬間に soft_hint へ戻るフェイルセーフをキャプションで説明。
-- Rescue Prep で ast_rescue predicate がオンのまま override せずに TTL を据え置いた実例（receipt→Nightly スクリーンショット）を貼り、「高速だけど記録のみ」段階を視覚化。
-- Cleanup プロファイルは shards / hazard / water projector を Nightly astpath.profiles.cleanup で監査できることを注記し、coverage per profile を dashboard に載せる導線を追記。
+- record_only モードのまま 7 日間の fastpath.override_rate を折れ線 + fastpath.coverage_rate を積み上げ棒で表示。0.2 を超えた瞬間に soft_hint へ戻るフェイルセーフをキャプションで説明。
+- Rescue Prep で fast_rescue predicate がオンのまま override せずに TTL を据え置いた実例（receipt→Nightly スクリーンショット）を貼り、「高速だけど記録のみ」段階を視覚化。
+- Cleanup プロファイルは shards / hazard / water projector を Nightly fastpath.profiles.cleanup で監査できることを注記し、coverage per profile を dashboard に載せる導線を追記。
 
 ---
 
