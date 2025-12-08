@@ -29,26 +29,26 @@ MAX_SPIKE_WEIGHT = 0.9
 MIN_SPIKE_WEIGHT = 0.0
 
 KEY_PHRASES = (
-    r"–Y‚ê‚ç‚ê‚È‚¢",
-    r"¡‚Å‚à(Šo‚¦‚Ä|–Y‚ê‚È‚¢)",
-    r"l¶‚Åˆê”Ô",
-    r"ƒ^[ƒjƒ“ƒOƒ|ƒCƒ“ƒg",
-    r"“]‹@",
-    r"‚ ‚Ì“ú",
-    r"‚ ‚Ì‚Æ‚«",
-    r"ˆê¶(‚Ì|ƒ‚ƒm)",
-    r"“ñ“x‚Æ(‚È‚¢|—ˆ‚È‚¢)",
+    r"å¿˜ã‚Œã‚‰ã‚Œãªã„",
+    r"ä»Šã§ã‚‚(è¦šãˆã¦|å¿˜ã‚Œãªã„)",
+    r"äººç”Ÿã§ä¸€ç•ª",
+    r"ã‚¿ãƒ¼ãƒ‹ãƒ³ã‚°ãƒã‚¤ãƒ³ãƒˆ",
+    r"è»¢æ©Ÿ",
+    r"ã‚ã®æ—¥",
+    r"ã‚ã®ã¨ã",
+    r"ä¸€ç”Ÿ(ã®|ãƒ¢ãƒŽ)",
+    r"äºŒåº¦ã¨(ãªã„|æ¥ãªã„)",
 )
 INWARD_PHRASES = (
-    r"ˆêl‚Å",
-    r"’N‚É‚à˜b‚µ‚Ä",
-    r"Ž©•ª‚Ì’†‚Å",
-    r"Ã‚©‚É‹ƒ‚¢‚½",
+    r"ä¸€äººã§",
+    r"èª°ã«ã‚‚è©±ã—ã¦",
+    r"è‡ªåˆ†ã®ä¸­ã§",
+    r"é™ã‹ã«æ³£ã„ãŸ",
 )
 FICTION_PHRASES = (
-    r"‚±‚Ì(ƒAƒjƒ|ì•i)",
-    r"ƒLƒƒƒ‰",
-    r"•¨Œê",
+    r"ã“ã®(ã‚¢ãƒ‹ãƒ¡|ä½œå“)",
+    r"ã‚­ãƒ£ãƒ©",
+    r"ç‰©èªž",
 )
 FICTION_OBJECT_PREFIXES = ("anime:", "movie:", "game:", "novel:", "manga:")
 

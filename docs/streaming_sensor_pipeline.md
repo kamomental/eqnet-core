@@ -97,3 +97,14 @@ Nightly updates the baseline (heart_rate_baseline, body_baseline_shift) slowly s
 
 Private flag policy verified
 
+### End-to-End Streaming → Memory → Style Pipeline
+
+- **Sensor layer** (YOLO/MediaPipe/Gaze/HR/VLM) produces `raw_frame` dicts. CPU-only setups can stick to object counts + pose + gaze.
+- **StreamingSensorState.from_raw** turns those dicts into a fused observation vector plus structured metrics (`activity_level`, `heart_rate_motion`, `heart_rate_emotion`, `object_counts`, `gaze_vector`, `body_state_flag`, etc.).
+- **HubRuntime.on_sensor_tick** stores the latest snapshot and merges the metrics into MomentLog entries so Nightly/Monument/RWM can consume them without re-deriving heuristics.
+- **Nightly / Monument** read the emotional metrics while respecting `body_state_flag` (e.g. skip `private_high_arousal`). Repeated, context-consistent events receive Monument points; body metrics remain “color” metadata.
+- **Replay / RWM** take `fused_vec` as `o_t` for world-model updates and future replay training.
+- **Utterance Style**: emotional/context metrics drive a small `UtteranceStyleState` (pronoun choice, fillers, endings, colloquial intensity, laughter) that post-processes LLM text before TTS/voice, so speech mirrors the sensed body state.
+
+This keeps sensing/physiology, long-term memory, and conversational style connected without blurring module boundaries.
+

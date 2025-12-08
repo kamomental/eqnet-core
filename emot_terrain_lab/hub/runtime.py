@@ -14,6 +14,7 @@ import os
 import json
 import time
 import hashlib
+import logging
 
 import numpy as np
 from pathlib import Path
@@ -50,6 +51,11 @@ try:
     from runtime.config import load_runtime_cfg
 except ImportError:
     load_runtime_cfg = None
+
+LOGGER = logging.getLogger(__name__)
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=logging.INFO)
+LOGGER.setLevel(logging.DEBUG)
 
 
 
@@ -153,6 +159,62 @@ class GateContext:
     text_input: bool
     since_last_user_ms: float
     force_listen: bool = False
+
+
+@dataclass
+class EQFrame:
+    """Snapshot of the inner state vs persona mask for a single turn."""
+
+    ts: float
+    inner_spec: Dict[str, Any]
+    persona_id: Optional[str]
+    persona_meta: Dict[str, Any]
+    tension_score: float
+
+
+class EmotionCore:
+    """Minimal oscillator keeping a low-dimensional Phi vector alive."""
+
+    def __init__(self, *, dim: int) -> None:
+        self.dim = dim
+        self._phi = np.zeros(dim, dtype=float)
+        self._setpoint = np.zeros(dim, dtype=float)
+
+    def update_setpoint(self, metrics: Dict[str, Any]) -> None:
+        mapping = [
+            ("valence", 0),
+            ("arousal", 1),
+            ("rho", 2),
+            ("entropy", 3),
+        ]
+        for key, idx in mapping:
+            if idx >= self.dim or key not in metrics:
+                continue
+            try:
+                self._setpoint[idx] = float(metrics[key])
+            except (TypeError, ValueError):
+                continue
+
+    def seed(self, vec: np.ndarray) -> None:
+        if vec.size:
+            limit = min(vec.size, self.dim)
+            self._phi[:limit] = vec[:limit]
+
+    def step(self, base_rate: float, gain: float, noise_scale: float = 0.02, damp: float = 0.0) -> np.ndarray:
+        base = float(max(base_rate, 0.0))
+        gain = float(max(gain, 0.0))
+        noise = np.random.normal(
+            scale=noise_scale * max(gain, 1e-3), size=self._phi.shape
+        )
+        drift = -base * (self._phi - self._setpoint) - float(max(damp, 0.0)) * self._phi
+        self._phi = self._phi + drift + noise
+        return self._phi
+
+    def get_phi_vec(self) -> np.ndarray:
+        return np.array(self._phi, copy=True)
+
+    def get_phi_norm(self) -> float:
+        return float(np.linalg.norm(self._phi))
 
 
 class FastAckState:
@@ -287,6 +349,8 @@ class EmotionalHubRuntime:
         self._prev_affect_vec: Optional[np.ndarray] = None
         self._prev_prev_affect_vec: Optional[np.ndarray] = None
         self._last_gate_context: Dict[str, Any] = {}
+        self._last_life_indicator: float = 0.0
+        self._last_eqframe: Optional[EQFrame] = None
         self._last_sensor_snapshot: Optional[StreamingSensorState] = None
         self.eqnet_system: Optional[EmotionalMemorySystem] = None
         if self.config.use_eqnet_core:
@@ -294,6 +358,7 @@ class EmotionalHubRuntime:
                 self.config.eqnet_state_dir,
                 moment_log_path=self.config.moment_log_path,
             )
+        self._emotion_core = EmotionCore(dim=len(AXES))
         self._pdc = ProspectiveDriveCore(PDCConfig(dim=len(AXES)))
         self._pdc_memory_fallback = _NullProspectiveMemory(len(AXES))
         self._last_prospective: Optional[Dict[str, Any]] = None
@@ -335,6 +400,7 @@ class EmotionalHubRuntime:
         if runtime_session is not None:
             self._session_id = getattr(runtime_session, 'session_id', None)
         self._culture_recurrence: Dict[Tuple[str, str, str, str], int] = defaultdict(int)
+        self._default_persona_meta = self._build_default_persona_meta()
 
     # ------------------------------------------------------------------ #
     # Main entrypoints
@@ -350,6 +416,44 @@ class EmotionalHubRuntime:
             self._engaged_override = None
         else:
             self._engaged_override = bool(engaged)
+
+    def set_heart_params(self, *, base_rate: Optional[float] = None, gain: Optional[float] = None) -> None:
+        """Allow external callers (e.g., UI sliders) to tune the heart loop."""
+
+        if base_rate is not None:
+            try:
+                self._heart_base_rate = float(base_rate)
+            except (TypeError, ValueError):
+                pass
+        if gain is not None:
+            try:
+                self._heart_gain = float(gain)
+            except (TypeError, ValueError):
+                pass
+
+    def _build_default_persona_meta(self) -> Dict[str, Any]:
+        persona_cfg = getattr(self.config.mask_layer, "persona", None)
+        profile = None
+        if load_persona_profile is not None:
+            try:
+                profile = load_persona_profile(persona_cfg)
+            except Exception:
+                profile = None
+        elif MaskPersonaProfile is not None and isinstance(persona_cfg, dict):
+            try:
+                profile = MaskPersonaProfile(**persona_cfg)
+            except Exception:
+                profile = None
+        if profile is None:
+            return {}
+        payload: Dict[str, Any] = {
+            "persona_id": getattr(profile, "persona_id", None),
+            "display_name": getattr(profile, "display_name", None),
+        }
+        tone = getattr(profile, "tone_vec", ()) or ()
+        if tone:
+            payload["tone_vec"] = [float(v) for v in tone]
+        return payload
 
     def on_sensor_tick(self, raw_frame: Dict[str, Any]) -> None:
         """Ingest a raw sensor frame and update the fused snapshot."""
@@ -549,6 +653,11 @@ class EmotionalHubRuntime:
             ack_payload = ack_for_fast or ack_text
             if ack_payload:
                 response = self._wrap_ack_response(ack_payload, self._talk_mode)
+            eqframe = self._record_eqframe(None, persona_meta)
+            metrics = dict(metrics)
+            metrics["phi_norm"] = float(eqframe.inner_spec.get("phi", {}).get("norm", 0.0))
+            metrics["tension_score"] = eqframe.tension_score
+            self._last_metrics = metrics
             return {
                 "affect": affect,
                 "controls": controls,
@@ -630,6 +739,15 @@ class EmotionalHubRuntime:
                         else hint_line
                     )
 
+                persona_cfg = getattr(self.config.mask_layer, "persona", None)
+                persona_id = persona_meta.get("persona_id") or persona_meta.get("id")
+                if persona_id is None and isinstance(persona_cfg, dict):
+                    persona_id = persona_cfg.get("id")
+                eqframe = self._record_eqframe(persona_id, persona_meta)
+                metrics = dict(metrics)
+                metrics["phi_norm"] = float(eqframe.inner_spec.get("phi", {}).get("norm", 0.0))
+                metrics["tension_score"] = eqframe.tension_score
+                self._last_metrics = metrics
                 response = self.llm.generate(
                     user_text=masked_user_text,
                     context=masked_context,
@@ -715,60 +833,204 @@ class EmotionalHubRuntime:
     def last_qualia(self) -> Dict[str, Any]:
         return self._last_qualia
 
+    @property
+    def emotion_core(self) -> EmotionCore:
+        return self._emotion_core
+
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #
+    def _update_heart_state(
+        self,
+        arousal: float,
+        *,
+        noise_scale: Optional[float] = None,
+        damp: float = 0.02,
+    ) -> Tuple[float, float]:
+        """Update the synthetic heart oscillator from the latest arousal."""
 
+        now = time.time()
+        dt = 0.0
+        if self._heart_last_ts is not None:
+            dt = max(now - self._heart_last_ts, 0.0)
+        self._heart_last_ts = now
+        arousal_unit = float(np.clip(arousal, 0.0, 1.0))
+        rate = float(np.clip(self._heart_base_rate + self._heart_gain * arousal_unit, 0.2, 3.0))
+        self._heart_rate = rate
+        phase = float((self._heart_phase + rate * min(dt, 2.0)) % 1.0)
+        self._heart_phase = phase
+        noise_val = noise_scale if noise_scale is not None else max(0.02, 0.01 + 0.02 * abs(arousal))
+        phi_vec = self._emotion_core.step(
+            self._heart_base_rate,
+            self._heart_gain,
+            noise_scale=noise_val,
+            damp=float(max(damp, 0.0)),
+        )
+        self._last_E = np.array(phi_vec, copy=True)
+        return rate, phase
 
-def _update_heart_state(self, arousal: float) -> Tuple[float, float]:
-    """Update the synthetic heart oscillator from the latest arousal."""
-    now = time.time()
-    dt = 0.0
-    if self._heart_last_ts is not None:
-        dt = max(now - self._heart_last_ts, 0.0)
-    self._heart_last_ts = now
-    arousal_unit = float(np.clip(arousal, 0.0, 1.0))
-    rate = float(np.clip(self._heart_base_rate + self._heart_gain * arousal_unit, 0.2, 3.0))
-    self._heart_rate = rate
-    phase = float((self._heart_phase + rate * min(dt, 2.0)) % 1.0)
-    self._heart_phase = phase
-    return rate, phase
+    def _build_inner_spec(self) -> Dict[str, Any]:
+        """Collect a lightweight snapshot of the inner (Phi/Psi/K/M/PDC) state."""
+
+        inner: Dict[str, Any] = {}
+        try:
+            vec = self._emotion_core.get_phi_vec()
+        except Exception:
+            vec = np.zeros(len(AXES), dtype=float)
+        inner["phi"] = {
+            "vec": vec.tolist(),
+            "norm": float(np.linalg.norm(vec)),
+        }
+        inner["psi"] = {}
+        inner["k"] = {}
+        inner["m"] = {}
+        serialized = self._serialize_prospective(self._last_prospective)
+        inner["pdc"] = serialized or {}
+        return inner
+
+    def _compute_tension(self, inner_spec: Dict[str, Any], persona_meta: Dict[str, Any]) -> float:
+        """Simple L2 distance between inner Phi and persona tone hints."""
+
+        phi_payload = inner_spec.get("phi", {})
+        phi_vec = np.array(phi_payload.get("vec") or [], dtype=float)
+        if phi_vec.size == 0:
+            return 0.0
+        tone_vec = persona_meta.get("tone_vec")
+        if tone_vec is None:
+            tone_vec = persona_meta.get("tone_vector")
+        if tone_vec is None:
+            return 0.0
+        tone_arr = np.array(tone_vec, dtype=float)
+        if tone_arr.shape != phi_vec.shape:
+            return 0.0
+        return float(np.linalg.norm(phi_vec - tone_arr))
+
+    def _update_life_indicator(self, phi_norm: float, metrics: Dict[str, float]) -> float:
+        heart_rate = float(np.clip(getattr(self, '_heart_rate', 0.0), 0.0, 3.0))
+        rho = float(metrics.get('rho', 0.0)) if metrics else 0.0
+        arousal = float(metrics.get('arousal', 0.0)) if metrics else 0.0
+        story_energy = 0.0
+        if isinstance(self._last_prospective, dict):
+            story_energy = float(self._last_prospective.get('E_story', 0.0))
+        calm_factor = 1.0 - min(1.0, abs(rho))
+        vitality = 0.5 * phi_norm + 0.2 * calm_factor
+        vitality += 0.2 * (heart_rate / 3.0)
+        vitality += 0.05 * min(1.0, abs(arousal))
+        vitality += 0.05 * min(1.0, max(0.0, story_energy))
+        life_val = float(np.clip(vitality, 0.0, 1.0))
+        self._last_life_indicator = life_val
+        return life_val
+
+    def _record_eqframe(self, persona_id: Optional[str], persona_meta: Dict[str, Any]) -> EQFrame:
+        """Build and store the latest EQFrame, updating gate context as well."""
+
+        persona_meta = persona_meta or dict(self._default_persona_meta)
+        if persona_id is None:
+            persona_id = persona_meta.get("persona_id")
+        inner_spec = self._build_inner_spec()
+        tension = self._compute_tension(inner_spec, persona_meta)
+        LOGGER.debug(
+            "[persona_meta] id=%s tone_vec=%s tension=%.4f",
+            persona_id,
+            persona_meta.get("tone_vec"),
+            tension,
+        )
+        phi_norm = float(inner_spec.get("phi", {}).get("norm", 0.0))
+        self._last_gate_context["phi_norm"] = phi_norm
+        life_val = self._update_life_indicator(phi_norm, self._last_metrics or {})
+        self._last_gate_context["tension_score"] = tension
+        self._last_gate_context["life_indicator"] = life_val
+        if persona_id:
+            self._last_gate_context["persona_id"] = persona_id
+        eqframe = EQFrame(
+            ts=time.time(),
+            inner_spec=inner_spec,
+            persona_id=persona_id,
+            persona_meta=dict(persona_meta or {}),
+            tension_score=tension,
+        )
+        self._last_eqframe = eqframe
+        return eqframe
 
     def _update_metrics(self, affect: AffectSample, fast_only: bool = False) -> Dict[str, float]:
         """
         Project affect into a synthetic EQNet state vector. This is a temporary
         shim; real deployments should call into ``EmotionalMemorySystem``.
         """
+        metrics: Dict[str, float]
         if self.eqnet_system:
             if fast_only:
-                return self._fallback_metrics(affect)
-            entry = self._update_eqnet_system(affect)
-            if not entry:
-                return self._fallback_metrics(affect)
-            entropy = float(entry.get("entropy", 0.0))
-            dissipation = float(entry.get("dissipation", 0.0))
-            info_flux = float(entry.get("info_flux", 0.0))
-            current_emotion = getattr(self.eqnet_system, "current_emotion", None)
-            if current_emotion is not None:
-                try:
-                    self._last_E = np.asarray(current_emotion, dtype=float)
-                except Exception:
-                    pass
-            H = float(np.clip(1.0 - entropy / 10.0, 0.0, 1.0))
-            R = float(np.clip(dissipation, 0.0, 1.0))
-            kappa = float(np.clip(-0.5 * affect.arousal, -1.0, 1.0))
-            metrics = {
-                "H": H,
-                "R": R,
-                "kappa": kappa,
-                "entropy": entropy,
-                "dissipation": dissipation,
-                "info_flux": info_flux,
-                "timestamp": entry.get("timestamp", time.time()),
-            }
-            return metrics
+                metrics = self._fallback_metrics(affect)
+            else:
+                entry = self._update_eqnet_system(affect)
+                if not entry:
+                    metrics = self._fallback_metrics(affect)
+                else:
+                    entropy = float(entry.get("entropy", 0.0))
+                    dissipation = float(entry.get("dissipation", 0.0))
+                    info_flux = float(entry.get("info_flux", 0.0))
+                    current_emotion = getattr(self.eqnet_system, "current_emotion", None)
+                    if current_emotion is not None:
+                        try:
+                            vec = np.asarray(current_emotion, dtype=float)
+                            self._last_E = vec
+                            self._emotion_core.seed(vec)
+                        except Exception:
+                            pass
+                    LOGGER.debug(
+                        "[eqnet_field] rho=%s entropy=%s",
+                        entry.get("rho"),
+                        entry.get("entropy"),
+                    )
+                    metrics = {
+                        "H": float(np.clip(1.0 - entropy / 10.0, 0.0, 1.0)),
+                        "R": float(np.clip(dissipation, 0.0, 1.0)),
+                        "kappa": float(np.clip(-0.5 * affect.arousal, -1.0, 1.0)),
+                        "entropy": entropy,
+                        "dissipation": dissipation,
+                        "info_flux": info_flux,
+                        "timestamp": entry.get("timestamp", time.time()),
+                    }
+                    rho_val = entry.get("rho")
+                    if rho_val is not None:
+                        try:
+                            metrics["rho"] = float(rho_val)
+                        except (TypeError, ValueError):
+                            pass
+        else:
+            metrics = self._fallback_metrics(affect)
 
-        return self._fallback_metrics(affect)
+        metrics.setdefault("valence", float(getattr(affect, "valence", 0.0)))
+        metrics.setdefault("arousal", float(getattr(affect, "arousal", 0.0)))
+        metrics.setdefault("rho", float(metrics.get("rho", 0.0)))
+
+        self._emotion_core.update_setpoint(metrics)
+        LOGGER.debug("[_last_E vec]%s", self._last_E)
+        return metrics
+
+    def idle_tick(self) -> Dict[str, Any]:
+        """Advance the core by one idle beat, injecting light affect noise."""
+
+        noise_val = float(np.random.normal(0.0, 0.02))
+        noise_aro = float(np.random.normal(0.0, 0.02))
+        sample = AffectSample(
+            valence=noise_val,
+            arousal=noise_aro,
+            confidence=0.05,
+            timestamp=time.time(),
+        )
+        metrics = self._update_metrics(sample, fast_only=False)
+        try:
+            self._update_heart_state(noise_aro, noise_scale=0.05, damp=0.02)
+        except Exception:
+            pass
+        persona_meta = dict(self._last_persona_meta or self._default_persona_meta)
+        persona_id = persona_meta.get("persona_id")
+        try:
+            eqframe = self._record_eqframe(persona_id=persona_id, persona_meta=persona_meta)
+        except Exception:
+            eqframe = None
+        return {"metrics": metrics, "eqframe": eqframe}
 
     def _update_eqnet_system(self, affect: AffectSample) -> Dict[str, float]:
         assert self.eqnet_system is not None
@@ -777,10 +1039,33 @@ def _update_heart_state(self, arousal: float) -> Tuple[float, float]:
             f"[affect_stream] valence={affect.valence:.3f} "
             f"arousal={affect.arousal:.3f} confidence={affect.confidence:.3f}"
         )
-        self.eqnet_system.ingest_dialogue("affect_stream", dialogue, ts)
+        entry_payload: Dict[str, Any] = {
+            "timestamp": ts,
+            "user_id": "affect_stream",
+            "dialogue": dialogue,
+            "mood": {
+                "valence": float(affect.valence),
+                "arousal": float(affect.arousal),
+            },
+            "metrics": {
+                "rho": self._estimate_rho_from_affect(affect),
+                "confidence": float(getattr(affect, "confidence", 0.0)),
+            },
+        }
+        metrics_record: Dict[str, float] = {}
+        updater = getattr(self.eqnet_system, "update", None)
+        if callable(updater):
+            try:
+                metrics_record = updater(entry_payload) or {}
+            except Exception:
+                metrics_record = {}
+        else:
+            self.eqnet_system.ingest_dialogue("affect_stream", dialogue, ts)
         metrics_log = self.eqnet_system.field_metrics_state()
         snapshot = self.eqnet_system.field.snapshot()
         self._last_snapshot = snapshot
+        if not metrics_record and metrics_log:
+            metrics_record = metrics_log[-1]
         current_emotion = getattr(self.eqnet_system, "current_emotion", None)
         qualia = {}
         if current_emotion is not None:
@@ -794,9 +1079,7 @@ def _update_heart_state(self, arousal: float) -> Tuple[float, float]:
                 self._last_qualia = {}
         else:
             self._last_qualia = {}
-        if metrics_log:
-            return metrics_log[-1]
-        return {}
+        return metrics_record
 
     def _fallback_metrics(self, affect: AffectSample) -> Dict[str, float]:
         E = np.zeros(len(AXES), dtype=float)
@@ -805,6 +1088,7 @@ def _update_heart_state(self, arousal: float) -> Tuple[float, float]:
         E[3] = affect.valence * 0.7 + affect.arousal * 0.3
         E[4] = -abs(affect.arousal) * 0.4
         self._last_E = E
+        self._emotion_core.seed(E)
 
         H = float(np.clip(0.5 - 0.35 * abs(affect.valence), 0.0, 1.0))
         R = float(np.clip(0.5 + 0.4 * abs(affect.arousal), 0.0, 1.0))
@@ -861,6 +1145,12 @@ def _update_heart_state(self, arousal: float) -> Tuple[float, float]:
             vec[1] = sample.arousal
         return vec
 
+    def _estimate_rho_from_affect(self, sample: AffectSample) -> float:
+        calm = 1.0 - float(np.clip(abs(sample.arousal), 0.0, 1.0))
+        confidence = float(np.clip(getattr(sample, "confidence", 0.0), 0.0, 1.0))
+        rho = 0.6 * calm + 0.4 * confidence
+        return float(np.clip(2.0 * rho - 1.0, -1.0, 1.0))
+
     def _psi_vector_from_metrics(self, metrics: Dict[str, float]) -> np.ndarray:
         dim = len(self._last_E)
         vec = np.zeros(dim, dtype=float)
@@ -887,46 +1177,46 @@ def _update_heart_state(self, arousal: float) -> Tuple[float, float]:
             value = prospective.get(key)
             if isinstance(value, np.ndarray):
                 payload[key] = value.tolist()
-    if "jerk_p95" in prospective:
-        payload["jerk_p95"] = float(prospective["jerk_p95"])
-    return payload
+        if "jerk_p95" in prospective:
+            payload["jerk_p95"] = float(prospective["jerk_p95"])
+        return payload
 
-def _numeric_metrics_snapshot(self, metrics: Dict[str, float]) -> Dict[str, float]:
-    snapshot: Dict[str, float] = {}
-    for key, value in metrics.items():
-        if isinstance(value, (int, float, np.floating)):
-            snapshot[key] = float(value)
-    return snapshot
+    def _numeric_metrics_snapshot(self, metrics: Dict[str, float]) -> Dict[str, float]:
+        snapshot: Dict[str, float] = {}
+        for key, value in metrics.items():
+            if isinstance(value, (int, float, np.floating)):
+                snapshot[key] = float(value)
+        return snapshot
 
-def _snapshot_fast_ack(self) -> Optional[Dict[str, Any]]:
-    if not self._last_fast_ack_sample:
-        return None
-    snapshot: Dict[str, Any] = {}
-    for key, value in self._last_fast_ack_sample.items():
-        if isinstance(value, (int, float, np.floating)):
-            snapshot[key] = float(value)
-        else:
-            snapshot[key] = value
-    return snapshot
+    def _snapshot_fast_ack(self) -> Optional[Dict[str, Any]]:
+        if not self._last_fast_ack_sample:
+            return None
+        snapshot: Dict[str, Any] = {}
+        for key, value in self._last_fast_ack_sample.items():
+            if isinstance(value, (int, float, np.floating)):
+                snapshot[key] = float(value)
+            else:
+                snapshot[key] = value
+        return snapshot
 
-def _serialize_response_meta(self, response: Optional[HubResponse]) -> Optional[Dict[str, Any]]:
-    if not response:
-        return None
-    controls_used = {
-        key: float(val)
-        for key, val in response.controls_used.items()
-        if isinstance(val, (int, float, np.floating))
-    }
-    return {
-        "model": response.model,
-        "trace_id": response.trace_id,
-        "latency_ms": float(response.latency_ms),
-        "controls_used": controls_used,
-        "safety": dict(response.safety),
-    }
+    def _serialize_response_meta(self, response: Optional[HubResponse]) -> Optional[Dict[str, Any]]:
+        if not response:
+            return None
+        controls_used = {
+            key: float(val)
+            for key, val in response.controls_used.items()
+            if isinstance(val, (int, float, np.floating))
+        }
+        return {
+            "model": response.model,
+            "trace_id": response.trace_id,
+            "latency_ms": float(response.latency_ms),
+            "controls_used": controls_used,
+            "safety": dict(response.safety),
+        }
 
-def _current_culture_tag(self) -> str:
-    return self._current_culture_context().culture_tag
+    def _current_culture_tag(self) -> str:
+        return self._current_culture_context().culture_tag
 
 
     def _current_culture_context(self) -> CultureContext:

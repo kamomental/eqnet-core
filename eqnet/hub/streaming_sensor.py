@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Sequence, Tuple
@@ -75,6 +75,13 @@ class StreamingSensorState:
             "heart_rate_emotion": heart_rate_emotion,
             **body_metrics,
         }
+        object_counts = raw.get("object_counts")
+        if isinstance(object_counts, dict):
+            metrics["object_counts"] = {k: int(v) for k, v in object_counts.items()}
+        metrics["pose_detected"] = bool(raw.get("pose_detected"))
+        metrics["person_count"] = int(raw.get("person_count", 0))
+        metrics["motion_score"] = float(raw.get("motion_score", 0.0))
+        metrics["has_face"] = bool(raw.get("has_face"))
         metrics["body_state_flag"] = body_state_flag
         metrics["body_flag_private"] = 1.0 if body_state_flag == "private_high_arousal" else 0.0
         metrics["body_flag_overloaded"] = 1.0 if body_state_flag == "overloaded" else 0.0
@@ -192,4 +199,5 @@ def fuse_streams_to_vec(raw: Dict[str, Any], metrics: Dict[str, Any]) -> np.ndar
         features.append(0.0)
 
     return np.asarray(features, dtype=float)
+
 

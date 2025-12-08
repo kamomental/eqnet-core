@@ -3,7 +3,7 @@ import os
 import json
 import numpy as np
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 from datetime import datetime, timedelta, date
 from .emotion import AXES, extract_emotion
 from .field import EmotionField, FieldParams
@@ -204,6 +204,7 @@ class EmotionalMemorySystem:
         except Exception:
             return None
 
+
     def ingest_dialogue(self, user_id: str, dialogue: str, timestamp: str|None=None):
         ts = datetime.fromisoformat(timestamp) if timestamp else datetime.utcnow()
         rest_mode_active = self._rest_active(ts)
@@ -214,14 +215,128 @@ class EmotionalMemorySystem:
             except Exception as exc:  # pragma: no cover - guard path
                 self.community_last_error = str(exc)
         emo = extract_emotion(dialogue)
-        if emo.shape[0] != len(AXES):
-            if emo.shape[0] < len(AXES):
-                emo = np.pad(emo, (0, len(AXES) - emo.shape[0]), mode="constant")
-            else:
-                emo = emo[: len(AXES)]
+        emo = self._ensure_emotion_vector(emo)
         self.current_emotion = emo
         self._recent.append(emo)
         filtered = self.ethics.filter_emotion(emo)
+        self._apply_filtered_emotion(
+            filtered,
+            ts=ts,
+            user_id=user_id,
+            dialogue=dialogue,
+            rest_mode_initial=rest_mode_active,
+        )
+
+    def update(self, entry: Mapping[str, Any] | MomentLogEntry) -> Dict[str, Any]:
+        """Advance the field using a structured affect entry instead of raw text."""
+
+        payload = self._coerce_entry_payload(entry)
+        ts_value = payload.get("timestamp") or payload.get("ts")
+        ts = self._coerce_timestamp(ts_value)
+        rest_mode_active = self._rest_active(ts)
+        user_id = str(
+            payload.get("user_id")
+            or payload.get("speaker_id")
+            or payload.get("persona_id")
+            or payload.get("agent_id")
+            or "log_replay"
+        )
+        mood = payload.get("mood") if isinstance(payload.get("mood"), Mapping) else {}
+        metrics = payload.get("metrics") if isinstance(payload.get("metrics"), Mapping) else {}
+        emo_vec = None
+        if "emotion_vec" in payload:
+            emo_vec = payload.get("emotion_vec")
+        elif "affect_vec" in payload:
+            emo_vec = payload.get("affect_vec")
+        if emo_vec is not None:
+            emo = self._ensure_emotion_vector(np.asarray(emo_vec, dtype=float))
+        else:
+            emo = np.zeros(len(AXES), dtype=float)
+            valence = self._maybe_float(payload.get("valence"))
+            if valence is None and mood:
+                valence = self._maybe_float(mood.get("valence"))
+            if valence is not None:
+                emo[0] = float(np.clip(valence, -1.0, 1.0))
+            arousal = self._maybe_float(payload.get("arousal"))
+            if arousal is None and mood:
+                arousal = self._maybe_float(mood.get("arousal"))
+            if arousal is not None:
+                emo[1] = float(np.clip(arousal, -1.0, 1.0))
+            rho = self._maybe_float(payload.get("rho"))
+            if rho is None and metrics:
+                rho = self._maybe_float(metrics.get("rho") or metrics.get("R"))
+            if rho is not None:
+                emo[2] = float(np.clip(rho, -1.0, 1.0))
+        self.current_emotion = emo
+        self._recent.append(emo)
+        filtered = self.ethics.filter_emotion(emo)
+        dialogue = (
+            payload.get("dialogue")
+            or payload.get("text")
+            or payload.get("user_text")
+            or payload.get("utterance")
+        )
+        if not dialogue:
+            parts: list[str] = []
+            if emo[0] != 0.0:
+                parts.append(f"valence={emo[0]:.3f}")
+            if emo[1] != 0.0:
+                parts.append(f"arousal={emo[1]:.3f}")
+            if emo[2] != 0.0:
+                parts.append(f"rho={emo[2]:.3f}")
+            dialogue = f"[entry] {' '.join(parts)}" if parts else "[entry]"
+        return self._apply_filtered_emotion(
+            filtered,
+            ts=ts,
+            user_id=user_id,
+            dialogue=dialogue,
+            rest_mode_initial=rest_mode_active,
+        )
+
+    def _ensure_emotion_vector(self, vector: np.ndarray) -> np.ndarray:
+        vec = np.asarray(vector, dtype=float).reshape(-1)
+        if vec.size < len(AXES):
+            vec = np.pad(vec, (0, len(AXES) - vec.size), mode="constant")
+        elif vec.size > len(AXES):
+            vec = vec[: len(AXES)]
+        return vec
+
+    def _maybe_float(self, value: Any) -> Optional[float]:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _coerce_entry_payload(self, entry: Mapping[str, Any] | MomentLogEntry) -> Dict[str, Any]:
+        if isinstance(entry, MomentLogEntry):
+            return entry.to_json()
+        if isinstance(entry, Mapping):
+            return dict(entry)
+        raise TypeError("entry must be a mapping or MomentLogEntry")
+
+    def _coerce_timestamp(self, value: Any) -> datetime:
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                pass
+        try:
+            if isinstance(value, (int, float)):
+                return datetime.utcfromtimestamp(float(value))
+        except (OverflowError, ValueError):
+            pass
+        return datetime.utcnow()
+
+    def _apply_filtered_emotion(
+        self,
+        filtered: np.ndarray,
+        *,
+        ts: datetime,
+        user_id: str,
+        dialogue: str,
+        rest_mode_initial: bool,
+    ) -> Dict[str, Any]:
+        rest_mode_active = rest_mode_initial
         self.field.inject_emotion(filtered)
         pred_grad = self._skala_pred()
         field_grad = self.field.feedback_vector(filtered)
@@ -240,6 +355,12 @@ class EmotionalMemorySystem:
         self.field.step()
         metrics = self.field.compute_metrics()
         metrics_record = {"timestamp": ts.isoformat(), **metrics}
+        if isinstance(filtered, np.ndarray) and filtered.size:
+            rho_guess = float(np.clip(filtered[0], -1.0, 1.0))
+            metrics_record.setdefault("rho", rho_guess)
+            metrics_record.setdefault("valence", rho_guess)
+        if isinstance(filtered, np.ndarray) and filtered.size > 1:
+            metrics_record.setdefault("arousal", float(np.clip(filtered[1], -1.0, 1.0)))
         self.field_metrics_log.append(metrics_record)
         if len(self.field_metrics_log) > 1000:
             self.field_metrics_log.pop(0)
@@ -345,6 +466,7 @@ class EmotionalMemorySystem:
                 rest_info["until"] = self._rest_mode_until.isoformat()
         text = dialogue if self.ethics.preferences.store_dialogue else ""
         self.l1.add(text, filtered, ts, context=context)
+        return metrics_record
 
     def membrane_state(self):
         return self.membrane.state_dict()
@@ -384,6 +506,25 @@ class EmotionalMemorySystem:
         snapshot = self.community.summary()
         if self.community_last_error:
             snapshot["last_error"] = self.community_last_error
+        return snapshot
+
+    def _emit_field_metrics(self, entry: Dict[str, Any] | None) -> Dict[str, Any]:
+        """Return a lightweight snapshot for UI visualisations."""
+
+        if not entry:
+            return {}
+        snapshot: Dict[str, Any] = {}
+        energy = entry.get("field_energy") or entry.get("energy")
+        if isinstance(energy, (list, tuple, np.ndarray)):
+            snapshot["energy"] = energy.tolist() if isinstance(energy, np.ndarray) else energy
+        if "entropy" in entry:
+            snapshot["entropy"] = float(entry.get("entropy", 0.0))
+        if "enthalpy" in entry:
+            snapshot["enthalpy"] = float(entry.get("enthalpy", 0.0))
+        if "rho" in entry:
+            snapshot["rho"] = entry["rho"]
+        if "ignition" in entry:
+            snapshot["ignition"] = entry["ignition"]
         return snapshot
 
     def rest_state(self):

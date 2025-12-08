@@ -15,7 +15,7 @@ from typing import Dict, Optional
 import time
 
 from terrain import llm as terrain_llm
-from tools.registry import SkillRegistry
+from emot_terrain_lab.tools.registry import SkillRegistry
 from emot_terrain_lab.hub.akorn import AkornGate, AkornConfig
 
 

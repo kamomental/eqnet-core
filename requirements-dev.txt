@@ -6,3 +6,7 @@ jsonschema>=4.20
 scikit-learn>=1.3
 fastapi>=0.105
 uvicorn>=0.23
+mediapipe>=0.10
+ultralytics>=8.0
+gaze-lle @ git+https://github.com/lllyasviel/GazeLL-E.git
+
