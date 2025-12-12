@@ -10,11 +10,14 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional, Dict, Any, Tuple, List, Mapping
+import copy
+import math
 import os
 import json
 import time
 import hashlib
 import logging
+import uuid
 
 import numpy as np
 from pathlib import Path
@@ -46,6 +49,22 @@ from eqnet.qualia_model import (
 from eqnet.runtime.state import QualiaState
 from eqnet.modules.prospective_drive_core import PDCConfig, ProspectiveDriveCore
 from emot_terrain_lab.terrain.emotion import AXES
+from eqnet_core.memory.diary import DiaryWriter
+from eqnet_core.memory.mosaic import MemoryMosaic
+from eqnet_core.models.conscious import (
+    ConsciousEpisode,
+    ForceMatrix,
+    ImplementationContext,
+    ResponseRoute,
+    BoundarySignal,
+    ResetEvent,
+    SelfForceSnapshot,
+    SelfLayer,
+    SelfModel,
+    WorldStateSnapshot,
+)
+from eqnet_core.models.emotion import EmotionVector, ValueGradient
+from eqnet_core.models.talk_mode import TalkMode
 from .perception import PerceptionBridge, PerceptionConfig, AffectSample
 from .policy import PolicyHead, PolicyConfig, AffectControls
 from .llm_hub import LLMHub, LLMHubConfig, HubResponse
@@ -73,6 +92,93 @@ class MaskLayerConfig:
     enabled: bool = False
     persona: Dict[str, Any] = field(default_factory=dict)
     log_path: str = ""
+
+
+@dataclass
+class ReflexRouteConfig:
+    prediction_error_threshold: float = 0.85
+    stress_threshold: float = 0.75
+
+
+@dataclass
+class ConsciousThresholdConfig:
+    prediction_error_min: float = 0.35
+    valence_min: float = 0.3
+    love_min: float = 0.65
+    stress_min: float = 0.55
+
+
+@dataclass
+class ValueGradientConfig:
+    survival_bias: float = 0.5
+    physiological_bias: float = 0.5
+    social_bias: float = 0.5
+    exploration_bias: float = 0.5
+    attachment_bias: float = 0.5
+
+
+@dataclass
+class BoundaryConfig:
+    enabled: bool = False
+    threshold: float = 0.65
+    weight_prediction_error: float = 0.35
+    weight_force_delta: float = 0.35
+    weight_winner_flip: float = 0.15
+    weight_raw_gap: float = 0.15
+    prediction_error_norm: float = 0.5
+    force_delta_norm: float = 1.0
+    raw_gap_norm: float = 1.0
+
+
+@dataclass
+class ResetConfig:
+    enabled: bool = False
+    boundary_threshold: float = 0.75
+    targets: List[str] = field(
+        default_factory=lambda: ["scratchpad", "affective_echo"]
+    )
+    preserve: List[str] = field(default_factory=list)
+
+
+@dataclass
+class DampingConfig:
+    enabled: bool = True
+    latency_L0_ms: float = 200.0
+    latency_k_narr: float = 0.002
+    latency_k_reflex: float = 0.001
+    context_bump: float = 0.05
+    score_floor: Optional[float] = None
+    reflex_tags: Tuple[str, ...] = ("safety", "hazard")
+    affective_tags: Tuple[str, ...] = ("support", "counseling")
+    narrative_tags: Tuple[str, ...] = ("brainstorm", "creative")
+    latency_penalty_cap: float = 0.75
+    tag_bumps: Dict[str, Dict[str, float]] = field(default_factory=dict)
+
+
+@dataclass
+class DevelopmentConfig:
+    enabled: bool = False
+    mature_turns: int = 800
+    narrative_initial_scale: float = 0.2
+    reflex_final_scale: float = 0.8
+    affective_peak_gain: float = 0.15
+
+
+@dataclass
+class ConsciousnessConfig:
+    enabled: bool = True
+    reflex: ReflexRouteConfig = field(default_factory=ReflexRouteConfig)
+    conscious_threshold: ConsciousThresholdConfig = field(default_factory=ConsciousThresholdConfig)
+    memory_path: str = "logs/conscious_episodes.jsonl"
+    diary_path: str = "logs/conscious_diary.jsonl"
+    habit_tags: List[str] = field(default_factory=list)
+    value_gradient: ValueGradientConfig = field(default_factory=ValueGradientConfig)
+    damping: DampingConfig = field(default_factory=DampingConfig)
+    development: DevelopmentConfig = field(default_factory=DevelopmentConfig)
+    force_matrix: Optional[Dict[str, Dict[str, float]]] = None
+    boundary: BoundaryConfig = field(default_factory=BoundaryConfig)
+    reset: ResetConfig = field(default_factory=ResetConfig)
+
 
 
 def apply_mask_layer(
@@ -147,13 +253,8 @@ class RuntimeConfig:
     robot: RobotBridgeConfig = field(default_factory=RobotBridgeConfig)
     mask_layer: MaskLayerConfig = field(default_factory=MaskLayerConfig)
     moment_log_path: Optional[str] = "logs/moment_log.jsonl"
-
-
-class TalkMode(Enum):
-    WATCH = auto()
-    SOOTHE = auto()
-    ASK = auto()
-    TALK = auto()
+    conscious: ConsciousnessConfig = field(default_factory=ConsciousnessConfig)
+    self_model: Optional[SelfModel] = None
 
 
 @dataclass
@@ -358,6 +459,25 @@ class EmotionalHubRuntime:
         self._last_E = np.zeros(len(AXES), dtype=float)
         self._last_snapshot: Optional[Dict[str, np.ndarray]] = None
         self._last_qualia: Dict[str, Any] = {}
+        self._self_model: SelfModel = self.config.self_model or self._default_self_model()
+        self._persona_conscious_overrides: Dict[str, Any] = (
+            self._extract_persona_conscious_overrides()
+        )
+        self._default_value_gradient = self._build_default_value_gradient()
+        self._force_matrix: ForceMatrix = self._build_force_matrix()
+        self._last_dominant_layer: Optional[SelfLayer] = None
+        self._last_impl_context: Optional[ImplementationContext] = None
+        self._last_self_force: Optional[SelfForceSnapshot] = None
+        self._last_raw_force: Optional[SelfForceSnapshot] = None
+        self._last_boundary_signal: Optional[BoundarySignal] = None
+        self._prev_boundary_pred_error: Optional[float] = None
+        self._prev_boundary_damped: Optional[SelfForceSnapshot] = None
+        self._prev_boundary_winner: Optional[SelfLayer] = None
+        self._conscious_memory: Optional[MemoryMosaic] = None
+        self._diary_writer: Optional[DiaryWriter] = None
+        if self.config.conscious.enabled:
+            self._conscious_memory = MemoryMosaic(self.config.conscious.memory_path)
+            self._diary_writer = DiaryWriter(self.config.conscious.diary_path)
         self._talk_mode: TalkMode = TalkMode.WATCH
         self._force_listen: bool = False
         self._engaged_override: Optional[bool] = None
@@ -447,6 +567,109 @@ class EmotionalHubRuntime:
             int
         )
         self._default_persona_meta = self._build_default_persona_meta()
+
+    def _default_self_model(self) -> SelfModel:
+        return SelfModel(
+            role_labels=["eqnet", "companion"],
+            long_term_traits={"warmth": 0.6, "stability": 0.4},
+            current_mode=TalkMode.WATCH,
+            current_energy=0.85,
+            attachment_to_user=0.5,
+        )
+
+    def _extract_persona_conscious_overrides(self) -> Dict[str, Any]:
+        persona_cfg = getattr(self.config.mask_layer, "persona", None)
+        if isinstance(persona_cfg, Mapping):
+            payload = persona_cfg.get("conscious")
+            if isinstance(payload, Mapping):
+                return copy.deepcopy(payload)
+        return {}
+
+    def _persona_conscious_value(self, key: str) -> Optional[Mapping[str, Any]]:
+        payload = self._persona_conscious_overrides.get(key)
+        if isinstance(payload, Mapping):
+            return copy.deepcopy(payload)
+        return None
+
+    @staticmethod
+    def _safe_float(value: Any, default: float) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _apply_value_gradient_overrides(
+        self, base: ValueGradient, overrides: Mapping[str, Any]
+    ) -> ValueGradient:
+        def pick(primary: str, alias: str, current: float) -> float:
+            if primary in overrides:
+                return self._safe_float(overrides[primary], current)
+            if alias in overrides:
+                return self._safe_float(overrides[alias], current)
+            return current
+
+        return ValueGradient(
+            survival_bias=pick("survival_bias", "survival", base.survival_bias),
+            physiological_bias=pick(
+                "physiological_bias", "physiological", base.physiological_bias
+            ),
+            social_bias=pick("social_bias", "social", base.social_bias),
+            exploration_bias=pick(
+                "exploration_bias", "exploration", base.exploration_bias
+            ),
+            attachment_bias=pick("attachment_bias", "attachment", base.attachment_bias),
+        )
+
+    def _build_default_value_gradient(self) -> ValueGradient:
+        vg_cfg = self.config.conscious.value_gradient
+        base = ValueGradient(
+            survival_bias=float(np.clip(vg_cfg.survival_bias, 0.0, 1.0)),
+            physiological_bias=float(np.clip(vg_cfg.physiological_bias, 0.0, 1.0)),
+            social_bias=float(np.clip(vg_cfg.social_bias, 0.0, 1.0)),
+            exploration_bias=float(np.clip(vg_cfg.exploration_bias, 0.0, 1.0)),
+            attachment_bias=float(np.clip(vg_cfg.attachment_bias, 0.0, 1.0)),
+        )
+        overrides = self._persona_conscious_value("value_gradient")
+        if overrides:
+            return self._apply_value_gradient_overrides(base, overrides)
+        return base
+
+    def _build_force_matrix(self) -> ForceMatrix:
+        cfg_matrix = getattr(self.config.conscious, "force_matrix", None)
+        if isinstance(cfg_matrix, ForceMatrix):
+            matrix = cfg_matrix
+        elif isinstance(cfg_matrix, Mapping):
+            matrix = ForceMatrix.from_mapping(cfg_matrix)
+        else:
+            matrix = ForceMatrix()
+        overrides = self._persona_conscious_value("force_matrix")
+        if overrides:
+            return matrix.merge(overrides)
+        return matrix
+
+    def _current_force_matrix(self) -> ForceMatrix:
+        dev_cfg = getattr(self.config.conscious, "development", None)
+        if not dev_cfg or not dev_cfg.enabled:
+            return self._force_matrix
+        turns = max(int(dev_cfg.mature_turns or 0), 1)
+        maturity = float(np.clip(self._turn_id / turns, 0.0, 1.0))
+        narrative_scale = max(
+            0.0,
+            dev_cfg.narrative_initial_scale
+            + (1.0 - dev_cfg.narrative_initial_scale) * maturity,
+        )
+        reflex_scale = max(
+            0.0,
+            1.0 - (1.0 - dev_cfg.reflex_final_scale) * maturity,
+        )
+        affective_scale = max(
+            0.0, 1.0 + dev_cfg.affective_peak_gain * math.sin(math.pi * maturity)
+        )
+        return ForceMatrix(
+            reflex=self._force_matrix.reflex.scaled(reflex_scale),
+            affective=self._force_matrix.affective.scaled(affective_scale),
+            narrative=self._force_matrix.narrative.scaled(narrative_scale),
+        )
 
     # ------------------------------------------------------------------ #
     # Main entrypoints
@@ -578,6 +801,11 @@ class EmotionalHubRuntime:
             so that the caller can issue a quick acknowledgement before the full
         pipeline completes.
         """
+        start_ts = time.time()
+        self._last_dominant_layer = None
+        self._last_self_force = None
+        self._last_raw_force = None
+        self._last_boundary_signal = None
         affect = self.perception.sample_affect()
         if self._pending_text_affect is not None:
             affect = self._pending_text_affect
@@ -689,6 +917,19 @@ class EmotionalHubRuntime:
             self._talk_mode = updated_mode
             self._last_gate_context["mode"] = self._talk_mode.name.lower()
 
+        qualia_vec = self._build_emotion_vector(metrics, affect)
+        if not self.config.use_eqnet_core:
+            self._last_qualia = qualia_vec.to_dict()
+        prediction_error = self._compute_prediction_error(delta_m, metrics)
+        route = self._decide_response_route(qualia_vec, prediction_error, text_input, gate_ctx)
+        metrics = dict(metrics)
+        metrics["conscious_prediction_error"] = prediction_error
+        metrics["response_route"] = route.value
+        self._last_gate_context["response_route"] = route.value
+        self._last_gate_context["prediction_error"] = prediction_error
+        self._update_self_model_state(qualia_vec)
+        self._last_metrics = metrics
+
         controls = self.policy.affect_to_controls(
             affect, metrics, prospective=prospective
         )
@@ -719,12 +960,18 @@ class EmotionalHubRuntime:
         elif text_input and self._talk_mode == TalkMode.WATCH:
             ack_text = _ACK_TEMPLATES.get(TalkMode.WATCH)
 
+        route_response: Optional[str] = None
+        if route == ResponseRoute.REFLEX:
+            route_response = self._reflex_prompt(prediction_error)
+        elif route == ResponseRoute.HABIT and text_input:
+            route_response = self._habit_prompt(user_text)
+
         response: Optional[HubResponse] = None
         memory_reference: Optional[Dict[str, Any]] = None
         persona_meta: Dict[str, Any] = {}
 
         if fast_only:
-            ack_payload = ack_for_fast or ack_text
+            ack_payload = ack_for_fast or route_response or ack_text
             if ack_payload:
                 response = self._wrap_ack_response(ack_payload, self._talk_mode)
             eqframe = self._record_eqframe(None, persona_meta)
@@ -735,6 +982,8 @@ class EmotionalHubRuntime:
             metrics["tension_score"] = eqframe.tension_score
             self._last_metrics = metrics
             self._update_emotion_axes_from_sensors(affect, metrics)
+            impl_ctx = self._current_impl_context((time.time() - start_ts) * 1000.0)
+            self._last_impl_context = impl_ctx
             return {
                 "affect": affect,
                 "controls": controls,
@@ -748,10 +997,19 @@ class EmotionalHubRuntime:
                 "prospective": self._serialize_prospective(prospective),
                 "heart": heart_snapshot,
                 "persona_meta": persona_meta,
+                "response_route": route.value,
             }
 
+        if route_response and response is None:
+            response = self._wrap_ack_response(route_response, self._talk_mode)
+
         behavior_mod: Optional[BehaviorMod] = None
-        should_call_llm = text_input and self._talk_mode == TalkMode.TALK
+        should_call_llm = (
+            text_input
+            and self._talk_mode == TalkMode.TALK
+            and route == ResponseRoute.CONSCIOUS
+            and not route_response
+        )
         if should_call_llm:
             memory_reference = self._maybe_memory_reference(user_text or "")
             if (
@@ -839,7 +1097,7 @@ class EmotionalHubRuntime:
                     intent=intent or self.llm.config.default_intent,
                     slos={"p95_ms": 180.0},
                 )
-        elif ack_text:
+        elif response is None and ack_text:
             response = self._wrap_ack_response(ack_text, self._talk_mode)
         if self.robot_bridge:
             self.robot_bridge.publish(
@@ -851,8 +1109,27 @@ class EmotionalHubRuntime:
                 }
             )
 
+        impl_ctx = self._current_impl_context((time.time() - start_ts) * 1000.0)
+        self._last_impl_context = impl_ctx
+        boundary_signal = self._compute_boundary_signal(prediction_error)
         self._last_persona_meta = dict(persona_meta)
         if not fast_only:
+            context_snapshot = self._build_context_payload(
+                user_text=user_text,
+                context_text=context,
+                metrics=metrics,
+                gate_ctx=gate_ctx,
+                route=route,
+            )
+            self._maybe_store_conscious_episode(
+                qualia=qualia_vec,
+                prediction_error=prediction_error,
+                narrative=getattr(response, "text", None),
+                route=route,
+                context=context_snapshot,
+                implementation=impl_ctx,
+                boundary_signal=boundary_signal,
+            )
             self._log_moment_entry(
                 affect=affect,
                 metrics=metrics,
@@ -877,6 +1154,7 @@ class EmotionalHubRuntime:
             "prospective": self._serialize_prospective(prospective),
             "heart": heart_snapshot,
             "persona_meta": persona_meta,
+            "response_route": route.value,
         }
 
     # ------------------------------------------------------------------ #
@@ -1767,6 +2045,415 @@ class EmotionalHubRuntime:
             safety={"rating": "G", "memory_recall": "true"},
         )
 
+    def _build_emotion_vector(self, metrics: Mapping[str, float], affect: AffectSample) -> EmotionVector:
+        payload = dict(metrics)
+        payload.setdefault("valence", float(getattr(affect, "valence", 0.0)))
+        payload.setdefault("arousal", float(getattr(affect, "arousal", 0.0)))
+        payload.setdefault("love", float(metrics.get("love", 0.0)))
+        payload.setdefault("stress", float(metrics.get("stress", 0.0)))
+        payload.setdefault("mask", float(metrics.get("mask", 0.0)))
+        payload.setdefault("heart_rate_norm", float(metrics.get("heart_rate_norm", self._heart_rate)))
+        payload.setdefault("breath_ratio_norm", float(metrics.get("breath_ratio_norm", 0.0)))
+        payload["value_gradient"] = self._value_gradient_snapshot().to_dict()
+        return EmotionVector.from_metrics(payload)
+
+    def _value_gradient_snapshot(self) -> ValueGradient:
+        base = self._default_value_gradient
+        energy = getattr(self._self_model, "current_energy", None)
+        if energy is None:
+            return ValueGradient(**base.to_dict())
+        energy = float(np.clip(energy, 0.0, 1.0))
+        adjustment = 0.25
+        return ValueGradient(
+            survival_bias=base.survival_bias,
+            physiological_bias=float(np.clip(base.physiological_bias + (0.5 - energy) * adjustment, 0.0, 1.0)),
+            social_bias=base.social_bias,
+            exploration_bias=float(np.clip(base.exploration_bias + (energy - 0.5) * adjustment, 0.0, 1.0)),
+            attachment_bias=base.attachment_bias,
+        )
+
+    def _safety_lens(self, vg: ValueGradient) -> float:
+        return float(np.clip(0.7 * vg.survival_bias + 0.3 * vg.physiological_bias, 0.0, 1.0))
+
+    def _empathy_lens(self, vg: ValueGradient) -> float:
+        return float(np.clip(0.6 * vg.social_bias + 0.4 * vg.attachment_bias, 0.0, 1.0))
+
+    def _exploration_lens(self, vg: ValueGradient) -> float:
+        return float(np.clip(vg.exploration_bias, 0.0, 1.0))
+
+    def _is_low_risk_context(self, prediction_error: float, gate_ctx: GateContext) -> bool:
+        if gate_ctx.force_listen:
+            return False
+        if prediction_error >= 0.4:
+            return False
+        return True
+
+    def _current_impl_context(self, latency_ms: float) -> ImplementationContext:
+        hardware = os.getenv("EQNET_HARDWARE_PROFILE") or platform.node() or platform.system() or "unknown"
+        try:
+            memory_load = float(os.getenv("EQNET_MEMORY_LOAD", 0.0))
+        except (TypeError, ValueError):
+            memory_load = 0.0
+        sensor_snapshot = getattr(self._runtime_sensors, 'snapshot', None)
+        sensor_fidelity = 1.0 if sensor_snapshot is not None else 0.5
+        return ImplementationContext(
+            hardware_profile=str(hardware),
+            latency_ms=float(latency_ms),
+            memory_load=memory_load,
+            sensor_fidelity=float(sensor_fidelity),
+        )
+
+    def _layer_force_score(
+        self, layer: SelfLayer, vg: ValueGradient, matrix: Optional[ForceMatrix] = None
+    ) -> float:
+        fm = matrix or self._current_force_matrix()
+        row = fm.row_for(layer)
+        return (
+            row.survival * vg.survival_bias
+            + row.physiological * vg.physiological_bias
+            + row.social * vg.social_bias
+            + row.exploration * vg.exploration_bias
+            + row.attachment * vg.attachment_bias
+        )
+
+    def _apply_context_damping(
+        self,
+        scores: Dict[SelfLayer, float],
+        impl_ctx: Optional[ImplementationContext],
+        context_tags: List[str],
+    ) -> Dict[SelfLayer, float]:
+        damping = getattr(self.config.conscious, "damping", None)
+        if not damping or not damping.enabled:
+            return dict(scores)
+        adjusted: Dict[SelfLayer, float] = dict(scores)
+        tags = {str(tag).lower() for tag in (context_tags or [])}
+        latency = float(getattr(impl_ctx, "latency_ms", 0.0) or 0.0)
+        excess = max(latency - damping.latency_L0_ms, 0.0)
+        if excess > 0.0:
+            cap = max(damping.latency_penalty_cap, 0.0)
+            narr_penalty = damping.latency_k_narr * excess
+            reflex_bonus = damping.latency_k_reflex * excess
+            if cap > 0.0:
+                narr_penalty = min(narr_penalty, cap)
+                reflex_bonus = min(reflex_bonus, cap)
+            adjusted[SelfLayer.NARRATIVE] = adjusted.get(SelfLayer.NARRATIVE, 0.0) - narr_penalty
+            adjusted[SelfLayer.REFLEX] = adjusted.get(SelfLayer.REFLEX, 0.0) + reflex_bonus
+
+        bump = float(damping.context_bump)
+        if bump:
+            def _hit(targets: Tuple[str, ...]) -> bool:
+                return any(tag in tags for tag in (t.lower() for t in targets))
+
+            if _hit(damping.reflex_tags):
+                adjusted[SelfLayer.REFLEX] = adjusted.get(SelfLayer.REFLEX, 0.0) + bump
+            if _hit(damping.affective_tags):
+                adjusted[SelfLayer.AFFECTIVE] = adjusted.get(SelfLayer.AFFECTIVE, 0.0) + bump
+            if _hit(damping.narrative_tags):
+                adjusted[SelfLayer.NARRATIVE] = adjusted.get(SelfLayer.NARRATIVE, 0.0) + bump
+
+        tag_bumps = getattr(damping, "tag_bumps", {}) or {}
+        if tag_bumps:
+            for tag in tags:
+                config = tag_bumps.get(tag)
+                if not isinstance(config, Mapping):
+                    continue
+                for layer_name, value in config.items():
+                    layer = self._layer_from_name(layer_name)
+                    if not layer:
+                        continue
+                    try:
+                        bump_value = float(value)
+                    except (TypeError, ValueError):
+                        continue
+                    adjusted[layer] = adjusted.get(layer, 0.0) + bump_value
+
+        if damping.score_floor is not None:
+            for layer, value in adjusted.items():
+                if value < damping.score_floor:
+                    adjusted[layer] = damping.score_floor
+        return adjusted
+
+    @staticmethod
+    def _force_snapshot_from_scores(scores: Mapping[SelfLayer, float]) -> SelfForceSnapshot:
+        return SelfForceSnapshot(
+            reflex=float(scores.get(SelfLayer.REFLEX, 0.0)),
+            affective=float(scores.get(SelfLayer.AFFECTIVE, 0.0)),
+            narrative=float(scores.get(SelfLayer.NARRATIVE, 0.0)),
+        )
+
+    @staticmethod
+    def _force_vector(snapshot: Optional[SelfForceSnapshot]) -> Optional[np.ndarray]:
+        if snapshot is None:
+            return None
+        return np.array([
+            float(snapshot.reflex),
+            float(snapshot.affective),
+            float(snapshot.narrative),
+        ], dtype=float)
+
+    @staticmethod
+    def _layer_from_name(name: str) -> Optional[SelfLayer]:
+        key = (name or "").strip().lower()
+        if key in {"reflex", "reflex_self", SelfLayer.REFLEX.value}:
+            return SelfLayer.REFLEX
+        if key in {"affective", "affect", SelfLayer.AFFECTIVE.value}:
+            return SelfLayer.AFFECTIVE
+        if key in {"narrative", "story", SelfLayer.NARRATIVE.value}:
+            return SelfLayer.NARRATIVE
+        return None
+
+    def _compute_boundary_signal(self, prediction_error: float) -> Optional[BoundarySignal]:
+        cfg = getattr(self.config.conscious, "boundary", None)
+        current_damped = self._last_self_force
+        current_raw = self._last_raw_force
+        current_winner = self._last_dominant_layer
+        if current_damped is None:
+            self._prev_boundary_pred_error = prediction_error
+            self._prev_boundary_damped = None
+            self._prev_boundary_winner = current_winner
+            self._last_boundary_signal = None
+            return None
+        if not cfg or not cfg.enabled:
+            self._prev_boundary_pred_error = prediction_error
+            self._prev_boundary_damped = current_damped
+            self._prev_boundary_winner = current_winner
+            self._last_boundary_signal = None
+            return None
+
+        sources: Dict[str, float] = {}
+        components: List[Tuple[str, float, float]] = []
+        if self._prev_boundary_pred_error is not None:
+            delta = abs(prediction_error - self._prev_boundary_pred_error)
+            norm = max(cfg.prediction_error_norm, 1e-6)
+            components.append(
+                (
+                    "prediction_error_delta",
+                    float(np.clip(delta / norm, 0.0, 1.0)),
+                    cfg.weight_prediction_error,
+                )
+            )
+        prev_vec = self._force_vector(self._prev_boundary_damped)
+        curr_vec = self._force_vector(current_damped)
+        if prev_vec is not None and curr_vec is not None:
+            delta = float(np.linalg.norm(curr_vec - prev_vec))
+            norm = max(cfg.force_delta_norm, 1e-6)
+            components.append(
+                (
+                    "force_field_delta",
+                    float(np.clip(delta / norm, 0.0, 1.0)),
+                    cfg.weight_force_delta,
+                )
+            )
+        if self._prev_boundary_winner is not None and current_winner is not None:
+            flip = 1.0 if current_winner != self._prev_boundary_winner else 0.0
+            components.append(("winner_flip", flip, cfg.weight_winner_flip))
+        raw_vec = self._force_vector(current_raw)
+        if raw_vec is not None and curr_vec is not None:
+            gap = float(np.linalg.norm(curr_vec - raw_vec))
+            norm = max(cfg.raw_gap_norm, 1e-6)
+            components.append(
+                (
+                    "raw_damped_gap",
+                    float(np.clip(gap / norm, 0.0, 1.0)),
+                    cfg.weight_raw_gap,
+                )
+            )
+
+        numerator = 0.0
+        denom = 0.0
+        for name, value, weight in components:
+            if weight <= 0.0:
+                continue
+            sources[name] = value
+            numerator += value * weight
+            denom += weight
+        score = float(np.clip(numerator / denom, 0.0, 1.0)) if denom > 0.0 else 0.0
+        signal = BoundarySignal(score=score, sources=sources)
+        self._prev_boundary_pred_error = prediction_error
+        self._prev_boundary_damped = current_damped
+        self._prev_boundary_winner = current_winner
+        self._last_boundary_signal = signal
+        return signal
+
+    def _choose_self_layer(
+        self,
+        emotion: EmotionVector,
+        impl_ctx: Optional[ImplementationContext],
+        context_tags: Optional[List[str]] = None,
+    ) -> SelfLayer:
+        vg = getattr(emotion, "value_gradient", None) or self._value_gradient_snapshot()
+        fm = self._current_force_matrix()
+        base_scores: Dict[SelfLayer, float] = {}
+        for layer in (SelfLayer.REFLEX, SelfLayer.AFFECTIVE, SelfLayer.NARRATIVE):
+            base_scores[layer] = self._layer_force_score(layer, vg, fm)
+        raw_snapshot = self._force_snapshot_from_scores(base_scores).with_winner()
+        self._last_raw_force = raw_snapshot
+        adjusted = self._apply_context_damping(base_scores, impl_ctx, context_tags or [])
+        self._last_self_force = self._force_snapshot_from_scores(adjusted).with_winner()
+        return max(adjusted.items(), key=lambda kv: kv[1])[0]
+
+    def _compute_prediction_error(self, delta_m: float, metrics: Mapping[str, float]) -> float:
+        novelty = float(metrics.get("novelty", 0.0) or 0.0)
+        body_flag = float(metrics.get("body_surprise", 0.0) or 0.0)
+        return float(np.clip(max(delta_m, novelty, body_flag), 0.0, 2.0))
+
+    def _decide_response_route(
+        self,
+        qualia: EmotionVector,
+        prediction_error: float,
+        text_input: bool,
+        gate_ctx: GateContext,
+    ) -> ResponseRoute:
+        def _finish(choice: ResponseRoute) -> ResponseRoute:
+            impl_ctx = self._last_impl_context or self._current_impl_context(0.0)
+            tags: List[str] = []
+            if text_input:
+                tags.append("text_input")
+            if gate_ctx.force_listen:
+                tags.append("force_listen")
+            self._last_dominant_layer = self._choose_self_layer(qualia, impl_ctx, tags)
+            return choice
+
+        if not self.config.conscious.enabled:
+            return _finish(ResponseRoute.CONSCIOUS)
+        vg = getattr(qualia, 'value_gradient', None) or self._value_gradient_snapshot()
+        safety_bias = self._safety_lens(vg)
+        exploration_bias = self._exploration_lens(vg)
+        empathy_bias = self._empathy_lens(vg)
+        cfg = self.config.conscious
+        if safety_bias >= 0.8 and prediction_error >= cfg.reflex.prediction_error_threshold:
+            return _finish(ResponseRoute.REFLEX)
+        if self._should_use_reflex(qualia, prediction_error):
+            return _finish(ResponseRoute.REFLEX)
+        if self._should_use_habit(text_input, gate_ctx):
+            return _finish(ResponseRoute.HABIT)
+        if exploration_bias >= 0.7 and self._is_low_risk_context(prediction_error, gate_ctx):
+            return _finish(ResponseRoute.CONSCIOUS)
+        if empathy_bias >= 0.65 and text_input:
+            return _finish(ResponseRoute.CONSCIOUS)
+        return _finish(ResponseRoute.CONSCIOUS)
+
+
+    def _should_use_reflex(self, qualia: EmotionVector, prediction_error: float) -> bool:
+        cfg = self.config.conscious.reflex
+        if prediction_error >= cfg.prediction_error_threshold:
+            return True
+        if qualia.stress >= cfg.stress_threshold:
+            return True
+        return False
+
+    def _should_use_habit(self, text_input: bool, gate_ctx: GateContext) -> bool:
+        if not text_input:
+            return False
+        low_motion = gate_ctx.delta_m < 0.05 and gate_ctx.jerk < 0.05
+        low_voice = gate_ctx.voice_energy < 0.12
+        return low_motion and low_voice
+
+    def _reflex_prompt(self, prediction_error: float) -> str:
+        if prediction_error > 1.0:
+            return "Hold on - I'm flagging something unexpected. Are you safe right now?"
+        return "Give me a second; something feels off so I'm switching to safety mode."
+
+    def _habit_prompt(self, user_text: Optional[str]) -> str:
+        if not user_text:
+            return "I'll handle that routine step real quick."
+        snippet = user_text.strip().splitlines()[0]
+        if len(snippet) > 48:
+            snippet = snippet[:45].rstrip() + '...'
+        return f"Let me answer that quickly: {snippet}"
+
+    def _build_context_payload(
+        self,
+        user_text: Optional[str],
+        context_text: Optional[str],
+        metrics: Mapping[str, float],
+        gate_ctx: GateContext,
+        route: ResponseRoute,
+    ) -> Dict[str, Any]:
+        summary = (context_text or user_text or "").strip()
+        if not summary:
+            summary = f"talk_mode={self._talk_mode.value}"
+        tags = [f"talk:{self._talk_mode.value}", f"route:{route.value}"]
+        if gate_ctx.force_listen:
+            tags.append("force_listen")
+        if gate_ctx.text_input:
+            tags.append("text_input")
+        salient_entities = metrics.get("salient_entities")
+        if not isinstance(salient_entities, list):
+            salient_entities = []
+        flags = ["mark_as_conscious"] if route == ResponseRoute.CONSCIOUS else []
+        return {
+            "world_summary": summary,
+            "salient_entities": list(salient_entities),
+            "context_tags": tags,
+            "flags": flags,
+        }
+
+    def _update_self_model_state(self, qualia: EmotionVector) -> None:
+        self._self_model.current_mode = self._talk_mode
+        energy = float(np.clip(1.0 - 0.3 * max(qualia.stress, 0.0), 0.1, 1.0))
+        self._self_model.current_energy = energy
+        attachment = 0.9 * self._self_model.attachment_to_user + 0.1 * max(qualia.love, 0.0)
+        self._self_model.attachment_to_user = float(np.clip(attachment, 0.0, 1.0))
+
+    def _maybe_store_conscious_episode(
+        self,
+        qualia: EmotionVector,
+        prediction_error: float,
+        narrative: Optional[str],
+        route: ResponseRoute,
+        context: Mapping[str, Any],
+        implementation: Optional[ImplementationContext],
+        *,
+        boundary_signal: Optional[BoundarySignal] = None,
+    ) -> Optional[ConsciousEpisode]:
+        if not self.config.conscious.enabled or self._conscious_memory is None:
+            return None
+        if route == ResponseRoute.REFLEX:
+            return None
+        if not self._meets_conscious_threshold(qualia, prediction_error, context):
+            return None
+        impl_ctx = implementation or self._current_impl_context(0.0)
+        episode = ConsciousEpisode(
+            id=str(uuid.uuid4()),
+            timestamp=datetime.utcnow(),
+            self_state=self._self_model.snapshot(),
+            world_state=WorldStateSnapshot.from_context(
+                context, prediction_error=prediction_error
+            ),
+            qualia=qualia,
+            narrative=narrative,
+            route=route,
+            value_gradient=qualia.value_gradient,
+            dominant_self_layer=self._last_dominant_layer,
+            implementation=impl_ctx,
+            self_force=self._last_self_force,
+            raw_self_force=self._last_raw_force,
+            boundary_signal=boundary_signal,
+        )
+        self._conscious_memory.add_conscious_episode(episode)
+        if self._diary_writer is not None:
+            self._diary_writer.write_conscious_episode(episode)
+        return episode
+
+
+    def _meets_conscious_threshold(
+        self, qualia: EmotionVector, prediction_error: float, context: Mapping[str, Any]
+    ) -> bool:
+        cfg = self.config.conscious.conscious_threshold
+        if prediction_error >= cfg.prediction_error_min:
+            return True
+        if abs(qualia.valence) >= cfg.valence_min:
+            return True
+        if qualia.love >= cfg.love_min:
+            return True
+        if qualia.stress >= cfg.stress_min:
+            return True
+        flags = context.get("flags") if isinstance(context, Mapping) else []
+        if isinstance(flags, list) and "mark_as_conscious" in flags:
+            return True
+        return False
+
     def _log_memory_reference(
         self, result: Optional[Dict[str, Any]], user_text: str
     ) -> None:
@@ -1795,4 +2482,9 @@ class EmotionalHubRuntime:
                 handle.write("\n")
         except Exception:
             pass
+
+
+
+
+
 
