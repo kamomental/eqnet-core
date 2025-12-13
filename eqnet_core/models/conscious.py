@@ -173,21 +173,35 @@ class SelfForceSnapshot:
     affective: float
     narrative: float
     winner: Optional[SelfLayer] = None
+    winner_margin: Optional[float] = None
+    is_tie: Optional[bool] = None
 
-    def _compute_winner(self) -> SelfLayer:
-        values = {
-            SelfLayer.REFLEX: float(self.reflex),
-            SelfLayer.AFFECTIVE: float(self.affective),
-            SelfLayer.NARRATIVE: float(self.narrative),
-        }
-        return max(values.items(), key=lambda kv: kv[1])[0]
+    def _ranked(self) -> List[Tuple[SelfLayer, float]]:
+        values = [
+            (SelfLayer.REFLEX, float(self.reflex)),
+            (SelfLayer.AFFECTIVE, float(self.affective)),
+            (SelfLayer.NARRATIVE, float(self.narrative)),
+        ]
+        return sorted(values, key=lambda kv: kv[1], reverse=True)
 
-    def with_winner(self) -> "SelfForceSnapshot":
-        if self.winner is None:
-            self.winner = self._compute_winner()
+    def with_winner(self, *, tie_eps: float = 1e-6) -> "SelfForceSnapshot":
+        if (
+            self.winner is not None
+            and self.winner_margin is not None
+            and self.is_tie is not None
+        ):
+            return self
+        ranked = self._ranked()
+        top_layer, top_val = ranked[0]
+        _, second_val = ranked[1]
+        margin = float(top_val - second_val)
+        is_tie = bool(margin <= float(tie_eps))
+        self.winner_margin = margin
+        self.is_tie = is_tie
+        self.winner = None if is_tie else top_layer
         return self
 
-    def to_dict(self) -> Dict[str, float]:
+    def to_dict(self) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
             "reflex": float(self.reflex),
             "affective": float(self.affective),
@@ -195,6 +209,10 @@ class SelfForceSnapshot:
         }
         if self.winner is not None:
             payload["winner"] = self.winner.value
+        if self.winner_margin is not None:
+            payload["winner_margin"] = float(self.winner_margin)
+        if self.is_tie is not None:
+            payload["is_tie"] = bool(self.is_tie)
         return payload
 
 

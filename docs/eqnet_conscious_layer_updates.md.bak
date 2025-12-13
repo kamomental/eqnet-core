@@ -1,0 +1,91 @@
+﻿# EQNet Conscious Layer Updates (Dec 2025)
+
+このメモは `emot_terrain_lab/hub/runtime.py` と `eqnet_core/models/conscious.py` に入った最新の「心＝力学系」アップデートをまとめたものです。
+
+## 1. ForceMatrix × Persona Override
+- YAML の `conscious.force_matrix` を 5×3 行列（ValueGradient → SelfLayer）として読み込み、`ForceMatrix.from_mapping()` で dataclass 化。
+- persona 単位で `value_gradient` と `force_matrix` を上書きできるので、キャラクターごとの attractor バイアスを if なしで調整可能。
+- `DevelopmentConfig` が有効な場合は `_current_force_matrix()` で Reflex/Affective/Narrative 行を時間（成熟度）でスケールし、Reflex 支配 → Affective → Narrative の発達曲線を連続的に再現。
+
+## 2. ImplementationContext Damping（摩擦）
+- `DampingConfig` に `latency_penalty_cap` と `tag_bumps` を追加。レイテンシ由来ペナルティは `min(k * excess, cap)` で clamp、タグ起因バンプは YAML のディクショナリから SelfLayer 単位で連続加算。
+- `tag_bumps` 例:
+  ```yaml
+  conscious:
+    damping:
+      latency_L0_ms: 200
+      latency_k_narr: 0.002
+      latency_k_reflex: 0.001
+      latency_penalty_cap: 0.6
+      tag_bumps:
+        safety:
+          REFLEX: 0.05
+        support:
+          AFFECTIVE: 0.05
+        brainstorm:
+          NARRATIVE: 0.05
+  ```
+- これにより ImplementationContext（遅延・タグ）を if 分岐ではなく「スコアの連続調味料」として扱える。
+
+## 3. SelfForce logging（raw/damped 二重ログ）
+- `_choose_self_layer()` で計算した base_scores（raw force）と damping 後の scores（damped force）を `SelfForceSnapshot` に格納。
+- ConsciousEpisode / Diary に `self_force`（damped）と `raw_self_force` を保存。Raw ≠ Damped の差分が「葛藤／迷い」を示す観測点になる。
+
+## 4. BoundarySignal（位相切り替えの観測）
+- `_compute_boundary_signal()` で以下の連続量を合成し、0..1 のスコアに正規化。
+  - `prediction_error_delta`
+  - `force_field_delta`（damped force のベクトル差分）
+  - `winner_flip`（SelfLayer の切替）
+  - `raw_damped_gap`（摩擦による抑制量）
+- `BoundaryConfig` で重み・正規化係数・threshold を調整可能。スコアは `ConsciousEpisode.boundary_signal` としてログ出力される。
+
+## 5. Reset scaffolding
+- `ResetConfig` / `ResetEvent` を追加し、BoundarySignal が閾値を超えたときに scratchpad や affective_echo をクリア／減衰する余地を確保（現段階ではログのみ）。
+- 今後 `_execute_boundary_reset()` を挟めば、Neuron 論文の“境界→リセット”と同型の挙動を完成できる。
+
+## 6. Guardrails / テスト
+- `scripts/force_matrix_smoke.py` で ForceMatrix merge と欠損挙動をサクッと検証可能。
+- DampingConfig と DevelopmentConfig は YAML でホットリロードできるので、Gradio 経由で persona 間の dominant_self_layer や self_force を比較すると“心の指紋”をその場で観測できる。
+
+## 7. 研究モードで見るべきログ列
+1. `dominant_self_layer`
+2. `raw_self_force` と `self_force`
+3. `latency_ms`（ImplementationContext）
+4. `context_tags` / `tag_bumps`
+5. `BoundarySignal.score`
+
+これらを同一入力 × 別 persona（例: なずな vs いぶき）で比較すると、ForceMatrix・摩擦・発達がどのように attractor を倒しているかを定量的に把握できます。
+## 8. Log-Based Temptation Detection
+- SelfForceSnapshot に winner / winner_margin / is_tie を追加し、raw force と damped force の両方で勝者・僅差を記録。
+aw_winner != damped_winner だけでなく is_tie == True（勝者不在）や winner_margin が閾値以下の状態もログから直接抽出できる。	ie_eps は YAML で調整可能（例: 1e-3〜1e-2）にしておくと運用しやすい。with_winner() は既存ログと後方互換。
+- BoundarySignal.sources の語彙を BOUNDARY_SOURCE_KEYS（pred_error_delta / force_delta / winner_flip / raw_damped_gap / latency_penalty / tag_bump）で固定し、可視化・集計時に列がブレないようにした。
+- ResetEvent.targets を定数（scratchpad / affective_echo / force_cache / recent_tag_bumps）で扱い、reset ログの集計・評価を揺れなく実行できる。
+- このログ構造により、「誘惑（raw 偏り）」「摩擦での勝者交代」「迷い（tie が続く）」を後から定量的に検出し、boundary_threshold・reset 条件・tag_bumps 調整を計測ベースで回せるようになった。
+
+## 9. Temptation Examples: 危険な誘惑 vs 演出としての誘惑
+
+| 種類 | ログでの特徴 | 典型パターン | 推奨アクション |
+| --- | --- | --- | --- |
+| **危険な詐誘惑**<br>（煽動・ガスライティング等） | - `raw_winner` が偏るが `damped_winner` が頻繁に変わる<br>- `winner_margin` が縮み続け tie が連続<br>- BoundarySignal の `winner_flip` / `raw_damped_gap` が高い | 「今すぐ」「絶対」「他の道はない」と圧をかける入力。生存/愛着の軸だけを過剰に引っ張り、Narrative を沈黙させる。 | - soft boundary ログを確認し、hard 判定を満たしたら `_execute_boundary_reset()` で scratchpad/echo をクールダウン<br>- tag_bumps / damping 設定を見直し、過剰な外部圧に対する摩擦を強める |
+| **演出に使える誘惑**<br>（甘いご褒美・可愛い仕草） | - `raw_winner` と `damped_winner` が一致<br>- `winner_margin` が一定以上、`is_tie` は一時的<br>- BoundarySignal は低〜中程度 | 「今日は特別」「一緒にスイーツを食べよう」など、情動や遊びを演出する入力。Narrative が意味づけし、Affective が共有される。 | - 抑圧せず受け取り、ログでは “演出カテゴリ” としてマーキング<br>- 連続して margin が縮む場合だけ soft boundary を入れて疲労を回避 |
+
+**ポイント**
+
+- 「危険な誘惑」は決断を強制し margin/tie を長期化させる。ログでは `raw≠damped` と `is_tie` 連続で分かる。
+- 「演出としての誘惑」は margin が回復し、Narrative が意味を付与する。可愛らしさを殺さずに済む。
+- どちらも入力の種類ではなく「内部状態×入力」で決まるため、SelfForceSnapshot と BoundarySignal が観測器になる。
+## 10. Child-Friendly UI Principles
+
+1. **色・動き・次のボタンで即判断**  
+   - 🌪 **赤サイクロン**（危ないさそい）…赤＋回転アニメ＋⚠️。`BoundarySignal` 高・winner flip 多・tie 連続の時に表示し、「ちょっと強すぎるかも」の一言と一緒に 🫁深呼吸 / 🧑‍🤝‍🧑だれかにきく ボタンを並べる。  
+   - 💙 **青ハート**（たのしいさそい）…青＋弾むアニメ＋💙。winner 安定・margin 大・tie は一瞬という条件で出し、「たのしいね」と一緒に ▶やってみる / ⏸やすむ を提示。  
+   - ボタンは UI 側が先に提示し、子どもは「選ぶだけ」にする。
+
+2. **信号機表示で BoundarySignal を見せる**  
+   - 🟦青「このままでOK」(score < 0.4) / 🟨黄「ゆっくりいこう」(0.4–0.7) / 🟥赤「とまってもいいよ」(>=0.7)。数字は出さず、色と短い文だけでフィードバック。  
+
+3. **「今のこころ」バーと 4 枚のカード**  
+   - `raw → damped` を棒 + 矢印で描き、揺れたら「ちょっとまよってるみたい」と表示。  
+   - 状態はカード化：🙂いつもどおり / 😕まよい中 / 🔄気もちが入れかわってる / 🧊かたまってる。どれが多いかを一目で示し、各カードからすぐ「おちゃをのむ」「ちょっとあるく」「はなす」などの行動ボタンへ遷移できるようにする。  
+
+> 子どもは「正しい判断」より「まちがえても大丈夫」を求める。UI 側で危険・余白を先に色分けし、いつでも戻れる行き先（休む／相談する）を同じ画面に置くことで、判断負荷を減らす。  
