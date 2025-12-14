@@ -1,0 +1,46 @@
+{
+  "date": "2025-12-14",
+  "scenario_id": "e2e_proof_001",
+  "events": [
+    {
+      "turn_id": "proof-turn-0001",
+      "timestamp_ms": 1000,
+      "user_text": "<seed>",
+      "somatic": {"stress_hint": 0.2, "fatigue_hint": 0.1, "proximity": 0.8},
+      "context": {"offer_requested": false, "cultural_pressure": 0.2, "mode": "casual"},
+      "world": {"hazard_level": 0.35, "ambiguity": 0.2, "social_pressure": 0.1}
+    },
+    {
+      "turn_id": "proof-turn-0002",
+      "timestamp_ms": 2000,
+      "user_text": "boundary rising",
+      "somatic": {"stress_hint": 0.45, "fatigue_hint": 0.15, "proximity": 0.6},
+      "context": {"offer_requested": false, "cultural_pressure": 0.3, "mode": "talk"},
+      "world": {"hazard_level": 0.75, "ambiguity": 0.35, "social_pressure": 0.15}
+    },
+    {
+      "turn_id": "proof-turn-0003",
+      "timestamp_ms": 3000,
+      "user_text": "span continues",
+      "somatic": {"stress_hint": 0.5, "fatigue_hint": 0.2, "proximity": 0.55},
+      "context": {"offer_requested": false, "cultural_pressure": 0.4, "mode": "talk"},
+      "world": {"hazard_level": 0.9, "ambiguity": 0.4, "social_pressure": 0.2}
+    },
+    {
+      "turn_id": "proof-turn-0004",
+      "timestamp_ms": 4000,
+      "user_text": "jerk high",
+      "somatic": {"stress_hint": 0.55, "fatigue_hint": 0.25, "proximity": 0.5},
+      "context": {"offer_requested": false, "cultural_pressure": 0.45, "mode": "talk"},
+      "world": {"hazard_level": 0.85, "ambiguity": 0.45, "social_pressure": 0.25}
+    },
+    {
+      "turn_id": "proof-turn-0005",
+      "timestamp_ms": 5000,
+      "user_text": "cooldown",
+      "somatic": {"stress_hint": 0.3, "fatigue_hint": 0.2, "proximity": 0.65},
+      "context": {"offer_requested": true, "cultural_pressure": 0.15, "mode": "casual"},
+      "world": {"hazard_level": 0.2, "ambiguity": 0.25, "social_pressure": 0.1}
+    }
+  ]
+}

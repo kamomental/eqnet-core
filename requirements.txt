@@ -33,6 +33,7 @@ plotly>=5.0
 pluggy==1.6.0
 pydantic==2.12.0
 pydantic_core==2.41.1
+pydantic-settings
 Pygments==2.19.2
 pynndescent==0.5.13
 pyparsing==3.2.5

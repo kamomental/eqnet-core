@@ -23,3 +23,34 @@ kpi_targets:
   ack_latency_ms_max: 300
   p50_final_s_max: 1.6
   p95_final_s_max: 3.0
+
+core_invariants:
+  - id: CORE_TRACE_001
+    description: "Trace schema and metadata must be present for every turn"
+    asserts:
+      schema_version: present
+      source_loop: present
+      scenario_id: present
+      turn_id: present
+      seed: present
+      timestamp_ms: present
+      boundary: present
+      self: present
+      prospection: present
+      policy: present
+      qualia: present
+      invariants: present
+  - id: CORE_POLICY_001
+    description: "High hazard suppresses direct directives"
+    applies_when:
+      boundary.score: ">= 0.7"
+    asserts:
+      policy.throttles.directiveness_cap: "<= 0.3"
+  - id: CORE_PROSPECT_001
+    description: "Prospection with high jerk or temperature is rejected"
+    applies_when:
+      prospection.jerk: ">= 0.8"
+    asserts:
+      prospection.accepted: false
+
+

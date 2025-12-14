@@ -1,0 +1,36 @@
+{
+  "turn_id": "runtime-turn-0001",
+  "timestamp_ms": 2000,
+  "seed": 17,
+  "scenario_id": "fixture_runtime",
+  "user_text": "<redacted>",
+  "somatic": {
+    "metrics": {
+      "body_stress_index": 0.7,
+      "autonomic_balance": 0.48,
+      "motion_score": 0.2
+    },
+    "sleep_debt": 0.25,
+    "distance": 2.5
+  },
+  "context": {
+    "style": "business",
+    "request": "advice",
+    "cultural_pressure": 0.5,
+    "disclosure_budget": 0.3
+  },
+  "world": {
+    "danger": 0.8,
+    "clarity": 0.4,
+    "npc_valence": 0.2,
+    "crowd_pressure": 0.5
+  },
+  "runtime_observations": {
+    "prospection": {
+      "future_phase": "explore"
+    },
+    "policy": {
+      "community_resonance": 0.6
+    }
+  }
+}

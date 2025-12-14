@@ -1,0 +1,104 @@
+body {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", sans-serif;
+  margin: 0;
+  color: #111;
+  background: #f5f5f5;
+}
+
+.page {
+  padding: 40px;
+}
+
+.page__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.audits {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.audits th,
+.audits td {
+  border: 1px solid #e3e3e3;
+  padding: 8px 10px;
+  vertical-align: top;
+}
+
+/* OBS overlay styles */
+.obs-body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+.obs-card {
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 12px;
+  color: #fff;
+  width: fit-content;
+  max-width: 900px;
+}
+
+.obs-title {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.obs-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.obs-badge {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.obs-badge-green {
+  background: rgba(40, 180, 90, 0.9);
+}
+
+.obs-badge-yellow {
+  background: rgba(220, 170, 0, 0.9);
+}
+
+.obs-badge-red {
+  background: rgba(220, 60, 60, 0.9);
+}
+
+.obs-badge-unknown {
+  background: rgba(130, 130, 130, 0.9);
+}
+
+.obs-metrics {
+  font-size: 14px;
+}
+
+.obs-list {
+  margin: 10px 0 0 18px;
+  padding: 0;
+}
+
+.obs-item {
+  font-size: 14px;
+  line-height: 1.3;
+  list-style: disc;
+  margin-bottom: 4px;
+}
+
+.obs-muted {
+  opacity: 0.8;
+  font-size: 14px;
+}

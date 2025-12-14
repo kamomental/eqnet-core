@@ -1,0 +1,23 @@
+﻿{% if model is none %}
+  <div class="obs-card">
+    <div class="obs-title">EQNet Observer</div>
+    <div class="obs-muted">No audits available.</div>
+  </div>
+{% else %}
+  <div class="obs-card">
+    <div class="obs-title">EQNet {{ model.date }}</div>
+    <div class="obs-row">
+      <div class="obs-badge obs-badge-{{ (model.status or "unknown")|lower }}">{{ model.status }}</div>
+      <div class="obs-metrics">
+        fatal: {{ model.fatal_failures }} - warn_rate: {{ model.warn_fail_rate }}
+      </div>
+    </div>
+    <ul class="obs-list">
+      {% for reason in model.reasons %}
+        <li class="obs-item">
+          {{ reason.get("level", reason.get("code", "")) }} - {{ reason.get("reason") or reason.get("message") }}
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}

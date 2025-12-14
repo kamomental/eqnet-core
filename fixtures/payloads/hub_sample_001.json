@@ -1,0 +1,38 @@
+{
+  "turn_id": "hub-turn-0001",
+  "timestamp_ms": 1000,
+  "seed": 11,
+  "scenario_id": "fixture_hub",
+  "user_text": "<redacted>",
+  "somatic": {
+    "stress_hint": 0.24,
+    "fatigue_hint": 0.18,
+    "jitter": 0.05,
+    "proximity": 0.6,
+    "metrics": {
+      "body_stress_index": 0.62,
+      "motion_score": 0.31,
+      "pose_detected": true,
+      "person_count": 2
+    }
+  },
+  "context": {
+    "mode": "casual",
+    "offer_requested": "no",
+    "cultural_pressure": 0.28,
+    "intimacy": 0.42,
+    "tags": ["friend", "weekday"]
+  },
+  "world": {
+    "hazard_level": 0.35,
+    "ambiguity": 0.3,
+    "clarity": 0.85,
+    "npc_affect": -0.1,
+    "social_pressure": 0.22
+  },
+  "trace_observations": {
+    "policy": {
+      "hub_note": "fixture"
+    }
+  }
+}
