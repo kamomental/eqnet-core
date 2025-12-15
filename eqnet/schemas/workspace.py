@@ -142,6 +142,24 @@ class WorkspaceSnapshot(BaseModel):
     meta: Dict[str, Any] = Field(default_factory=dict)
 
 
+class WorkspaceSnapshot(BaseModel):
+    event: str = Field(default=WORKSPACE_EVENT_NAME, frozen=True)
+    schema_version: int = Field(default=1, ge=1)
+    timestamp_ms: int
+    turn_id: str
+    stage: str = "runtime"
+    step: int = 0
+    source_loop: Optional[str] = None
+    pid: Optional[int] = None
+    field: FieldState
+    rhythm: RhythmSnapshot
+    memory_ref: Optional[MemoryReference] = None
+    workspace: WorkspaceState
+    control_out: Optional[ControlOutputs] = None
+    intervention: Optional[InterventionStatus] = None
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+
 class InterventionEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

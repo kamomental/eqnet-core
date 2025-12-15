@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 
 from .routers.api import audits as api_audits
 from .routers.api import traces as api_traces
+from .routers.api import workspace as api_workspace
 from .routers.html import pages as html_pages
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -21,6 +22,7 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 
 app.include_router(api_audits.router, prefix="/api", tags=["api"])
 app.include_router(api_traces.router, prefix="/api", tags=["api"])
+app.include_router(api_workspace.router, prefix="/api", tags=["api"])
 app.include_router(html_pages.router, tags=["html"])
 
 

@@ -33,6 +33,21 @@ META_TEMPLATE = {
     "source_loop": "runtime",
 }
 
+ENV_ENABLE = os.getenv("EQNET_WORKSPACE_SNAPSHOT_ENABLE", "1").strip().lower() in {"1", "true", "yes", "y", "on"}
+ENV_EVERY = max(1, int(os.getenv("EQNET_WORKSPACE_SNAPSHOT_EVERY", "1")))
+ENV_MAX_CANDS = max(1, int(os.getenv("EQNET_WORKSPACE_MAX_ACTION_CANDIDATES", "16")))
+
+FORBIDDEN_KEYS = {
+    "raw_transcript",
+    "transcript",
+    "messages",
+    "prompt",
+    "completion",
+    "input_text",
+    "output_text",
+}
+MAX_STR_LEN = int(os.getenv("EQNET_WORKSPACE_STR_MAX", "2048"))
+
 
 def runtime_payload_to_percept(payload: Mapping[str, object]) -> PerceptPacket:
     return build_percept_from_payload(payload)
@@ -61,9 +76,20 @@ def run_runtime_turn(
     meta["seed"] = percept.seed
     meta["timestamp_ms"] = percept.timestamp_ms
     trace_target = Path(trace_path)
+
     write_trace_jsonl(trace_target, result, meta=meta)
-    snapshot = _build_workspace_snapshot(percept, result)
-    append_trace_event(trace_target, snapshot)
+
+    if ENV_ENABLE and _should_emit_snapshot(percept):
+        snapshot = _build_workspace_snapshot(percept, result, safety)
+        sanitized = _sanitize_payload(snapshot)
+        append_trace_event(trace_target, sanitized)
+
+
+def _should_emit_snapshot(percept: PerceptPacket) -> bool:
+    if ENV_EVERY <= 1:
+        return True
+    turn_step = percept.timestamp_ms or 0
+    return turn_step % ENV_EVERY == 0
 
 
 def _clamp(value: float | None, *, lo: float = 0.0, hi: float = 1.0) -> float:
@@ -80,7 +106,22 @@ def _clamp(value: float | None, *, lo: float = 0.0, hi: float = 1.0) -> float:
     return val
 
 
-def _build_workspace_snapshot(percept: PerceptPacket, result) -> dict:
+def _sanitize_payload(value):
+    if isinstance(value, dict):
+        clean = {}
+        for key, item in value.items():
+            if key in FORBIDDEN_KEYS:
+                continue
+            clean[key] = _sanitize_payload(item)
+        return clean
+    if isinstance(value, list):
+        return [_sanitize_payload(item) for item in value]
+    if isinstance(value, str):
+        return value[:MAX_STR_LEN]
+    return value
+
+
+def _build_workspace_snapshot(percept: PerceptPacket, result, safety: SafetyConfig) -> dict:
     timestamp_ms = percept.timestamp_ms or 0
     hazard = _clamp(percept.world.hazard_level)
     ambiguity = _clamp(percept.world.ambiguity)
@@ -88,7 +129,8 @@ def _build_workspace_snapshot(percept: PerceptPacket, result) -> dict:
     stress = _clamp(percept.somatic.stress_hint)
     winner = str(result.trace.self_state.get("winner", "unknown")) if result.trace.self_state else "unknown"
     boundary_score = float((result.trace.boundary or {}).get("score", hazard))
-    gate_level = 1 if boundary_score >= float((result.trace.boundary or {}).get("threshold", safety.boundary_threshold if isinstance(safety, SafetyConfig) else 0.7)) else 0
+    threshold = float((result.trace.boundary or {}).get("threshold", safety.boundary_threshold if isinstance(safety, SafetyConfig) else 0.7))
+    gate_level = 1 if boundary_score >= threshold else 0
 
     field_state = FieldState(
         S_norm=stress,
@@ -122,24 +164,33 @@ def _build_workspace_snapshot(percept: PerceptPacket, result) -> dict:
     goals = [GoalWeight(name="safety", weight=hazard), GoalWeight(name="explore", weight=1.0 - hazard)]
     value_state = WorkspaceValueState(goals=goals, risk=hazard)
 
-    action_candidate = WorkspaceActionCandidate(
-        name=result.intent.action if isinstance(result.intent, ActionIntent) else "unknown",
-        score=_clamp(result.intent.confidence if isinstance(result.intent, ActionIntent) else 0.5),
-        reason_codes=list((result.intent.rationale or {}).keys()) if isinstance(result.intent, ActionIntent) else [],
-    )
-    selected = WorkspaceActionSelection(
-        name=action_candidate.name,
-        expected_effect={k: v for k, v in (result.intent.rationale or {}).items()} if isinstance(result.intent, ActionIntent) else {},
-    )
+    action_candidates = []
+    if isinstance(result.intent, ActionIntent):
+        action_candidates.append(
+            WorkspaceActionCandidate(
+                name=result.intent.action,
+                score=_clamp(result.intent.confidence, lo=0.0, hi=1.0),
+                reason_codes=list((result.intent.rationale or {}).keys()),
+            )
+        )
+    action_candidates = action_candidates[:ENV_MAX_CANDS]
+
+    selected = None
+    if action_candidates:
+        selected = WorkspaceActionSelection(
+            name=action_candidates[0].name,
+            expected_effect={k: v for k, v in (result.intent.rationale or {}).items()} if isinstance(result.intent, ActionIntent) else {},
+        )
     workspace_state = WorkspaceState(
         perception=perception_block,
         value=value_state,
-        action_candidates=[action_candidate],
+        action_candidates=action_candidates,
         selected_action=selected,
     )
 
     snapshot_model = WorkspaceSnapshot(
         timestamp_ms=timestamp_ms,
+        turn_id=percept.turn_id or "",
         stage="runtime",
         step=timestamp_ms,
         source_loop="runtime",
@@ -151,12 +202,11 @@ def _build_workspace_snapshot(percept: PerceptPacket, result) -> dict:
         control_out=None,
         intervention=None,
         meta={
-            "turn_id": percept.turn_id,
             "scenario_id": percept.scenario_id,
             "tags": percept.tags,
         },
     )
-    return snapshot_model.model_dump(mode="json")
+    return snapshot_model.model_dump(mode=\"json\")
 
 
 __all__ = ["run_runtime_turn", "runtime_payload_to_percept"]

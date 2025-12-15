@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Inner replay controller with lightweight simulate→evaluate→veto flow."""
 
+
 from __future__ import annotations
 
 import math
@@ -44,6 +45,16 @@ class ReplayInputs:
 
 
 @dataclass(frozen=True)
+class ReplayStats:
+    """Aggregated signal statistics for shadow/completion."""
+
+    top_signal: float
+    mean_signal: float
+    entropy_proxy: float
+    alignment: float
+
+
+@dataclass(frozen=True)
 class ReplayOutcome:
     """結果ログを receipt に貼り付けやすいよう整理."""
 
@@ -54,6 +65,7 @@ class ReplayOutcome:
     prep_features: Dict[str, float]
     plan_features: Dict[str, float]
     trace: Sequence[float] = field(default_factory=tuple)
+    stats: ReplayStats | None = None
 
 
 class InnerReplayController:
@@ -94,6 +106,7 @@ class InnerReplayController:
         dt = cfg.tau_conscious_s / steps if steps else cfg.tau_conscious_s
         state = 0.0
         trace = []
+        signals: list[float] = []
         t_prep = None
         capture_trace = bool(cfg.keep_s_trace)
         prob = max(0.0, min(1.0, float(cfg.trace_keep_prob)))
@@ -101,6 +114,7 @@ class InnerReplayController:
             capture_trace = self._rng.random() < prob
         for idx in range(steps):
             signal = self._signal(safe_inputs)
+            signals.append(signal)
             noise = 0.04 * self._rng.uniform(-1.0, 1.0)
             state = max(0.0, state * 0.82 + (signal + noise) * dt)
             if capture_trace:
@@ -111,7 +125,11 @@ class InnerReplayController:
         mono_intent_time = mono_now + prep_offset
         felt_intent_time = wall_now + prep_offset
         s_max = max(trace) if trace else 0.0
-        prep_features = {"t_prep": prep_offset, "s_max": s_max, "mono_at": mono_intent_time}
+        prep_features = {
+            "t_prep": prep_offset,
+            "s_max": s_max,
+            "mono_at": mono_intent_time,
+        }
         prep_trace = tuple(trace) if capture_trace else ()
         u_hat = self._utility(safe_inputs)
         plan_features = {
@@ -130,6 +148,7 @@ class InnerReplayController:
             decision = "cancel"
         else:
             decision = "cancel"
+        stats = _summarize_signals(signals, safe_inputs)
         return ReplayOutcome(
             decision=decision,
             felt_intent_time=felt_intent_time,
@@ -138,6 +157,7 @@ class InnerReplayController:
             prep_features=prep_features,
             plan_features=plan_features,
             trace=prep_trace,
+            stats=stats,
         )
 
     def _signal(self, inputs: ReplayInputs) -> float:
@@ -180,9 +200,37 @@ def _clip_nonneg(value: float) -> float:
     return max(0.0, value)
 
 
+def _summarize_signals(signals: Sequence[float], inputs: ReplayInputs) -> ReplayStats:
+    if not signals:
+        return ReplayStats(
+            top_signal=0.0, mean_signal=0.0, entropy_proxy=0.0, alignment=0.0
+        )
+    top_signal = max(signals)
+    mean_signal = sum(signals) / len(signals)
+    total = sum(max(s, 0.0) for s in signals)
+    if total <= 0.0:
+        entropy_proxy = 0.0
+    else:
+        probs = [max(s, 0.0) / total for s in signals]
+        entropy_proxy = -sum(p * math.log(p + 1e-6) for p in probs)
+        entropy_proxy = (
+            entropy_proxy / math.log(len(signals)) if len(signals) > 1 else 0.0
+        )
+    alignment = max(0.0, 1.0 - inputs.delta_aff_abs)
+    alignment += 0.5 * max(0.0, inputs.mood_valence)
+    alignment = min(1.0, alignment / 1.5)
+    return ReplayStats(
+        top_signal=top_signal,
+        mean_signal=mean_signal,
+        entropy_proxy=entropy_proxy,
+        alignment=alignment,
+    )
+
+
 __all__ = [
     "InnerReplayController",
     "ReplayConfig",
     "ReplayInputs",
+    "ReplayStats",
     "ReplayOutcome",
 ]

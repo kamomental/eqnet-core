@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 End-to-end runtime scaffold that ties perception, EQNet metrics, policy
 controls, and the LLM hub together.
@@ -49,6 +49,7 @@ from eqnet.qualia_model import (
 from eqnet.runtime.state import QualiaState
 from eqnet.modules.prospective_drive_core import PDCConfig, ProspectiveDriveCore
 from emot_terrain_lab.terrain.emotion import AXES
+from emot_terrain_lab.mind.shadow_estimator import ShadowEstimator, ShadowEstimatorConfig
 from eqnet_core.memory.diary import DiaryWriter
 from eqnet_core.memory.mosaic import MemoryMosaic
 from eqnet_core.models.conscious import (
@@ -514,8 +515,10 @@ class EmotionalHubRuntime:
             )
         self._emotion_core = EmotionCore(dim=len(AXES))
         self._pdc = ProspectiveDriveCore(PDCConfig(dim=len(AXES)))
+        self._shadow_estimator = ShadowEstimator()
         self._pdc_memory_fallback = _NullProspectiveMemory(len(AXES))
         self._last_prospective: Optional[Dict[str, Any]] = None
+        self._last_shadow_estimate: Optional[Dict[str, Any]] = None
         self._runtime_cfg = None
         if load_runtime_cfg is not None:
             try:
@@ -795,7 +798,7 @@ class EmotionalHubRuntime:
         context:
             Optional contextual text (e.g., RAG snippets).
         intent:
-            Intent label for the hub router (qa/chitchat/code窶ｦ).
+            Intent label for the hub router (qa/chitchat/code窶�E�).
         fast_only:
             When true, skips heavy operations (memory reference lookup, LLM call)
             so that the caller can issue a quick acknowledgement before the full
@@ -818,7 +821,9 @@ class EmotionalHubRuntime:
         # Merge external mood metrics if provided (env or file)
         metrics = self._merge_mood_metrics(metrics)
         metrics = self._merge_sensor_metrics(metrics)
+        culture_ctx = self._current_culture_context()
         prospective: Optional[Dict[str, Any]] = None
+        shadow_estimate = None
         if self._pdc is not None:
             phi_vec = np.array(self._last_E, dtype=float)
             psi_vec = self._psi_vector_from_metrics(metrics)
@@ -834,6 +839,16 @@ class EmotionalHubRuntime:
             metrics.setdefault("pdc_story", prospective["E_story"])
             metrics.setdefault("pdc_temperature", prospective["T"])
             self._last_prospective = prospective
+        shadow_estimate = self._compute_shadow_estimate(
+            affect=affect,
+            prospective=prospective,
+            culture_ctx=culture_ctx,
+        )
+        if shadow_estimate is not None:
+            metrics = dict(metrics)
+            metrics.setdefault("shadow_uncertainty", float(shadow_estimate.mood_uncertainty))
+            metrics.setdefault("shadow_residual", float(shadow_estimate.residual))
+        self._last_shadow_estimate = self._serialize_shadow(shadow_estimate)
         self._last_metrics = metrics
         self._update_emotion_axes_from_sensors(affect, metrics)
 
@@ -899,6 +914,24 @@ class EmotionalHubRuntime:
             "mode": self._talk_mode.name.lower(),
             "force_listen": self._force_listen,
         }
+        shadow_uncertainty = None
+        shadow_mode = None
+        if shadow_estimate is not None:
+            shadow_uncertainty = float(shadow_estimate.mood_uncertainty)
+            self._last_gate_context["shadow_uncertainty"] = shadow_uncertainty
+            shadow_mode = self._shadow_mode_label(shadow_uncertainty)
+            self._last_gate_context["shadow_mode"] = shadow_mode
+            metrics = dict(metrics)
+            metrics.setdefault("shadow_mode", shadow_mode)
+            metrics.setdefault("shadow_uncertainty", shadow_uncertainty)
+            if shadow_uncertainty >= 0.85:
+                self._talk_mode = TalkMode.WATCH
+                self._last_gate_context["mode"] = self._talk_mode.name.lower()
+            elif shadow_uncertainty >= 0.65 and self._talk_mode == TalkMode.TALK:
+                self._talk_mode = TalkMode.ASK
+                self._last_gate_context["mode"] = self._talk_mode.name.lower()
+        else:
+            shadow_uncertainty = None
         if prospective:
             self._last_gate_context["pdc_story"] = float(
                 prospective.get("E_story", 0.0)
@@ -947,6 +980,8 @@ class EmotionalHubRuntime:
             controls.prosody_energy = float(max(controls.prosody_energy, 0.05))
         elif self._talk_mode == TalkMode.WATCH:
             controls.gesture_amplitude = float(min(controls.gesture_amplitude, 0.25))
+        if shadow_estimate is not None:
+            self._apply_shadow_controls(controls, shadow_estimate)
 
         self._last_controls = controls
 
@@ -998,6 +1033,7 @@ class EmotionalHubRuntime:
                 "heart": heart_snapshot,
                 "persona_meta": persona_meta,
                 "response_route": route.value,
+                "shadow": self._last_shadow_estimate,
             }
 
         if route_response and response is None:
@@ -1155,6 +1191,7 @@ class EmotionalHubRuntime:
             "heart": heart_snapshot,
             "persona_meta": persona_meta,
             "response_route": route.value,
+            "shadow": self._last_shadow_estimate,
         }
 
     # ------------------------------------------------------------------ #
@@ -1690,6 +1727,61 @@ class EmotionalHubRuntime:
             idx += 1
         return vec
 
+    def _serialize_shadow(self, estimate) -> Optional[Dict[str, Any]]:
+        if estimate is None:
+            return None
+        return {
+            "completed_valence": float(estimate.completed_valence),
+            "completed_arousal": float(estimate.completed_arousal),
+            "pred_valence": float(estimate.pred_valence),
+            "pred_arousal": float(estimate.pred_arousal),
+            "uncertainty": float(estimate.mood_uncertainty),
+            "residual": float(estimate.residual),
+            "alpha": float(estimate.alpha),
+            "evidence": dict(estimate.evidence),
+        }
+
+    def _shadow_mode_label(self, u: float) -> str:
+        if u >= 0.85:
+            return "yield"
+        if u >= 0.65:
+            return "confirm"
+        if u >= 0.4:
+            return "explore"
+        return "commit"
+
+    def _compute_shadow_estimate(
+        self,
+        affect: AffectSample,
+        prospective: Optional[Dict[str, Any]],
+        culture_ctx: CultureContext,
+    ):
+        estimator = getattr(self, "_shadow_estimator", None)
+        if estimator is None or prospective is None:
+            return None
+        try:
+            confidence = float(getattr(affect, "confidence", 0.5))
+            culture_val = getattr(culture_ctx, "valence", None)
+            return estimator.estimate(
+                affect,
+                prospective=prospective,
+                replay_stats=None,
+                sensor_confidence=confidence,
+                culture_bias=culture_val,
+            )
+        except Exception:
+            return None
+
+    def _apply_shadow_controls(self, controls: AffectControls, estimate) -> None:
+        u = float(getattr(estimate, "mood_uncertainty", 0.0))
+        cfg = self.policy.config
+        pause = float(controls.pause_ms) + 200.0 * u
+        controls.pause_ms = int(np.clip(pause, *cfg.pause_bounds))
+        temp = float(controls.temperature) - 0.15 * u
+        controls.temperature = float(np.clip(temp, *cfg.temp_bounds))
+        top_p = float(controls.top_p) - 0.05 * u
+        controls.top_p = float(np.clip(top_p, *cfg.top_p_bounds))
+
     def _serialize_prospective(
         self, prospective: Optional[Dict[str, Any]]
     ) -> Optional[Dict[str, Any]]:
@@ -1863,24 +1955,24 @@ class EmotionalHubRuntime:
 
     def _culture_behavior_hint(self, behavior: BehaviorMod) -> str:
         tone_hints = {
-            "polite": "声の端々を少し丁寧にして、言い切りも和らげてください。",
-            "casual": "肩の力を抜いた柔らかい語尾で、距離を縮めるように話してください。",
-            "neutral": "標準的な語尾で落ち着いたトーンを保ってください。",
+            "polite": "声の端、E��少し丁寧にして、言ぁE�Eりも和らげてください、E,
+            "casual": "肩の力を抜いた柔らかぁE��尾で、距離を縮めるように話してください、E,
+            "neutral": "標準的な語尾で落ち着ぁE��ト�Eンを保ってください、E,
         }
         tone_line = tone_hints.get(behavior.tone, tone_hints["neutral"])
         empathy_line = (
-            "気持ちの背景を一度言い添えると安心できます。"
+            "気持ちの背景を一度言ぁE��えると安忁E��きます、E
             if behavior.empathy_level >= 0.65
-            else "共感は一言添える程度で十分です。"
+            else "共感�E一言添える程度で十�Eです、E
         )
         joke_line = (
-            "軽いユーモアを 1 行だけ差し込んでも大丈夫。"
+            "軽ぁE��ーモアめE1 行だけ差し込んでも大丈夫、E
             if behavior.joke_ratio >= 0.4
-            else "冗談は控えめにして、落ち着いた語り口にしてください。"
+            else "冗諁E�E控えめにして、落ち着ぁE��語り口にしてください、E
         )
         return (
             f"[culture-field] {tone_line} {empathy_line} "
-            f"Directness≈{behavior.directness:.2f}, joke_ratio≈{behavior.joke_ratio:.2f}. {joke_line}"
+            f"Directness≁Ebehavior.directness:.2f}, joke_ratio≁Ebehavior.joke_ratio:.2f}. {joke_line}"
         )
 
     def _log_moment_entry(
@@ -1938,6 +2030,7 @@ class EmotionalHubRuntime:
             response_meta=self._serialize_response_meta(response),
             behavior_mod=behavior_payload,
             emotion_tag=emotion_tag,
+            shadow=self._last_shadow_estimate,
             emotion_axes_sensor=(
                 list(self._last_sensor_axes) if self._last_sensor_axes else None
             ),
