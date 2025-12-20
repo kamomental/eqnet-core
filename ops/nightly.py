@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Nightly consolidation orchestration for ATRi."""
 
 from __future__ import annotations
@@ -453,6 +453,7 @@ def _apply_go_sc_gate(
     if fail_safe_meta:
         fast_report["fail_safe"] = fail_safe_meta
     inner_replay = _summarize_inner_replay_metrics(events)
+    qualia_report = _summarize_qualia_metrics(events)
 
     return {
         "status": "ok",
@@ -464,6 +465,7 @@ def _apply_go_sc_gate(
         "nightly_metrics": nightly_metrics,
         "fastpath": fast_report,
         "inner_replay": inner_replay,
+        "qualia": qualia_report,
     }
 
 
@@ -531,6 +533,48 @@ def _summarize_fastpath_metrics(events: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def _summarize_inner_replay_metrics(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+
+
+def _summarize_qualia_metrics(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    total = 0
+    u_sum = 0.0
+    m_sum = 0.0
+    load_sum = 0.0
+    gate_samples = 0
+    gate_open_sum = 0.0
+    unconscious = 0
+    for event in events:
+        receipt = (event.get("meta") or {}).get("receipt") or {}
+        qualia_bucket = receipt.get("qualia") or {}
+        if not qualia_bucket:
+            continue
+        total += 1
+        try:
+            u_sum += float(qualia_bucket.get("u_t", 0.0) or 0.0)
+            m_sum += float(qualia_bucket.get("m_t", 0.0) or 0.0)
+            load_sum += float(qualia_bucket.get("load", qualia_bucket.get("load_t", 0.0)) or 0.0)
+        except (TypeError, ValueError):
+            pass
+        if "a_t" in qualia_bucket:
+            gate_samples += 1
+            try:
+                gate_open_sum += float(qualia_bucket.get("a_t", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                pass
+        try:
+            unconscious += int(qualia_bucket.get("unconscious_success", 0))
+        except (TypeError, ValueError):
+            pass
+    if total == 0:
+        return {"count": 0}
+    return {
+        "count": total,
+        "u_mean": _safe_mean(u_sum, total),
+        "m_mean": _safe_mean(m_sum, total),
+        "load_mean": _safe_mean(load_sum, total),
+        "gate_open_rate": _safe_mean(gate_open_sum, gate_samples) if gate_samples else None,
+        "unconscious_success_rate": _safe_mean(unconscious, total),
+    }
     total = 0
     execute = 0
     cancel = 0
@@ -2697,7 +2741,7 @@ def main() -> None:
     print(f"Nightly summary written to {args.markdown_path}")
 
 
-__all__ = ["run", "_apply_go_sc_gate", "_summarize_fastpath_metrics", "_summarize_inner_replay_metrics"]
+__all__ = ["run", "_apply_go_sc_gate", "_summarize_fastpath_metrics", "_summarize_inner_replay_metrics", "_summarize_qualia_metrics"]
 
 
 if __name__ == "__main__":

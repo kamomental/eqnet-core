@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Generic fast-path summarizer for multiple task profiles."""
 
 from __future__ import annotations
@@ -138,6 +138,8 @@ def decide_fastpath(
     outcome = ctrl.run_cycle(inputs)
     receipt: Dict[str, Any] = {"decisions": []}
     receipt["inner_replay"] = _serialize_outcome(outcome, cfg)
+    qualia_bucket = receipt.setdefault("qualia", {})
+    qualia_bucket["u_t"] = float(outcome.u_hat or 0.0)
     receipt["decisions"].append({"fastpath_inner_replay": outcome.decision})
     final = context.get("fallback_decision")
     receipt["final"] = final or outcome.decision

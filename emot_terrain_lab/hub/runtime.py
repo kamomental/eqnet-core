@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 End-to-end runtime scaffold that ties perception, EQNet metrics, policy
 controls, and the LLM hub together.
@@ -49,7 +49,10 @@ from eqnet.qualia_model import (
 from eqnet.runtime.state import QualiaState
 from eqnet.modules.prospective_drive_core import PDCConfig, ProspectiveDriveCore
 from emot_terrain_lab.terrain.emotion import AXES
-from emot_terrain_lab.mind.shadow_estimator import ShadowEstimator, ShadowEstimatorConfig
+from emot_terrain_lab.mind.shadow_estimator import (
+    ShadowEstimator,
+    ShadowEstimatorConfig,
+)
 from eqnet_core.memory.diary import DiaryWriter
 from eqnet_core.memory.mosaic import MemoryMosaic
 from eqnet_core.models.conscious import (
@@ -66,6 +69,7 @@ from eqnet_core.models.conscious import (
 )
 from eqnet_core.models.emotion import EmotionVector, ValueGradient
 from eqnet_core.models.talk_mode import TalkMode
+from eqnet_core.qualia import AccessGate, AccessGateConfig, MetaMonitor
 from .perception import PerceptionBridge, PerceptionConfig, AffectSample
 from .policy import PolicyHead, PolicyConfig, AffectControls
 from .llm_hub import LLMHub, LLMHubConfig, HubResponse
@@ -135,9 +139,7 @@ class BoundaryConfig:
 class ResetConfig:
     enabled: bool = False
     boundary_threshold: float = 0.75
-    targets: List[str] = field(
-        default_factory=lambda: ["scratchpad", "affective_echo"]
-    )
+    targets: List[str] = field(default_factory=lambda: ["scratchpad", "affective_echo"])
     preserve: List[str] = field(default_factory=list)
 
 
@@ -169,7 +171,9 @@ class DevelopmentConfig:
 class ConsciousnessConfig:
     enabled: bool = True
     reflex: ReflexRouteConfig = field(default_factory=ReflexRouteConfig)
-    conscious_threshold: ConsciousThresholdConfig = field(default_factory=ConsciousThresholdConfig)
+    conscious_threshold: ConsciousThresholdConfig = field(
+        default_factory=ConsciousThresholdConfig
+    )
     memory_path: str = "logs/conscious_episodes.jsonl"
     diary_path: str = "logs/conscious_diary.jsonl"
     habit_tags: List[str] = field(default_factory=list)
@@ -179,7 +183,6 @@ class ConsciousnessConfig:
     force_matrix: Optional[Dict[str, Dict[str, float]]] = None
     boundary: BoundaryConfig = field(default_factory=BoundaryConfig)
     reset: ResetConfig = field(default_factory=ResetConfig)
-
 
 
 def apply_mask_layer(
@@ -460,7 +463,9 @@ class EmotionalHubRuntime:
         self._last_E = np.zeros(len(AXES), dtype=float)
         self._last_snapshot: Optional[Dict[str, np.ndarray]] = None
         self._last_qualia: Dict[str, Any] = {}
-        self._self_model: SelfModel = self.config.self_model or self._default_self_model()
+        self._self_model: SelfModel = (
+            self.config.self_model or self._default_self_model()
+        )
         self._persona_conscious_overrides: Dict[str, Any] = (
             self._extract_persona_conscious_overrides()
         )
@@ -485,6 +490,12 @@ class EmotionalHubRuntime:
         self._last_user_ts: float = 0.0
         self._prev_affect_vec: Optional[np.ndarray] = None
         self._prev_prev_affect_vec: Optional[np.ndarray] = None
+        self._prev_qualia_vec: Optional[np.ndarray] = None
+        gate_env = (os.getenv("EQNET_QUALIA_GATE", "1") or "1").lower()
+        self._qualia_gate_enabled = gate_env not in {"0", "false", "off"}
+        self._qualia_gate = AccessGate(AccessGateConfig())
+        self._qualia_meta = MetaMonitor()
+        self._last_qualia_gate: Dict[str, Any] = {}
         self._last_gate_context: Dict[str, Any] = {}
         self._last_life_indicator: float = 0.0
         self._last_eqframe: Optional[EQFrame] = None
@@ -504,7 +515,9 @@ class EmotionalHubRuntime:
         self._last_future_risk: Optional[float] = None
         self._imagery_history = deque(maxlen=16)
         self._future_hope_cfg = FutureReplayConfig(steps=4, noise_scale=0.15, window=3)
-        self._future_hope_trigger = float(os.getenv("EQNET_FUTURE_HOPE_TRIGGER", "0.25"))
+        self._future_hope_trigger = float(
+            os.getenv("EQNET_FUTURE_HOPE_TRIGGER", "0.25")
+        )
         self._future_hope_log_path = Path("logs/future_imagery.jsonl")
         self._last_future_hope: Optional[float] = None
         self.eqnet_system: Optional[EmotionalMemorySystem] = None
@@ -798,7 +811,7 @@ class EmotionalHubRuntime:
         context:
             Optional contextual text (e.g., RAG snippets).
         intent:
-            Intent label for the hub router (qa/chitchat/code窶�E�).
+            Intent label for the hub router (qa/chitchat/code遯ｶ・ｽE・ｽ).
         fast_only:
             When true, skips heavy operations (memory reference lookup, LLM call)
             so that the caller can issue a quick acknowledgement before the full
@@ -846,7 +859,9 @@ class EmotionalHubRuntime:
         )
         if shadow_estimate is not None:
             metrics = dict(metrics)
-            metrics.setdefault("shadow_uncertainty", float(shadow_estimate.mood_uncertainty))
+            metrics.setdefault(
+                "shadow_uncertainty", float(shadow_estimate.mood_uncertainty)
+            )
             metrics.setdefault("shadow_residual", float(shadow_estimate.residual))
         self._last_shadow_estimate = self._serialize_shadow(shadow_estimate)
         self._last_metrics = metrics
@@ -954,7 +969,9 @@ class EmotionalHubRuntime:
         if not self.config.use_eqnet_core:
             self._last_qualia = qualia_vec.to_dict()
         prediction_error = self._compute_prediction_error(delta_m, metrics)
-        route = self._decide_response_route(qualia_vec, prediction_error, text_input, gate_ctx)
+        route = self._decide_response_route(
+            qualia_vec, prediction_error, text_input, gate_ctx
+        )
         metrics = dict(metrics)
         metrics["conscious_prediction_error"] = prediction_error
         metrics["response_route"] = route.value
@@ -1148,6 +1165,17 @@ class EmotionalHubRuntime:
         impl_ctx = self._current_impl_context((time.time() - start_ts) * 1000.0)
         self._last_impl_context = impl_ctx
         boundary_signal = self._compute_boundary_signal(prediction_error)
+        response, episode_narrative = self._apply_qualia_gate(
+            response=response,
+            narrative_text=getattr(response, "text", None),
+            qualia_vec=qualia_vec,
+            gate_ctx=gate_ctx,
+            boundary_signal=boundary_signal,
+            ack_text=ack_text,
+            ack_for_fast=ack_for_fast,
+            metrics=metrics,
+            prediction_error=prediction_error,
+        )
         self._last_persona_meta = dict(persona_meta)
         if not fast_only:
             context_snapshot = self._build_context_payload(
@@ -1160,7 +1188,7 @@ class EmotionalHubRuntime:
             self._maybe_store_conscious_episode(
                 qualia=qualia_vec,
                 prediction_error=prediction_error,
-                narrative=getattr(response, "text", None),
+                narrative=episode_narrative,
                 route=route,
                 context=context_snapshot,
                 implementation=impl_ctx,
@@ -1192,6 +1220,7 @@ class EmotionalHubRuntime:
             "persona_meta": persona_meta,
             "response_route": route.value,
             "shadow": self._last_shadow_estimate,
+            "qualia_gate": dict(self._last_qualia_gate),
         }
 
     # ------------------------------------------------------------------ #
@@ -1271,6 +1300,77 @@ class EmotionalHubRuntime:
         )
         self._last_E = np.array(phi_vec, copy=True)
         return rate, phase
+
+    def _apply_qualia_gate(
+        self,
+        *,
+        response: Optional[HubResponse],
+        narrative_text: Optional[str],
+        qualia_vec: EmotionVector,
+        gate_ctx: GateContext,
+        boundary_signal: Optional[BoundarySignal],
+        ack_text: Optional[str],
+        ack_for_fast: Optional[str],
+        metrics: Dict[str, float],
+        prediction_error: float,
+    ) -> Tuple[Optional[HubResponse], Optional[str]]:
+        """Decide whether to surface the narrative output."""
+        current_vec = self._qualia_vector_to_array(qualia_vec)
+        pred_vec = self._prev_qualia_vec if self._prev_qualia_vec is not None else current_vec
+        self._prev_qualia_vec = current_vec
+        boundary_score = float(getattr(boundary_signal, "score", 0.0) or 0.0)
+        u_t = float(metrics.get("shadow_uncertainty", prediction_error) or 0.0)
+        if not math.isfinite(u_t):
+            u_t = 0.0
+        load_t = float(
+            max(
+                0.0,
+                gate_ctx.delta_m + gate_ctx.jerk + (1.0 if gate_ctx.text_input else 0.0),
+            )
+        )
+        payload: Dict[str, Any] = {"enabled": self._qualia_gate_enabled, "timestamp": time.time(), "boundary_score": boundary_score, "load_t": load_t}
+        if not self._qualia_gate_enabled:
+            payload.update({"u_t": u_t, "m_t": 0.0, "allow": True})
+            self._last_qualia_gate = payload
+            return response, narrative_text
+        m_t = float(self._qualia_meta.compute(pred_vec, current_vec))
+        gate_result = self._qualia_gate.decide(
+            u_t=u_t,
+            m_t=m_t,
+            load_t=load_t,
+            override=bool(gate_ctx.force_listen),
+            reason="safety" if gate_ctx.force_listen else "normal",
+        )
+        payload.update(gate_result)
+        payload["m_kind"] = "cosine"
+        allow = bool(gate_result.get("allow", True))
+        metrics["qualia/u_t"] = u_t
+        metrics["qualia/m_t"] = m_t
+        metrics["qualia/load"] = load_t
+        metrics["qualia/gate_allow"] = 1.0 if allow else 0.0
+        if not allow:
+            minimal = ack_text or ack_for_fast or _ACK_TEMPLATES.get(TalkMode.WATCH, "...")
+            if minimal:
+                response = self._wrap_ack_response(minimal, self._talk_mode)
+            narrative_text = None
+            payload["suppress_narrative"] = True
+            payload["unconscious_success"] = 1
+        else:
+            payload["unconscious_success"] = 0
+        self._last_qualia_gate = payload
+        return response, narrative_text
+
+    def _qualia_vector_to_array(self, qualia: EmotionVector) -> np.ndarray:
+        return np.array(
+            [
+                float(qualia.valence),
+                float(qualia.arousal),
+                float(qualia.love),
+                float(qualia.stress),
+                float(qualia.mask),
+            ],
+            dtype=float,
+        )
 
     def _build_inner_spec(self) -> Dict[str, Any]:
         """Collect a lightweight snapshot of the inner (Phi/Psi/K/M/PDC) state."""
@@ -1621,7 +1721,9 @@ class EmotionalHubRuntime:
         target_love = 0.7
         return np.array([target_valence - valence, target_love - love], dtype=float)
 
-    def _apply_future_imagery(self, metrics: Dict[str, float], talk_mode: TalkMode) -> TalkMode:
+    def _apply_future_imagery(
+        self, metrics: Dict[str, float], talk_mode: TalkMode
+    ) -> TalkMode:
         hope = self._evaluate_future_hope(metrics)
         if hope is None:
             return talk_mode
@@ -1955,24 +2057,28 @@ class EmotionalHubRuntime:
 
     def _culture_behavior_hint(self, behavior: BehaviorMod) -> str:
         tone_hints = {
-            "polite": "声の端、E��少し丁寧にして、言ぁE�Eりも和らげてください、E,
-            "casual": "肩の力を抜いた柔らかぁE��尾で、距離を縮めるように話してください、E,
-            "neutral": "標準的な語尾で落ち着ぁE��ト�Eンを保ってください、E,
+            "polite": "声の端を少し丁寧にして、言い回しも和らげてください。",
+            "casual": "肩の力を抜いた柔らかい語尾で、距離を縮めるように話してください。",
+            "neutral": "標準的な語尾で、落ち着いたトーンを保ってください。",
         }
         tone_line = tone_hints.get(behavior.tone, tone_hints["neutral"])
+
         empathy_line = (
-            "気持ちの背景を一度言ぁE��えると安忁E��きます、E
+            "気持ちの背景を一度言葉にすると安心します。"
             if behavior.empathy_level >= 0.65
-            else "共感�E一言添える程度で十�Eです、E
+            else "共感は一言添える程度で十分です。"
         )
+
         joke_line = (
-            "軽ぁE��ーモアめE1 行だけ差し込んでも大丈夫、E
+            "軽いユーモアを1行だけ差し込んでも大丈夫です。"
             if behavior.joke_ratio >= 0.4
-            else "冗諁E�E控えめにして、落ち着ぁE��語り口にしてください、E
+            else "冗談は控えめにして、落ち着いた語り口にしてください。"
         )
+
         return (
             f"[culture-field] {tone_line} {empathy_line} "
-            f"Directness≁Ebehavior.directness:.2f}, joke_ratio≁Ebehavior.joke_ratio:.2f}. {joke_line}"
+            f"Directness={behavior.directness:.2f}, "
+            f"joke_ratio={behavior.joke_ratio:.2f}. {joke_line}"
         )
 
     def _log_moment_entry(
@@ -2138,15 +2244,21 @@ class EmotionalHubRuntime:
             safety={"rating": "G", "memory_recall": "true"},
         )
 
-    def _build_emotion_vector(self, metrics: Mapping[str, float], affect: AffectSample) -> EmotionVector:
+    def _build_emotion_vector(
+        self, metrics: Mapping[str, float], affect: AffectSample
+    ) -> EmotionVector:
         payload = dict(metrics)
         payload.setdefault("valence", float(getattr(affect, "valence", 0.0)))
         payload.setdefault("arousal", float(getattr(affect, "arousal", 0.0)))
         payload.setdefault("love", float(metrics.get("love", 0.0)))
         payload.setdefault("stress", float(metrics.get("stress", 0.0)))
         payload.setdefault("mask", float(metrics.get("mask", 0.0)))
-        payload.setdefault("heart_rate_norm", float(metrics.get("heart_rate_norm", self._heart_rate)))
-        payload.setdefault("breath_ratio_norm", float(metrics.get("breath_ratio_norm", 0.0)))
+        payload.setdefault(
+            "heart_rate_norm", float(metrics.get("heart_rate_norm", self._heart_rate))
+        )
+        payload.setdefault(
+            "breath_ratio_norm", float(metrics.get("breath_ratio_norm", 0.0))
+        )
         payload["value_gradient"] = self._value_gradient_snapshot().to_dict()
         return EmotionVector.from_metrics(payload)
 
@@ -2159,14 +2271,20 @@ class EmotionalHubRuntime:
         adjustment = 0.25
         return ValueGradient(
             survival_bias=base.survival_bias,
-            physiological_bias=float(np.clip(base.physiological_bias + (0.5 - energy) * adjustment, 0.0, 1.0)),
+            physiological_bias=float(
+                np.clip(base.physiological_bias + (0.5 - energy) * adjustment, 0.0, 1.0)
+            ),
             social_bias=base.social_bias,
-            exploration_bias=float(np.clip(base.exploration_bias + (energy - 0.5) * adjustment, 0.0, 1.0)),
+            exploration_bias=float(
+                np.clip(base.exploration_bias + (energy - 0.5) * adjustment, 0.0, 1.0)
+            ),
             attachment_bias=base.attachment_bias,
         )
 
     def _safety_lens(self, vg: ValueGradient) -> float:
-        return float(np.clip(0.7 * vg.survival_bias + 0.3 * vg.physiological_bias, 0.0, 1.0))
+        return float(
+            np.clip(0.7 * vg.survival_bias + 0.3 * vg.physiological_bias, 0.0, 1.0)
+        )
 
     def _empathy_lens(self, vg: ValueGradient) -> float:
         return float(np.clip(0.6 * vg.social_bias + 0.4 * vg.attachment_bias, 0.0, 1.0))
@@ -2174,7 +2292,9 @@ class EmotionalHubRuntime:
     def _exploration_lens(self, vg: ValueGradient) -> float:
         return float(np.clip(vg.exploration_bias, 0.0, 1.0))
 
-    def _is_low_risk_context(self, prediction_error: float, gate_ctx: GateContext) -> bool:
+    def _is_low_risk_context(
+        self, prediction_error: float, gate_ctx: GateContext
+    ) -> bool:
         if gate_ctx.force_listen:
             return False
         if prediction_error >= 0.4:
@@ -2182,12 +2302,17 @@ class EmotionalHubRuntime:
         return True
 
     def _current_impl_context(self, latency_ms: float) -> ImplementationContext:
-        hardware = os.getenv("EQNET_HARDWARE_PROFILE") or platform.node() or platform.system() or "unknown"
+        hardware = (
+            os.getenv("EQNET_HARDWARE_PROFILE")
+            or platform.node()
+            or platform.system()
+            or "unknown"
+        )
         try:
             memory_load = float(os.getenv("EQNET_MEMORY_LOAD", 0.0))
         except (TypeError, ValueError):
             memory_load = 0.0
-        sensor_snapshot = getattr(self._runtime_sensors, 'snapshot', None)
+        sensor_snapshot = getattr(self._runtime_sensors, "snapshot", None)
         sensor_fidelity = 1.0 if sensor_snapshot is not None else 0.5
         return ImplementationContext(
             hardware_profile=str(hardware),
@@ -2229,20 +2354,29 @@ class EmotionalHubRuntime:
             if cap > 0.0:
                 narr_penalty = min(narr_penalty, cap)
                 reflex_bonus = min(reflex_bonus, cap)
-            adjusted[SelfLayer.NARRATIVE] = adjusted.get(SelfLayer.NARRATIVE, 0.0) - narr_penalty
-            adjusted[SelfLayer.REFLEX] = adjusted.get(SelfLayer.REFLEX, 0.0) + reflex_bonus
+            adjusted[SelfLayer.NARRATIVE] = (
+                adjusted.get(SelfLayer.NARRATIVE, 0.0) - narr_penalty
+            )
+            adjusted[SelfLayer.REFLEX] = (
+                adjusted.get(SelfLayer.REFLEX, 0.0) + reflex_bonus
+            )
 
         bump = float(damping.context_bump)
         if bump:
+
             def _hit(targets: Tuple[str, ...]) -> bool:
                 return any(tag in tags for tag in (t.lower() for t in targets))
 
             if _hit(damping.reflex_tags):
                 adjusted[SelfLayer.REFLEX] = adjusted.get(SelfLayer.REFLEX, 0.0) + bump
             if _hit(damping.affective_tags):
-                adjusted[SelfLayer.AFFECTIVE] = adjusted.get(SelfLayer.AFFECTIVE, 0.0) + bump
+                adjusted[SelfLayer.AFFECTIVE] = (
+                    adjusted.get(SelfLayer.AFFECTIVE, 0.0) + bump
+                )
             if _hit(damping.narrative_tags):
-                adjusted[SelfLayer.NARRATIVE] = adjusted.get(SelfLayer.NARRATIVE, 0.0) + bump
+                adjusted[SelfLayer.NARRATIVE] = (
+                    adjusted.get(SelfLayer.NARRATIVE, 0.0) + bump
+                )
 
         tag_bumps = getattr(damping, "tag_bumps", {}) or {}
         if tag_bumps:
@@ -2267,7 +2401,9 @@ class EmotionalHubRuntime:
         return adjusted
 
     @staticmethod
-    def _force_snapshot_from_scores(scores: Mapping[SelfLayer, float]) -> SelfForceSnapshot:
+    def _force_snapshot_from_scores(
+        scores: Mapping[SelfLayer, float],
+    ) -> SelfForceSnapshot:
         return SelfForceSnapshot(
             reflex=float(scores.get(SelfLayer.REFLEX, 0.0)),
             affective=float(scores.get(SelfLayer.AFFECTIVE, 0.0)),
@@ -2278,11 +2414,14 @@ class EmotionalHubRuntime:
     def _force_vector(snapshot: Optional[SelfForceSnapshot]) -> Optional[np.ndarray]:
         if snapshot is None:
             return None
-        return np.array([
-            float(snapshot.reflex),
-            float(snapshot.affective),
-            float(snapshot.narrative),
-        ], dtype=float)
+        return np.array(
+            [
+                float(snapshot.reflex),
+                float(snapshot.affective),
+                float(snapshot.narrative),
+            ],
+            dtype=float,
+        )
 
     @staticmethod
     def _layer_from_name(name: str) -> Optional[SelfLayer]:
@@ -2295,7 +2434,9 @@ class EmotionalHubRuntime:
             return SelfLayer.NARRATIVE
         return None
 
-    def _compute_boundary_signal(self, prediction_error: float) -> Optional[BoundarySignal]:
+    def _compute_boundary_signal(
+        self, prediction_error: float
+    ) -> Optional[BoundarySignal]:
         cfg = getattr(self.config.conscious, "boundary", None)
         current_damped = self._last_self_force
         current_raw = self._last_raw_force
@@ -2381,11 +2522,15 @@ class EmotionalHubRuntime:
             base_scores[layer] = self._layer_force_score(layer, vg, fm)
         raw_snapshot = self._force_snapshot_from_scores(base_scores).with_winner()
         self._last_raw_force = raw_snapshot
-        adjusted = self._apply_context_damping(base_scores, impl_ctx, context_tags or [])
+        adjusted = self._apply_context_damping(
+            base_scores, impl_ctx, context_tags or []
+        )
         self._last_self_force = self._force_snapshot_from_scores(adjusted).with_winner()
         return max(adjusted.items(), key=lambda kv: kv[1])[0]
 
-    def _compute_prediction_error(self, delta_m: float, metrics: Mapping[str, float]) -> float:
+    def _compute_prediction_error(
+        self, delta_m: float, metrics: Mapping[str, float]
+    ) -> float:
         novelty = float(metrics.get("novelty", 0.0) or 0.0)
         body_flag = float(metrics.get("body_surprise", 0.0) or 0.0)
         return float(np.clip(max(delta_m, novelty, body_flag), 0.0, 2.0))
@@ -2409,25 +2554,31 @@ class EmotionalHubRuntime:
 
         if not self.config.conscious.enabled:
             return _finish(ResponseRoute.CONSCIOUS)
-        vg = getattr(qualia, 'value_gradient', None) or self._value_gradient_snapshot()
+        vg = getattr(qualia, "value_gradient", None) or self._value_gradient_snapshot()
         safety_bias = self._safety_lens(vg)
         exploration_bias = self._exploration_lens(vg)
         empathy_bias = self._empathy_lens(vg)
         cfg = self.config.conscious
-        if safety_bias >= 0.8 and prediction_error >= cfg.reflex.prediction_error_threshold:
+        if (
+            safety_bias >= 0.8
+            and prediction_error >= cfg.reflex.prediction_error_threshold
+        ):
             return _finish(ResponseRoute.REFLEX)
         if self._should_use_reflex(qualia, prediction_error):
             return _finish(ResponseRoute.REFLEX)
         if self._should_use_habit(text_input, gate_ctx):
             return _finish(ResponseRoute.HABIT)
-        if exploration_bias >= 0.7 and self._is_low_risk_context(prediction_error, gate_ctx):
+        if exploration_bias >= 0.7 and self._is_low_risk_context(
+            prediction_error, gate_ctx
+        ):
             return _finish(ResponseRoute.CONSCIOUS)
         if empathy_bias >= 0.65 and text_input:
             return _finish(ResponseRoute.CONSCIOUS)
         return _finish(ResponseRoute.CONSCIOUS)
 
-
-    def _should_use_reflex(self, qualia: EmotionVector, prediction_error: float) -> bool:
+    def _should_use_reflex(
+        self, qualia: EmotionVector, prediction_error: float
+    ) -> bool:
         cfg = self.config.conscious.reflex
         if prediction_error >= cfg.prediction_error_threshold:
             return True
@@ -2444,7 +2595,9 @@ class EmotionalHubRuntime:
 
     def _reflex_prompt(self, prediction_error: float) -> str:
         if prediction_error > 1.0:
-            return "Hold on - I'm flagging something unexpected. Are you safe right now?"
+            return (
+                "Hold on - I'm flagging something unexpected. Are you safe right now?"
+            )
         return "Give me a second; something feels off so I'm switching to safety mode."
 
     def _habit_prompt(self, user_text: Optional[str]) -> str:
@@ -2452,7 +2605,7 @@ class EmotionalHubRuntime:
             return "I'll handle that routine step real quick."
         snippet = user_text.strip().splitlines()[0]
         if len(snippet) > 48:
-            snippet = snippet[:45].rstrip() + '...'
+            snippet = snippet[:45].rstrip() + "..."
         return f"Let me answer that quickly: {snippet}"
 
     def _build_context_payload(
@@ -2486,7 +2639,9 @@ class EmotionalHubRuntime:
         self._self_model.current_mode = self._talk_mode
         energy = float(np.clip(1.0 - 0.3 * max(qualia.stress, 0.0), 0.1, 1.0))
         self._self_model.current_energy = energy
-        attachment = 0.9 * self._self_model.attachment_to_user + 0.1 * max(qualia.love, 0.0)
+        attachment = 0.9 * self._self_model.attachment_to_user + 0.1 * max(
+            qualia.love, 0.0
+        )
         self._self_model.attachment_to_user = float(np.clip(attachment, 0.0, 1.0))
 
     def _maybe_store_conscious_episode(
@@ -2528,7 +2683,6 @@ class EmotionalHubRuntime:
         if self._diary_writer is not None:
             self._diary_writer.write_conscious_episode(episode)
         return episode
-
 
     def _meets_conscious_threshold(
         self, qualia: EmotionVector, prediction_error: float, context: Mapping[str, Any]
@@ -2575,9 +2729,3 @@ class EmotionalHubRuntime:
                 handle.write("\n")
         except Exception:
             pass
-
-
-
-
-
-
