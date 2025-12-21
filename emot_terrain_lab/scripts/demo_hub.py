@@ -35,7 +35,7 @@ def main() -> None:
     runtime.observe_video(frame)
     runtime.observe_audio(audio)
 
-    result = runtime.step(user_text="ねえ、今日の気分はどう？")
+    result = runtime.step(user_text="hello")
     response = result["response"]
     controls = result["controls"]
 

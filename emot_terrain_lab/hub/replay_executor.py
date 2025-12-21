@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import time
 from typing import Any, Dict, List, Mapping, Optional, Tuple
@@ -14,6 +15,9 @@ from ..utils.io import append_jsonl
 from .phase_ratio_filter import HysteresisCfg, PhaseRatioFilter
 from devlife.mind.replay_memory import ReplayMemory
 from .future_memory import FutureMemoryController
+
+
+logger = logging.getLogger(__name__)
 
 
 class ReplayExecutor:
@@ -95,16 +99,34 @@ class ReplayExecutor:
         safety_ctx: Dict[str, Any],
         tau_rate: float,
     ) -> Dict[str, Any]:
+        try:
+            metrics = getattr(self.timekeeper, "metrics", None)
+            if isinstance(metrics, dict):
+                metrics["replay_executor/entered"] = int(metrics.get("replay_executor/entered", 0)) + 1
+        except Exception:
+            pass
+
+        logger.info(
+            "replay_executor.entered mode=%s has_ctx=%s",
+            getattr(getattr(self, "hub", None), "mode", self.mode),
+            isinstance(ctx_time, dict),
+        )
+
         replay_info: Dict[str, Any] = {"fired": False, "budget": 0, "horizon": 0}
         replay_details: Optional[Dict[str, Any]] = None
         best_choice: Optional[Dict[str, Any]] = None
         candidates: List[Dict[str, Any]] = []
         d_tau_step: Optional[float] = None
         future_snapshot: Optional[Any] = None
+        snapshot_payload: Optional[Dict[str, Any]] = None
 
         self._future_memory.update_future(plan)
 
         if self.mode not in {"reflective", "living"}:
+            logger.info(
+                "replay_executor.return_by_mode mode=%s",
+                getattr(getattr(self, "hub", None), "mode", self.mode),
+            )
             return {
                 "info": replay_info,
                 "details": replay_details,
@@ -115,6 +137,20 @@ class ReplayExecutor:
             }
 
         cooldown_tau = float(self.replay_cfg.get("cooldown_tau", 0.8))
+        trigger_inputs = {
+            k: (ctx_time.get(k) if isinstance(ctx_time, dict) else None)
+            for k in ("uncertainty", "novelty", "dU_est", "norm_risk", "pressure")
+        }
+        try:
+            since_last = float(self.timekeeper.since_last("replay"))
+        except Exception:
+            since_last = float("nan")
+        logger.info(
+            "replay_executor.signals=%s cooldown_tau=%.2f since_last=%.2f",
+            trigger_inputs,
+            cooldown_tau,
+            since_last,
+        )
         if not self._should_trigger(ctx_time, cooldown_tau):
             return {
                 "info": replay_info,

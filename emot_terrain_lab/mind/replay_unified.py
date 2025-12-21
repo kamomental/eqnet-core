@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from ..culture.norms import norms_penalty
-from ..value.model import compute_value_summary
+from devlife.value.model import compute_value_summary
 
 
 def _clip(value: float, lo: float, hi: float) -> float:

@@ -32,4 +32,17 @@ def deontic_gate(plan: Dict[str, Any], norms: Dict[str, float]) -> Dict[str, Any
     return adjusted
 
 
-__all__ = ["deontic_gate"]
+
+def norms_penalty(action: str, norms: Dict[str, float]) -> float:
+    """Return a small penalty when actions contradict politeness/humility norms."""
+    politeness = float(norms.get("politeness", 0.0))
+    humility = float(norms.get("humility", 0.0))
+    penalty = 0.0
+    if politeness > 0.7 and action == "clarify":
+        penalty += 0.05 * politeness
+    if humility > 0.7 and action == "reframe":
+        penalty += 0.05 * humility
+    return float(min(1.0, max(0.0, penalty)))
+
+
+__all__ = ["deontic_gate", "norms_penalty"]

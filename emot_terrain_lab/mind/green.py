@@ -8,6 +8,10 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
+
+def _clip(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
 AFFECT_AXES: Tuple[str, ...] = ("v", "a", "d", "n", "c", "e", "s")
 QUALIA_AXES: Tuple[str, ...] = ("sensation", "meaning")
 

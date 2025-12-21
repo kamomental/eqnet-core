@@ -1,4 +1,4 @@
-﻿model:
+model:
   use_assoc_kernel: false
   assoc_kernel:
     sigma_init: 1.2
@@ -8,6 +8,16 @@
     stride_s: 8
     use_kv_asymmetry: false
     use_bandwidth_gating: false
+hub:
+  mode: reflective
+
+qualia_gate:
+  theta: -1.45
+  k_u: 2.0
+  k_l: 2.0
+  u0: 0.5
+  l0: 0.5
+
 ignition:
   theta_on: 0.62
   theta_off: 0.48

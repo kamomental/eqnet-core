@@ -46,6 +46,7 @@ class SelfReporter:
         override = float(metrics.get("fastpath.override_rate", 0.0) or 0.0)
         body_r = float(metrics.get("body.R", 1.0) or 1.0)
         tension = float(metrics.get("tension", 0.0) or 0.0)
+        imagery_positive = bool(metrics.get("imagery_positive", False))
 
         mood, social_tone = self._classify_mood(love, trust, override)
         confidence = max(0.0, min(1.0, trust))

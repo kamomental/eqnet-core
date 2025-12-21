@@ -18,6 +18,7 @@ import time
 import hashlib
 import logging
 import uuid
+import platform
 
 import numpy as np
 from pathlib import Path
@@ -44,6 +45,7 @@ from eqnet.qualia_model import (
     FutureReplayConfig,
     blend_emotion_axes,
     compute_future_risk,
+    compute_future_hopefulness,
     sensor_to_emotion_axes,
 )
 from eqnet.runtime.state import QualiaState

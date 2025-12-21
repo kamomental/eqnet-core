@@ -145,8 +145,8 @@ class FutureMemoryController:
         past = self._past_success
         future = self._future_prior if self._clock() < self._future_expire else None
 
-        cos_past = _cosine(current_vec, past) if past is not None and current_vec is not None else None
-        cos_future = _cosine(current_vec, future) if future is not None and current_vec is not None else None
+        cos_past = _cosine(current_vec, past) if (past is not None and current_vec is not None and len(current_vec) == len(past)) else None
+        cos_future = _cosine(current_vec, future) if (future is not None and current_vec is not None and len(current_vec) == len(future)) else None
 
         bi_loss = 0.0
         if cos_past is not None:

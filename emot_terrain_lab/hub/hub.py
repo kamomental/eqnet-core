@@ -24,6 +24,7 @@ from typing import (
 )
 
 import yaml
+from terrain import llm as terrain_llm
 
 from .engine_bdh import BDHEngine
 from .engine_transformer import TransformerEngine
@@ -82,13 +83,28 @@ from .safety_orchestrator import SafetyOrchestrator
 from ..timekeeper import TimeKeeper
 from ..persona.prefs import apply_prefs_to_cfg, load_prefs
 from ..safety.acl import load_acl
-from ..feedback.event_bus import record_event as record_feedback_event
-from ..feedback.processor import apply_feedback as apply_feedback_event
+try:
+    from ..feedback.event_bus import record_event as record_feedback_event
+    from ..feedback.processor import apply_feedback as apply_feedback_event
+except Exception:
+    def record_feedback_event(*args, **kwargs):
+        return None
+    def apply_feedback_event(*args, **kwargs):
+        return None
 from ..ops.task_profiles import TASK_PROFILES
 from ..ops.task_fastpath import summarize_task_fastpath
 from ..utils.fastpath_config import load_fastpath_defaults, load_fastpath_overrides
 from devlife.mind.replay_memory import ReplayMemory, ReplayTrace
 
+
+
+class _LMStudioCallable:
+    def __call__(self, prompt: str) -> str:
+        system_prompt = "You are a helpful assistant. Keep responses concise."
+        try:
+            return terrain_llm.chat_text(system_prompt, prompt, temperature=0.6, top_p=0.9) or ""
+        except Exception:
+            return ""
 
 class Hub:
     """High-level coordinator connecting planning, inference, and logging."""
@@ -448,6 +464,8 @@ class Hub:
             return BDHEngine(bdh_cfg)
         model = cfg.get("transformer_model")
         tokenizer = cfg.get("transformer_tokenizer")
+        if not model:
+            model = _LMStudioCallable()
         return TransformerEngine(model, tokenizer)
 
     def _bootstrap_from_nightly(self) -> None:
@@ -1825,6 +1843,51 @@ class Hub:
                         or safety.get("bayes_decision") in {"READ_ONLY", "BLOCK"}
                     ),
                 }
+                qualia_block = receipt.setdefault("qualia", {})
+                qualia_gate = receipt.setdefault("qualia_gate", {})
+                def _opc_vec(src):
+                    return [float(src.get(k) or 0.0) for k in ("uncertainty", "pressure", "novelty", "norm_risk", "dU_est")]
+                u_t = float(qualia_block.get("u_t") or ctx_time.get("u_t") or ctx_time.get("uncertainty") or 0.0)
+                cur_vec = _opc_vec(ctx_time)
+                prev_vec = getattr(self, "_opc_prev_vec", None) or cur_vec
+                self._opc_prev_vec = cur_vec
+                def _opc_cosine_dist(a, b):
+                    da = math.sqrt(sum(x*x for x in a)) + 1e-12
+                    db = math.sqrt(sum(x*x for x in b)) + 1e-12
+                    dot = sum(x*y for x, y in zip(a, b))
+                    return float(1.0 - dot / (da * db))
+                m_t = _opc_cosine_dist(prev_vec, cur_vec)
+                load_t = float(max(0.0, float(ctx_time.get("pressure") or 0.0)))
+                gate_enabled = bool(ctx_time.get("qualia_gate_enabled", False))
+                k_u = 2.0
+                k_l = 2.0
+                u0 = 0.5
+                l0 = 0.5
+                theta = float((self.cfg.get("qualia_gate") or {}).get("theta", -1.45))
+                setattr(self, "_opc_theta", theta)
+                logit = k_u * (u0 - u_t) + k_l * (l0 - load_t) - theta
+                p_gate = 1.0 / (1.0 + math.exp(-logit))
+                if not gate_enabled:
+                    allow = True
+                    suppress = False
+                else:
+                    allow = bool(p_gate >= 0.5)
+                    suppress = not allow
+                qualia_block["u_t"] = u_t
+                qualia_block["m_t"] = float(m_t)
+                qualia_block["load"] = load_t
+                qualia_block["a_t"] = int(1 if allow else 0)
+                qualia_block["unconscious_success"] = int(1 if suppress else 0)
+                qualia_gate["logit"] = float(logit)
+                qualia_gate["p_t"] = float(p_gate)
+                qualia_gate["theta"] = float(theta)
+                qualia_gate["k_u"] = float(k_u)
+                qualia_gate["k_l"] = float(k_l)
+                qualia_gate["u0"] = float(u0)
+                qualia_gate["l0"] = float(l0)
+                qualia_gate["suppress_narrative"] = bool(suppress)
+                if receipt:
+                    trace_meta["receipt"] = receipt
                 trace = ReplayTrace(
                     trace_id=str(uuid.uuid4()),
                     episode_id=str(ctx_time.get("episode_id", "")),

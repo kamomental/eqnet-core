@@ -1,4 +1,4 @@
-Ôªø# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Nightly consolidation orchestration for ATRi."""
 
 from __future__ import annotations
@@ -55,6 +55,17 @@ from emot_terrain_lab.ops.care_canary import select_canary_ids
 from emot_terrain_lab.ops.monthly_highlights import generate_value_influence_highlights
 from emot_terrain_lab.ops.pain_loop import VALUE_INFLUENCE_LOG, evaluate_and_forgive, policy_update_from_forgiveness
 
+def _dump_events_if_requested(events):
+    out_path = os.getenv("EQNET_DUMP_REPLAY_EVENTS_JSONL", "").strip()
+    if not out_path:
+        return
+    path = Path(out_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        for ev in events:
+            f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+
+
 def _ensure_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -102,6 +113,7 @@ def run(hub, cfg: Dict[str, Any] | None = None) -> Dict[str, Any]:
     if hasattr(hub, "memory_ttl") and hasattr(hub, "replay_memory"):
         try:
             events = hub.replay_memory.load_all()
+            _dump_events_if_requested(events)
             if go_sc_cfg.get("enabled", False):
                 baseline_ttl_tau = float(getattr(getattr(hub.memory_ttl, "cfg", None), "ttl_tau_default", 24.0))
                 go_report = _apply_go_sc_gate(
@@ -693,14 +705,14 @@ def _describe_scatter(xs: List[float], ys: List[float], cs: List[int]) -> Dict[s
     br_ratio = br / total
     tl_ratio = tl / total
     if br_ratio >= 0.5:
-        verdict = "Âè≥‰∏ã„Å´ÁÇπ„ÅåÂ§ö„ÅÑÔºö„Çà„ÅÑÁä∂ÊÖã (execute „ÅåÁ¥†Áõ¥)„ÄÇ"
-        action = "„ÅÑ„Åæ„ÅÆË®≠ÂÆö„ÇíÁ∂≠ÊåÅ„Åó„Å§„Å§Êï£Â∏ÉÂõ≥„ÇíÁõ£Ë¶ñ„ÄÇ"
+        verdict = "âEâ∫Ç…ì_Ç™ëΩÇ¢ÅFÇÊÇ¢èÛë‘ (execute Ç™ëfíº)ÅB"
+        action = "Ç¢Ç‹ÇÃê›íËÇà€éùÇµÇ¬Ç¬éUïzê}ÇäƒéãÅB"
     elif tl_ratio >= 0.4:
-        verdict = "Â∑¶‰∏ä„Å´ÁÇπ„ÅåÂ§ö„ÅÑÔºö„Éñ„É¨„Éº„Ç≠„ÅåÂº∑„ÇÅ„ÄÇ"
-        action = "Œ≤ „ÇÑ œÑ „ÇíÂ∞ë„Åó‰∏ã„Åí„ÇãÊ°à„ÇíÊ§úË®é„ÄÇ"
+        verdict = "ç∂è„Ç…ì_Ç™ëΩÇ¢ÅFÉuÉåÅ[ÉLÇ™ã≠ÇﬂÅB"
+        action = "É¿ Ç‚ É— Çè≠Çµâ∫Ç∞ÇÈàƒÇåüì¢ÅB"
     else:
-        verdict = "‰∏≠Â§Æ„Å´ÁÇπ„ÅåÊï£„Çâ„Å∞„ÇäËø∑„ÅÑÊ∞óÂë≥„ÄÇ"
-        action = "„Éí„Çπ„ÉÜ„É™„Ç∑„ÇπÂπÖ„ÇíÂ∫É„Åí„Çã„ÅãÊèêÊ°à Œ≤‚ÄìœÑ „ÇíÂ∞èË¶èÊ®° A/B„ÄÇ"
+        verdict = "íÜâõÇ…ì_Ç™éUÇÁÇŒÇËñ¿Ç¢ãCñ°ÅB"
+        action = "ÉqÉXÉeÉäÉVÉXïùÇçLÇ∞ÇÈÇ©íÒàƒ É¿?É— Çè¨ãKñÕ A/BÅB"
     return {
         "verdict": verdict,
         "action": action,
@@ -911,7 +923,7 @@ def _render_assoc_plots(
         ax.plot(delta_clean, label="delta_m", color="#1f77b4", linewidth=1.2)
         if jerk_clean.size:
             ax.plot(jerk_clean, label="jerk", color="#ff7f0e", linewidth=1.0, alpha=0.9)
-        ax.set_title("Œîm / jerk (recent)")
+        ax.set_title("É¢m / jerk (recent)")
         ax.set_xlabel("step")
         ax.set_ylabel("value")
         ax.grid(alpha=0.2)
@@ -2270,8 +2282,8 @@ def _render_culture_narrative(
     candidates.sort(reverse=True)
     lines = ["", "**Culture quick notes**"]
     for _, tag, valence_f, rho_f, count_f in candidates[: max(1, top_k)]:
-        tendency = "„Éù„Ç∏ÂØÑ„Çä" if valence_f >= 0 else "„Éç„Ç¨ÂØÑ„Çä"
-        lines.append(f"- {tag}: {tendency} (valence {valence_f:+.2f}), œÅ={rho_f:.2f}, n={count_f}")
+        tendency = "É|ÉWäÒÇË" if valence_f >= 0 else "ÉlÉKäÒÇË"
+        lines.append(f"- {tag}: {tendency} (valence {valence_f:+.2f}), Éœ={rho_f:.2f}, n={count_f}")
     lines.append("")
     return lines
 
@@ -2297,11 +2309,11 @@ def _write_markdown_summary(
     if alerts_cfg:
         line = (
             "_Alert thresholds_: "
-            f"|valence_mean| ‚â§ {alerts_cfg.get('max_abs_valence_mean', 0.6)}, "
-            f"corr(rho,I) ‚â• {alerts_cfg.get('min_corr_rho_I', 0.2)}, "
-            f"corr(resonance) ‚â• {alerts_cfg.get('min_corr_rho_rho', 0.2)}, "
-            f"|lag| ‚â§ {alerts_cfg.get('max_allowed_lag', 8.0)}, "
-            f"n_eff ‚â• {alerts_cfg.get('min_resonance_samples', 0)}"
+            f"|valence_mean| ? {alerts_cfg.get('max_abs_valence_mean', 0.6)}, "
+            f"corr(rho,I) ? {alerts_cfg.get('min_corr_rho_I', 0.2)}, "
+            f"corr(resonance) ? {alerts_cfg.get('min_corr_rho_rho', 0.2)}, "
+            f"|lag| ? {alerts_cfg.get('max_allowed_lag', 8.0)}, "
+            f"n_eff ? {alerts_cfg.get('min_resonance_samples', 0)}"
         )
         lines.append("")
         lines.append(line)
@@ -2472,7 +2484,7 @@ def _write_markdown_summary(
                 top_unforgiven.append((kind, delta))
         if top_unforgiven:
             top_unforgiven.sort(key=lambda x: x[1], reverse=True)
-            summary = ", ".join(f"{kind}√ó{count}" for kind, count in top_unforgiven[:2])
+            summary = ", ".join(f"{kind}Å~{count}" for kind, count in top_unforgiven[:2])
             lines.append(f"- Unforgiven top: {summary}")
     affective_stats = report.get("affective_stats")
     if isinstance(affective_stats, dict):
@@ -2746,3 +2758,4 @@ __all__ = ["run", "_apply_go_sc_gate", "_summarize_fastpath_metrics", "_summariz
 
 if __name__ == "__main__":
     main()
+
