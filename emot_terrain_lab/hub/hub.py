@@ -745,6 +745,41 @@ class Hub:
         self._last_memory_gc_tau = tau_now
         return stats
 
+    def _safe_float(self, value: Any) -> Optional[float]:
+        try:
+            return float(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _infer_social_weight(self, plan: Mapping[str, Any]) -> Optional[float]:
+        mood = plan.get("mood") if isinstance(plan, Mapping) else None
+        if not isinstance(mood, Mapping):
+            return None
+        for key in ("social", "s"):
+            value = self._safe_float(mood.get(key))
+            if value is not None:
+                return value
+        return None
+
+    def _infer_constraint_weight(self, ctx_time: Mapping[str, Any]) -> Optional[float]:
+        constraints = ctx_time.get("constraints")
+        if isinstance(constraints, Mapping):
+            value = constraints.get("weight") or constraints.get("intensity")
+            coerced = self._safe_float(value)
+            if coerced is not None:
+                return coerced
+        if isinstance(constraints, list) and constraints:
+            return min(1.0, 0.25 * len(constraints))
+        return self._safe_float(ctx_time.get("pressure"))
+
+    def _infer_emotion_modulation(self, plan: Mapping[str, Any]) -> Optional[float]:
+        mood = plan.get("mood") if isinstance(plan, Mapping) else None
+        if not isinstance(mood, Mapping):
+            return None
+        valence = self._safe_float(mood.get("valence")) or 0.0
+        arousal = self._safe_float(mood.get("arousal")) or 0.0
+        return float(min(1.0, abs(valence) + abs(arousal)))
+
     def _prepare_thought_trace(
         self,
         candidates: List[Dict[str, Any]],
@@ -1287,6 +1322,12 @@ class Hub:
         best_choice = replay_result["best"]
         candidates_dump = replay_result["candidates"]
         d_tau_step_used = replay_result["d_tau_step"]
+        activation_trace_payload = replay_result.get("activation_trace")
+        scene_frames_payload = replay_result.get("scene_frames") or []
+        if activation_trace_payload:
+            ctx_time["activation_trace"] = activation_trace_payload
+        if scene_frames_payload:
+            ctx_time["scene_frames"] = scene_frames_payload
 
         if replay_details:
             best_summary = best_choice.get("summary") if best_choice else None
@@ -1843,6 +1884,10 @@ class Hub:
                         or safety.get("bayes_decision") in {"READ_ONLY", "BLOCK"}
                     ),
                 }
+                if activation_trace_payload:
+                    trace_meta["activation_trace_id"] = activation_trace_payload.get("trace_id")
+                if scene_frames_payload:
+                    trace_meta["scene_frames"] = scene_frames_payload[:3]
                 qualia_block = receipt.setdefault("qualia", {})
                 qualia_gate = receipt.setdefault("qualia_gate", {})
                 def _opc_vec(src):
@@ -1888,6 +1933,17 @@ class Hub:
                 qualia_gate["suppress_narrative"] = bool(suppress)
                 if receipt:
                     trace_meta["receipt"] = receipt
+                memory_kind = ctx_time.get("memory_kind")
+                if not memory_kind and activation_trace_payload:
+                    memory_kind = "episodic"
+                novelty_score = self._safe_float(ctx_time.get("novelty"))
+                social_weight = self._infer_social_weight(plan)
+                constraint_weight = self._infer_constraint_weight(ctx_time)
+                emotion_modulation = self._infer_emotion_modulation(plan)
+                conf_internal = replay_details.get("conf_internal")
+                conf_external = replay_details.get("conf_external")
+                replay_source = "replay" if replay_info.get("fired") else "live"
+
                 trace = ReplayTrace(
                     trace_id=str(uuid.uuid4()),
                     episode_id=str(ctx_time.get("episode_id", "")),
@@ -1904,6 +1960,15 @@ class Hub:
                         "candidates": replay_details.get("candidates", []),
                     },
                     meta=trace_meta,
+                    memory_kind=memory_kind,
+                    novelty_score=novelty_score,
+                    social_weight=social_weight,
+                    constraint_weight=constraint_weight,
+                    emotion_modulation=emotion_modulation,
+                    conf_internal=self._safe_float(conf_internal),
+                    conf_external=self._safe_float(conf_external),
+                    replay_source=replay_source,
+                    activation_trace_id=trace_meta.get("activation_trace_id"),
                 )
                 gate_result = (
                     self.interference_gate.evaluate(trace)

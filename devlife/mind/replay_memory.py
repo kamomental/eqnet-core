@@ -31,6 +31,15 @@ class ReplayTrace:
     controls: Dict[str, Any]
     imagined: Dict[str, Any]
     meta: Dict[str, Any]
+    memory_kind: Optional[str] = None
+    novelty_score: Optional[float] = None
+    social_weight: Optional[float] = None
+    constraint_weight: Optional[float] = None
+    emotion_modulation: Optional[float] = None
+    conf_internal: Optional[float] = None
+    conf_external: Optional[float] = None
+    replay_source: Optional[str] = None
+    activation_trace_id: Optional[str] = None
     tags: List[str] = field(default_factory=list)
     weight: float = 1.0
     tau: float = 0.0

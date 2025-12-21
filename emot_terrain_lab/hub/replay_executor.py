@@ -15,6 +15,7 @@ from ..utils.io import append_jsonl
 from .phase_ratio_filter import HysteresisCfg, PhaseRatioFilter
 from devlife.mind.replay_memory import ReplayMemory
 from .future_memory import FutureMemoryController
+from .recall_engine import RecallEngine, RecallEngineConfig
 
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ class ReplayExecutor:
         value_weights: Dict[str, float],
         logs_cfg: Optional[Dict[str, Any]] = None,
         step_limits: Tuple[int, int] = (1, 6),
+        recall_engine: Optional[RecallEngine] = None,
     ) -> None:
         self.mode = mode.lower()
         self.heartiness = float(heartiness)
@@ -63,6 +65,8 @@ class ReplayExecutor:
         self._phase_error = float(self._phase_cfg["error_target"])
 
         self._future_memory = FutureMemoryController(self.replay_cfg, clock=time.monotonic)
+        recall_cfg = self.replay_cfg.get("recall", {}) if isinstance(self.replay_cfg, Mapping) else {}
+        self._recall_engine = recall_engine or self._build_recall_engine(recall_cfg, logs_cfg or {})
 
         phase_dyn_cfg = self.replay_cfg.get("phase", {}) or {}
         self._phase_filter: PhaseRatioFilter | None = None
@@ -159,6 +163,8 @@ class ReplayExecutor:
                 "candidates": candidates,
                 "d_tau_step": d_tau_step,
                 "future_memory": snapshot_payload,
+                "activation_trace": None,
+                "scene_frames": [],
             }
 
         field_signals = plan.get("biofield", {}).get("signals", {}) if isinstance(
@@ -279,6 +285,29 @@ class ReplayExecutor:
         else:
             snapshot_payload = None
 
+        activation_trace_payload = None
+        scene_frames_payload: List[Dict[str, Any]] = []
+        if self._recall_engine is not None:
+            activation_trace, scene_frames = self._recall_engine.ignite(
+                ctx_time=ctx_time,
+                plan=plan,
+                seeds=seeds,
+                best_choice=best_choice,
+                replay_details=replay_details,
+                field_signals=field_signals,
+            )
+            if activation_trace is not None:
+                activation_trace_payload = activation_trace.to_dict()
+                replay_info["activation_trace_id"] = activation_trace.trace_id
+                replay_details["activation_trace_id"] = activation_trace.trace_id
+                if activation_trace.confidence_curve:
+                    final_sample = activation_trace.confidence_curve[-1]
+                    replay_details["conf_internal"] = final_sample.conf_internal
+                    replay_details["conf_external"] = final_sample.conf_external
+            if scene_frames:
+                scene_frames_payload = [frame.to_dict() for frame in scene_frames]
+                replay_details["scene_frames"] = scene_frames_payload
+
         success = bool(
             best_choice
             and float(best_choice.get("U", 0.0)) >= self._phase_cfg["success_threshold"]
@@ -294,6 +323,9 @@ class ReplayExecutor:
             "best": best_choice,
             "candidates": candidates,
             "d_tau_step": d_tau_step,
+            "activation_trace": activation_trace_payload,
+            "scene_frames": scene_frames_payload,
+            "future_memory": snapshot_payload,
         }
 
     def set_forgetting_params(self, params: Optional[Dict[str, Any]]) -> None:
@@ -317,6 +349,28 @@ class ReplayExecutor:
             self._min_steps = max(self.step_limits[0], int(min_steps))
         except Exception:
             self._min_steps = self.step_limits[0]
+
+    def _build_recall_engine(
+        self,
+        cfg: Mapping[str, Any],
+        logs_cfg: Mapping[str, Any],
+    ) -> Optional[RecallEngine]:
+        if not isinstance(cfg, Mapping):
+            cfg = {}
+        enabled = cfg.get("enabled")
+        if enabled is not None and not bool(enabled):
+            return None
+        config_kwargs: Dict[str, Any] = {}
+        for field_name in RecallEngineConfig.__dataclass_fields__.keys():
+            if field_name in cfg:
+                config_kwargs[field_name] = cfg[field_name]
+        config = RecallEngineConfig(**config_kwargs) if config_kwargs else RecallEngineConfig()
+        log_path = cfg.get("log_path")
+        if not log_path and isinstance(logs_cfg, Mapping):
+            log_path = logs_cfg.get("activation_trace_path")
+        if not log_path:
+            log_path = "logs/activation_traces.jsonl"
+        return RecallEngine(config=config, log_path=log_path)
 
     def _record_log(self, replay_details: Optional[Dict[str, Any]], candidates: List[Dict[str, Any]]) -> None:
         if not replay_details:

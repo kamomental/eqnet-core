@@ -112,3 +112,14 @@ Log per turn:
 [ ] Insert AccessGate before narrative
 [ ] Log unconscious successes
 [ ] Nightly: update graph + retune theta
+
+## Activation Trace Logging
+- ReplayExecutor now records an `ActivationTrace` JSONL (`logs/activation_traces.jsonl`) describing anchor hits, activation chains, and confidence curves without touching the InnerReplay controller.
+- Each ignition also materialises lightweight `SceneFrame` payloads that capture agents, constraints, and replay-sourced affect snapshots so UI layers or nightly prompts can visualise “who was there and why it mattered”.
+- `runtime/nightly_report.generate_recall_report()` consumes the trace log in audit-only fashion to surface ignition statistics and to draft the dream-map prompt (anchor → route → landmarks → confidence rise) required by TC-PLACE-IGNITION-001.
+- Optional memory annotations (`memory_kind`, `novelty_score`, `constraint_weight`, `conf_internal`, `conf_external`, `replay_source`) are stored on replay traces and moment logs to keep downstream data structures compatible while exposing the new research hooks.
+## Activation Trace Telemetry
+- `ActivationTrace` captures anchor hits, activation chains, confidence curves (internal vs external), replay events, and derived `SceneFrame`s so nightly passes can audit L4 ignition without modifying InnerReplay.
+- `SceneFrame` objects are explicitly marked as derived artefacts for UI/nightly consumption; they bundle agents/objects/constraints/affect snapshots to keep memories multi-agent without overwriting MemoryItems.
+- `RecallEngine` runs before replay execution, boosting anchor cues, building predict→confirm loops, and persisting the above telemetry via `activation_traces.jsonl`.
+- `runtime/nightly_report.generate_recall_report()` reads the trace log, aggregates anchor/confidence stats, and emits the dream-map prompt for TC-PLACE-IGNITION-001.
