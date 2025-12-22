@@ -19,6 +19,21 @@
 4. **Viewer pass** – `streamlit run tools/eqnet_telemetry_viewer.py` and filter by tag/episode to inspect the full “heart monitor + self-report + narrative” panel. Quick wrappers: `quickstart_viewer.(bat|sh)` executes the Streamlit command, `quickstart_gradio.(bat|sh)` launches the current Gradio demo.
 5. **Green-mode check (optional)** – `python emot_terrain_lab/core/green_kernel.py ...` followed by `python tools/analyze_green_impulse.py ... --emit logs/green_modes.jsonl` when the Lenia/GRN body is re-tuned.
 
+### Minimal HeartOS Loop (?-only)
+
+Use the ?-sovereign reference loop to generate trace_v1 audits without LLMs.
+
+```bash
+python scripts/minimal_heartos_loop.py --scenario commute
+python scripts/run_nightly_audit.py
+```
+
+Outputs:
+
+- `trace_v1/YYYY-MM-DD/*.jsonl`
+- `reports/audit/nightly_audit_YYYY-MM-DD.json`
+- `reports/nightly_audit_YYYYMMDD.json` / `reports/nightly_audit_YYYYMMDD.md`
+
 ## 3. Fast vs Slow Memory Signals
 
 - **Fast triggers** (Self-Report): high override bursts, “warm despite low love,” guarded mood paired with high love, supportive tone under tension, or quiet overrides when everything else looks calm.

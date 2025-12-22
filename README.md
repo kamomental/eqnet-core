@@ -102,19 +102,19 @@ into a four-layer architecture.
 
 |-----------|----------|--------|
 
-| **Inner Replay** | Predicts future outcomes at the unconscious (Σ) level and issues a *veto* when outcomes are misaligned | `mind/inner_replay.py` |
+| **Inner Replay** | Predicts future outcomes at the unconscious (Σ) level and issues a *veto* when outcomes are misaligned | `emot_terrain_lab/mind/inner_replay.py` |
 
-| **Emotional Terrain** | Represents emotion as a thermodynamic field (entropy / enthalpy surface) | `ops/terrain_field.py` |
+| **Emotional Terrain** | Represents emotion as a thermodynamic field (entropy / enthalpy surface) | `emot_terrain_lab/terrain/memory.py` |
 
-| **Resonant Learning** | Updates internal states through oscillatory synchronization with others | `mind/resonance.py` |
+| **Resonant Learning** | Updates internal states through oscillatory synchronization with others | `emot_terrain_lab/mind/green.py` |
 
-| **Rest Dynamics** | Self-repair and energetic homeostasis | `scripts/run_daily.py` |
+| **Rest Dynamics** | Self-repair and energetic homeostasis | `emot_terrain_lab/scripts/run_daily.py` |
 
 | **Cultural Projection** | Adjusts value matrices by locale or social context | `config/culture.yaml` |
 
-| **Social Resonance** | Enables rhythm and empathy across multiple humans or agents | `terrain/community.py` |
+| **Social Resonance** | Enables rhythm and empathy across multiple humans or agents | `emot_terrain_lab/community/sync.py` |
 
-| **Evolutionary Reflection** | Long-term integration of memory, emotion, and culture | `scripts/run_weekly.py` |
+| **Evolutionary Reflection** | Long-term integration of memory, emotion, and culture | `emot_terrain_lab/scripts/run_weekly.py` |
 
 
 
@@ -123,6 +123,8 @@ into a four-layer architecture.
 
 
 ## 5 | Design Philosophy — Anticipatory Motion & Comfort Engineering
+
+Σ (InnerReplay) is the final arbiter of decisions; all other modules may propose but never decide.
 
 
 
@@ -348,6 +350,20 @@ and the beginning of **a symbiotic intelligence that circulates with life.**
 
 
 
+### Minimal HeartOS Loop (LLMなし / Σ-only)
+
+```bash
+python scripts/minimal_heartos_loop.py --scenario commute
+python scripts/run_nightly_audit.py
+```
+
+主要成果物:
+
+- `trace_v1/YYYY-MM-DD/*.jsonl`（trace_v1 監査ログ）
+- `reports/nightly_audit_YYYYMMDD.json` / `reports/nightly_audit_YYYYMMDD.md`
+- `reports/audit/nightly_audit_YYYY-MM-DD.json`（generate_audit 出力）
+- `logs/activation_traces.jsonl`
+
 ### 最短E2E（実録→Nightly→可視化）
 
 
@@ -533,15 +549,21 @@ uvicorn scripts.vision_bridge:app --host 0.0.0.0 --port 8000
 
 - 追加資料: [FastMCP / Agent-to-Agent ブリッジ](docs/fastmcp_a2a.md)
 
-\n## Offer Gate Notes\n- EQNet uses a dynamic Suggestion Eligibility Score (SES) that considers intent, conflict, history, and recent rejections.\n- Observer Commentary surfaces SES, suppression reasons, and evidence so advice feels optional—not forced.\n- You can tune thresholds via OFFER_GATE_* env vars (see observer.py for defaults).
 
-#### Quick Start – Observation Viewer / Gradio
+## Offer Gate Notes
+- EQNet uses a dynamic Suggestion Eligibility Score (SES) that considers intent, conflict, history, and recent rejections.
+- Observer Commentary surfaces SES, suppression reasons, and evidence so advice feels optional, not forced.
+- You can tune thresholds via `OFFER_GATE_*` env vars (see `observer.py` for defaults).
 
-- \quickstart_viewer.bat\ / \.sh\ — launches the Streamlit telemetry viewer (wraps \streamlit run tools/eqnet_telemetry_viewer.py\). Pass Streamlit flags after the script name.
-- \quickstart_gradio.bat\ / \.sh\ — starts the current Gradio demo (wraps \python gradio_demo_prev.py\).
+#### Quick Start - Observation Viewer / Gradio
+
+- `quickstart_viewer.bat` / `.sh` - launches the Streamlit telemetry viewer (wraps `streamlit run tools/eqnet_telemetry_viewer.py`). Pass Streamlit flags after the script name.
+- `quickstart_gradio.bat` / `.sh` - starts the current Gradio demo (wraps `python gradio_demo_prev.py`).
 - Manual commands:
-  `Bash
-  streamlit run tools/eqnet_telemetry_viewer.py
-  python gradio_demo_prev.py
-  ` 
-- The full observation workflow (tagged runs → self-report → narrative → monuments) is described in \docs/eqnet_observation_loop.md\.
+
+```bash
+streamlit run tools/eqnet_telemetry_viewer.py
+python gradio_demo_prev.py
+```
+
+- The full observation workflow (tagged runs -> self-report -> narrative -> monuments) is described in `docs/eqnet_observation_loop.md`.

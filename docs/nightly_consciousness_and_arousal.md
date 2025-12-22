@@ -61,6 +61,8 @@ Therefore, the nightly system is designed to **downshift arousal** by postponing
 
 **Implication:** the causal path “uncertainty → shadow → downshifted output” already exists.
 
+Veto decisions are issued by ? (InnerReplay) and logged in trace_v1, so nightly audit can be generated via `generate_audit()` without touching the core loop.
+
 ---
 
 ## 4. Low-Arousal, High-Internal Activity State
