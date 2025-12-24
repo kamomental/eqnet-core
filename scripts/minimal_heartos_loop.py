@@ -13,6 +13,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from emot_terrain_lab.mind.inner_replay import InnerReplayController, ReplayConfig, ReplayInputs
 from emot_terrain_lab.sim.mini_world import MiniWorldScenario, MiniWorldStep, build_default_scenarios
 from eqnet_core.models.activation_trace import (
@@ -23,6 +29,7 @@ from eqnet_core.models.activation_trace import (
     ReplayEvent,
 )
 from eqnet_core.models.emotion import EmotionVector, ValueGradient
+from heartos.world_transition import TransitionParams, apply_transition, build_transition_record
 from runtime.config import load_runtime_cfg
 from telemetry import event as telemetry_event
 
@@ -190,18 +197,27 @@ def _write_trace_v1(
     temperature: Optional[float],
     throttles: Dict[str, bool],
     invariants: Dict[str, bool],
+    source_loop: str = "minimal_heartos",
+    event_type: str = "decision_cycle",
+    world_type: Optional[str] = None,
+    transition: Optional[Dict[str, object]] = None,
 ) -> None:
     record = {
         "schema_version": "trace_v1",
         "timestamp_ms": int(time.time() * 1000),
         "turn_id": turn_id,
         "scenario_id": scenario_id,
-        "source_loop": "minimal_heartos",
+        "source_loop": source_loop,
+        "event_type": event_type,
         "boundary": {"score": boundary_score, "reasons": boundary_reasons},
         "prospection": {"accepted": accepted, "jerk": jerk, "temperature": temperature},
         "policy": {"throttles": throttles},
         "invariants": invariants,
     }
+    if world_type:
+        record["world_type"] = world_type
+    if transition:
+        record["transition"] = dict(transition)
     _validate_trace_v1(record)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -226,6 +242,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--scenario", default="commute", help="commute, family_roles, workplace_safety, or all")
     ap.add_argument("--max_steps", type=int, default=None, help="Optional step cap per scenario")
+    ap.add_argument("--repeat", type=int, default=1, help="Repeat the scenario sequence N times")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--drive_alpha", type=float, default=0.2)
     ap.add_argument("--drive_w_risk", type=float, default=0.6)
@@ -238,8 +255,18 @@ def main() -> None:
     ap.add_argument("--recovery_risk_thresh", type=float, default=0.25)
     ap.add_argument("--recovery_uncert_thresh", type=float, default=0.25)
     ap.add_argument("--hazard_weight", type=float, default=0.45)
+    ap.add_argument("--world_type", type=str, default="infrastructure")
+    ap.add_argument("--transition_to", type=str, default=None)
+    ap.add_argument("--transition_at_turn", type=int, default=None)
+    ap.add_argument("--transition_decay", type=float, default=0.6)
+    ap.add_argument("--transition_uncertainty_factor", type=float, default=0.5)
+    ap.add_argument("--transition_base_uncertainty", type=float, default=0.2)
+    ap.add_argument("--transition_reason", type=str, default="world_transition")
+    ap.add_argument("--transition_ttl", type=int, default=3, help="Steps to keep transition effect active")
+    ap.add_argument("--post_tom_cost_scale", type=float, default=1.0, help="Scale tom_cost after transition")
+    ap.add_argument("--post_risk_scale", type=float, default=None, help="Scale risk after transition")
     ap.add_argument("--trace_log", type=str, default="logs/activation_traces.jsonl")
-    ap.add_argument("--trace_root", type=str, default="trace_v1")
+    ap.add_argument("--trace_root", type=str, default=None)
     ap.add_argument("--telemetry_log", type=str, default="")
     ap.add_argument("--print-config", action="store_true")
     args = ap.parse_args()
@@ -256,131 +283,223 @@ def main() -> None:
     telemetry_template = args.telemetry_log or runtime_cfg.telemetry.log_path
     telemetry_path = _resolve_log_path(telemetry_template)
     trace_logger = ActivationTraceLogger(args.trace_log)
+    if args.post_risk_scale is None:
+        args.post_risk_scale = float(runtime_cfg.heartos_transition.post_risk_scale_default)
 
     scenarios = build_default_scenarios()
     controller = InnerReplayController(ReplayConfig(seed=seed))
     base_gradient = ValueGradient()
     run_id = str(uuid.uuid4())
-    trace_v1_path = _trace_v1_path(args.trace_root, day=datetime.utcnow(), run_id=run_id)
+    if args.trace_root:
+        trace_root = Path(args.trace_root)
+    else:
+        trace_root = Path("trace_runs") / run_id
+    trace_v1_path = _trace_v1_path(trace_root, day=datetime.utcnow(), run_id=run_id)
     drive = 0.0
+    uncertainty_state: Optional[float] = None
     prev_emotion: Optional[EmotionVector] = None
     step_index = 0
+    world_type = str(args.world_type)
+    transition_done = False
+    transition_ttl_remaining = 0
+    transition_params = TransitionParams(
+        decay=float(args.transition_decay),
+        uncertainty_factor=float(args.transition_uncertainty_factor),
+        base_uncertainty=float(args.transition_base_uncertainty),
+        reason=str(args.transition_reason),
+    )
 
-    for scenario, step in _scenario_sequence(scenarios, args.scenario, args.max_steps):
-        value_gradient = _value_gradient_for_step(step, base_gradient)
-        emotion = EmotionVector(
-            valence=step.valence,
-            arousal=step.arousal,
-            love=step.love,
-            stress=step.stress,
-            mask=step.mask,
-            heart_rate_norm=step.heart_rate,
-            breath_ratio_norm=step.breath_ratio,
-            value_gradient=value_gradient,
-        )
-        delta_aff = _delta_aff(prev_emotion, emotion)
-        chaos, risk, tom_cost, uncertainty, reward = _derive_scalars(step)
+    sequence = list(_scenario_sequence(scenarios, args.scenario, args.max_steps))
+    repeat = max(1, int(args.repeat))
+    for _ in range(repeat):
+        for scenario, step in sequence:
+            if (
+                not transition_done
+                and args.transition_to
+                and args.transition_at_turn is not None
+                and step_index == int(args.transition_at_turn)
+            ):
+                state = {
+                    "drive": drive,
+                    "uncertainty": uncertainty_state or transition_params.base_uncertainty,
+                }
+                updated = apply_transition(state, transition_params)
+                drive = float(updated["drive"])
+                uncertainty_state = float(updated["uncertainty"])
+                transition_record = build_transition_record(
+                    turn_id=f"{run_id}-transition-{step_index}",
+                    transition_turn_index=step_index,
+                    scenario_id=scenario.name,
+                    from_world=world_type,
+                    to_world=str(args.transition_to),
+                    params=transition_params,
+                )
+                transition_record["transition"]["ttl"] = int(args.transition_ttl)
+                _write_trace_v1(
+                    trace_v1_path,
+                    turn_id=transition_record["turn_id"],
+                    scenario_id=transition_record["scenario_id"],
+                    boundary_score=float(transition_record["boundary"]["score"]),
+                    boundary_reasons=dict(transition_record["boundary"]["reasons"]),
+                    accepted=bool(transition_record["prospection"]["accepted"]),
+                    jerk=float(transition_record["prospection"]["jerk"]),
+                    temperature=float(transition_record["prospection"]["temperature"]),
+                    throttles=dict(transition_record["policy"]["throttles"]),
+                    invariants=dict(transition_record["invariants"]),
+                    source_loop=str(transition_record["source_loop"]),
+                    event_type=str(transition_record["event_type"]),
+                    transition=dict(transition_record["transition"]),
+                )
+                telemetry_event(
+                    "minimal_heartos.transition",
+                    {
+                        "run_id": run_id,
+                        "turn_id": transition_record["turn_id"],
+                        "from_world_type": world_type,
+                        "to_world_type": str(args.transition_to),
+                        "decay": transition_params.decay,
+                        "uncertainty_factor": transition_params.uncertainty_factor,
+                        "base_uncertainty": transition_params.base_uncertainty,
+                        "reason": transition_params.reason,
+                    },
+                    log_path=telemetry_path,
+                )
+                world_type = str(args.transition_to)
+                transition_done = True
+                transition_ttl_remaining = max(0, int(args.transition_ttl))
+            value_gradient = _value_gradient_for_step(step, base_gradient)
+            emotion = EmotionVector(
+                valence=step.valence,
+                arousal=step.arousal,
+                love=step.love,
+                stress=step.stress,
+                mask=step.mask,
+                heart_rate_norm=step.heart_rate,
+                breath_ratio_norm=step.breath_ratio,
+                value_gradient=value_gradient,
+            )
+            delta_aff = _delta_aff(prev_emotion, emotion)
+            chaos, risk, tom_cost, uncertainty, reward = _derive_scalars(step)
 
-        risk = _clamp01(risk + args.hazard_weight * float(step.hazard_score))
-        drive_input = (
-            args.drive_w_risk * risk
-            + args.drive_w_uncert * uncertainty
-            + args.drive_w_daff * delta_aff
-        )
-        drive = _ema(drive, drive_input, args.drive_alpha)
-        if risk < args.recovery_risk_thresh and uncertainty < args.recovery_uncert_thresh:
-            drive = max(0.0, drive - args.recovery_rate)
-        risk = _clamp01(risk + args.drive_risk_gain * drive)
-        uncertainty = _clamp01(uncertainty + args.drive_uncert_gain * drive)
+            if transition_done and args.post_tom_cost_scale != 1.0:
+                tom_cost = _clamp01(tom_cost * float(args.post_tom_cost_scale))
 
-        inputs = ReplayInputs(
-            chaos_sens=float(chaos),
-            tom_cost=float(tom_cost),
-            delta_aff_abs=float(delta_aff),
-            risk=float(risk),
-            uncertainty=float(uncertainty),
-            reward_estimate=float(reward),
-            mood_valence=emotion.valence,
-            mood_arousal=emotion.arousal,
-        )
-        outcome = controller.run_cycle(inputs)
+            risk = _clamp01(risk + args.hazard_weight * float(step.hazard_score))
+            if transition_done and args.post_risk_scale != 1.0:
+                risk = _clamp01(risk * float(args.post_risk_scale))
+            if uncertainty_state is not None:
+                uncertainty = max(uncertainty, uncertainty_state)
+            if transition_ttl_remaining > 0:
+                transition_factor = transition_params.uncertainty_factor + (
+                    (1.0 - transition_params.uncertainty_factor) * transition_params.decay
+                )
+                uncertainty = max(
+                    transition_params.base_uncertainty,
+                    uncertainty * transition_factor,
+                )
+                transition_ttl_remaining -= 1
+            drive_input = (
+                args.drive_w_risk * risk
+                + args.drive_w_uncert * uncertainty
+                + args.drive_w_daff * delta_aff
+            )
+            drive = _ema(drive, drive_input, args.drive_alpha)
+            if risk < args.recovery_risk_thresh and uncertainty < args.recovery_uncert_thresh:
+                drive = max(0.0, drive - args.recovery_rate)
+            risk = _clamp01(risk + args.drive_risk_gain * drive)
+            uncertainty = _clamp01(uncertainty + args.drive_uncert_gain * drive)
+            uncertainty_state = float(uncertainty)
 
-        cancel_reason = _cancel_cause(inputs) if outcome.decision == "cancel" else None
-        telemetry_event(
-            "minimal_heartos.step",
-            {
-                "run_id": run_id,
-                "step_index": step_index,
-                "scenario": scenario.name,
-                "state": step.name,
-                "decision": outcome.decision,
-                "cancel_reason": cancel_reason,
-                "risk": inputs.risk,
-                "uncertainty": inputs.uncertainty,
-                "delta_aff": inputs.delta_aff_abs,
-                "tom_cost": inputs.tom_cost,
-                "reward": inputs.reward_estimate,
-                "drive": drive,
-                "drive_limit": args.drive_limit,
-                "hazard_score": float(step.hazard_score),
-                "u_hat": outcome.u_hat,
-                "veto_score": outcome.veto_score,
-                "prep_features": outcome.prep_features,
-                "plan_features": outcome.plan_features,
-            },
-            log_path=telemetry_path,
-        )
+            inputs = ReplayInputs(
+                chaos_sens=float(chaos),
+                tom_cost=float(tom_cost),
+                delta_aff_abs=float(delta_aff),
+                risk=float(risk),
+                uncertainty=float(uncertainty),
+                reward_estimate=float(reward),
+                mood_valence=emotion.valence,
+                mood_arousal=emotion.arousal,
+            )
+            outcome = controller.run_cycle(inputs)
 
-        drive_norm = _clamp01(drive / args.drive_limit) if args.drive_limit > 0.0 else 1.0
-        boundary_score = _clamp01(
-            0.35 * float(step.hazard_score)
-            + 0.30 * drive_norm
-            + 0.20 * float(inputs.risk)
-            + 0.15 * float(inputs.uncertainty)
-        )
-        _write_trace_v1(
-            trace_v1_path,
-            turn_id=f"{run_id}-{step_index}",
-            scenario_id=scenario.name,
-            boundary_score=boundary_score,
-            boundary_reasons={
-                "hazard_score": float(step.hazard_score),
-                "risk": float(inputs.risk),
-                "uncertainty": float(inputs.uncertainty),
-                "drive": float(drive),
-                "drive_norm": float(drive_norm),
-            },
-            accepted=outcome.decision == "execute",
-            jerk=float(outcome.veto_score),
-            temperature=float(outcome.u_hat),
-            throttles={
-                "safety_block": bool(outcome.decision == "cancel" and step.hazard_score > 0.0),
-            },
-            invariants={
-                "TRACE_001": bool(boundary_score < 0.9),
-                "TRACE_002": bool(drive <= args.drive_limit),
-                "TRACE_003": bool(step_index >= 0),
-            },
-        )
+            cancel_reason = _cancel_cause(inputs) if outcome.decision == "cancel" else None
+            telemetry_event(
+                "minimal_heartos.step",
+                {
+                    "run_id": run_id,
+                    "step_index": step_index,
+                    "scenario": scenario.name,
+                    "state": step.name,
+                    "decision": outcome.decision,
+                    "cancel_reason": cancel_reason,
+                    "risk": inputs.risk,
+                    "uncertainty": inputs.uncertainty,
+                    "delta_aff": inputs.delta_aff_abs,
+                    "tom_cost": inputs.tom_cost,
+                    "reward": inputs.reward_estimate,
+                    "drive": drive,
+                    "drive_limit": args.drive_limit,
+                    "hazard_score": float(step.hazard_score),
+                    "u_hat": outcome.u_hat,
+                    "veto_score": outcome.veto_score,
+                    "prep_features": outcome.prep_features,
+                    "plan_features": outcome.plan_features,
+                },
+                log_path=telemetry_path,
+            )
 
-        trace = _activation_trace(
-            step=step,
-            scenario=scenario,
-            outcome_decision=outcome.decision,
-            inputs=inputs,
-            drive=drive,
-            run_id=run_id,
-            step_index=step_index,
-        )
-        trace_logger.write(trace)
+            drive_norm = _clamp01(drive / args.drive_limit) if args.drive_limit > 0.0 else 1.0
+            boundary_score = _clamp01(
+                0.35 * float(step.hazard_score)
+                + 0.30 * drive_norm
+                + 0.20 * float(inputs.risk)
+                + 0.15 * float(inputs.uncertainty)
+            )
+            _write_trace_v1(
+                trace_v1_path,
+                turn_id=f"{run_id}-{step_index}",
+                scenario_id=scenario.name,
+                boundary_score=boundary_score,
+                boundary_reasons={
+                    "hazard_score": float(step.hazard_score),
+                    "risk": float(inputs.risk),
+                    "uncertainty": float(inputs.uncertainty),
+                    "drive": float(drive),
+                    "drive_norm": float(drive_norm),
+                },
+                accepted=outcome.decision == "execute",
+                jerk=float(outcome.veto_score),
+                temperature=float(outcome.u_hat),
+                throttles={
+                    "safety_block": bool(outcome.decision == "cancel" and step.hazard_score > 0.0),
+                },
+                invariants={
+                    "TRACE_001": bool(boundary_score < 0.9),
+                    "TRACE_002": bool(drive <= args.drive_limit),
+                    "TRACE_003": bool(step_index >= 0),
+                },
+                world_type=world_type,
+            )
 
-        prev_emotion = emotion
-        step_index += 1
+            trace = _activation_trace(
+                step=step,
+                scenario=scenario,
+                outcome_decision=outcome.decision,
+                inputs=inputs,
+                drive=drive,
+                run_id=run_id,
+                step_index=step_index,
+            )
+            trace_logger.write(trace)
+
+            prev_emotion = emotion
+            step_index += 1
 
     print(f"[info] telemetry log: {telemetry_path}")
     print(f"[info] activation trace log: {args.trace_log}")
     print(f"[info] trace_v1 log: {trace_v1_path}")
     print(f"[info] steps: {step_index} run_id={run_id}")
+    print(f"[next] python scripts/run_nightly_audit.py --trace_root trace_runs\\{run_id}")
 
 
 if __name__ == "__main__":

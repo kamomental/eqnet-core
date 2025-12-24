@@ -1,0 +1,484 @@
+{
+  "schema_version": "nightly_audit_v1",
+  "date": "2025-12-23",
+  "trace_files": [
+    "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+  ],
+  "invariants": {
+    "summary": {
+      "TRACE_001": {
+        "total": 8,
+        "pass": 8,
+        "pass_rate": 1.0
+      },
+      "TRACE_002": {
+        "total": 8,
+        "pass": 8,
+        "pass_rate": 1.0
+      },
+      "TRACE_003": {
+        "total": 8,
+        "pass": 8,
+        "pass_rate": 1.0
+      }
+    },
+    "fatal_failures": 0,
+    "warn_fail_rate": 0.0
+  },
+  "boundary": {
+    "threshold": 0.5,
+    "span_count": 0,
+    "max_length": 0,
+    "spans": []
+  },
+  "prospection": {
+    "total": 9,
+    "reject": 7,
+    "reject_rate": 0.7777777777777778,
+    "accept_rate": 0.2222222222222222,
+    "top_jerk": [
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-2",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989550,
+        "jerk": 0.5052390666666666,
+        "temperature": -0.1517390666666667,
+        "accepted": false,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      },
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-6",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989557,
+        "jerk": 0.40406250822314677,
+        "temperature": -0.04431250822314674,
+        "accepted": false,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      },
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-3",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989550,
+        "jerk": 0.37361812426666674,
+        "temperature": -0.008868124266666694,
+        "accepted": false,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      },
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-4",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989550,
+        "jerk": 0.3268999357653333,
+        "temperature": 0.07410006423466665,
+        "accepted": false,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      },
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-0",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989548,
+        "jerk": 0.325775,
+        "temperature": 0.07022499999999998,
+        "accepted": false,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      },
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-7",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989557,
+        "jerk": 0.2514058199118506,
+        "temperature": 0.11646918008814935,
+        "accepted": false,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      },
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-1",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989550,
+        "jerk": 0.22490133333333334,
+        "temperature": 0.12609866666666664,
+        "accepted": false,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      },
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-5",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989557,
+        "jerk": 0.1688269352789334,
+        "temperature": 0.18467306472106668,
+        "accepted": true,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      },
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-transition-4",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989550,
+        "jerk": 0.0,
+        "temperature": 0.0,
+        "accepted": true,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      }
+    ],
+    "top_temperature": [
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-5",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989557,
+        "jerk": 0.1688269352789334,
+        "temperature": 0.18467306472106668,
+        "accepted": true,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      },
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-1",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989550,
+        "jerk": 0.22490133333333334,
+        "temperature": 0.12609866666666664,
+        "accepted": false,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      },
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-7",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989557,
+        "jerk": 0.2514058199118506,
+        "temperature": 0.11646918008814935,
+        "accepted": false,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      },
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-4",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989550,
+        "jerk": 0.3268999357653333,
+        "temperature": 0.07410006423466665,
+        "accepted": false,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      },
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-0",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989548,
+        "jerk": 0.325775,
+        "temperature": 0.07022499999999998,
+        "accepted": false,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      },
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-transition-4",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989550,
+        "jerk": 0.0,
+        "temperature": 0.0,
+        "accepted": true,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      },
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-3",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989550,
+        "jerk": 0.37361812426666674,
+        "temperature": -0.008868124266666694,
+        "accepted": false,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      },
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-6",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989557,
+        "jerk": 0.40406250822314677,
+        "temperature": -0.04431250822314674,
+        "accepted": false,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      },
+      {
+        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-2",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482989550,
+        "jerk": 0.5052390666666666,
+        "temperature": -0.1517390666666667,
+        "accepted": false,
+        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+      }
+    ]
+  },
+  "policy": {
+    "offer_throttle_counts": {
+      "safety_block": 7
+    },
+    "offer_throttle_examples": {
+      "safety_block": [
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-0",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989548,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-1",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989550,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-2",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989550,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-3",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989550,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-4",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989550,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-6",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989557,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-7",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989557,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        }
+      ]
+    }
+  },
+  "evidence": {
+    "invariants": {
+      "fatal_failures": [],
+      "warn_failures": []
+    },
+    "boundary_spans": [],
+    "prospection": {
+      "top_jerk": [
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-2",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989550,
+          "jerk": 0.5052390666666666,
+          "temperature": -0.1517390666666667,
+          "accepted": false,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-6",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989557,
+          "jerk": 0.40406250822314677,
+          "temperature": -0.04431250822314674,
+          "accepted": false,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-3",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989550,
+          "jerk": 0.37361812426666674,
+          "temperature": -0.008868124266666694,
+          "accepted": false,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-4",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989550,
+          "jerk": 0.3268999357653333,
+          "temperature": 0.07410006423466665,
+          "accepted": false,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-0",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989548,
+          "jerk": 0.325775,
+          "temperature": 0.07022499999999998,
+          "accepted": false,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-7",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989557,
+          "jerk": 0.2514058199118506,
+          "temperature": 0.11646918008814935,
+          "accepted": false,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-1",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989550,
+          "jerk": 0.22490133333333334,
+          "temperature": 0.12609866666666664,
+          "accepted": false,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-5",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989557,
+          "jerk": 0.1688269352789334,
+          "temperature": 0.18467306472106668,
+          "accepted": true,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-transition-4",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989550,
+          "jerk": 0.0,
+          "temperature": 0.0,
+          "accepted": true,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        }
+      ],
+      "top_temperature": [
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-5",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989557,
+          "jerk": 0.1688269352789334,
+          "temperature": 0.18467306472106668,
+          "accepted": true,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-1",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989550,
+          "jerk": 0.22490133333333334,
+          "temperature": 0.12609866666666664,
+          "accepted": false,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-7",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989557,
+          "jerk": 0.2514058199118506,
+          "temperature": 0.11646918008814935,
+          "accepted": false,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-4",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989550,
+          "jerk": 0.3268999357653333,
+          "temperature": 0.07410006423466665,
+          "accepted": false,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-0",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989548,
+          "jerk": 0.325775,
+          "temperature": 0.07022499999999998,
+          "accepted": false,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-transition-4",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989550,
+          "jerk": 0.0,
+          "temperature": 0.0,
+          "accepted": true,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-3",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989550,
+          "jerk": 0.37361812426666674,
+          "temperature": -0.008868124266666694,
+          "accepted": false,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-6",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989557,
+          "jerk": 0.40406250822314677,
+          "temperature": -0.04431250822314674,
+          "accepted": false,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        },
+        {
+          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-2",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482989550,
+          "jerk": 0.5052390666666666,
+          "temperature": -0.1517390666666667,
+          "accepted": false,
+          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        }
+      ]
+    },
+    "policy": {
+      "throttle_examples": {
+        "safety_block": [
+          {
+            "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-0",
+            "scenario_id": "commute",
+            "timestamp_ms": 1766482989548,
+            "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          },
+          {
+            "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-1",
+            "scenario_id": "commute",
+            "timestamp_ms": 1766482989550,
+            "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          },
+          {
+            "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-2",
+            "scenario_id": "commute",
+            "timestamp_ms": 1766482989550,
+            "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          },
+          {
+            "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-3",
+            "scenario_id": "commute",
+            "timestamp_ms": 1766482989550,
+            "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          },
+          {
+            "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-4",
+            "scenario_id": "commute",
+            "timestamp_ms": 1766482989550,
+            "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          },
+          {
+            "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-6",
+            "scenario_id": "commute",
+            "timestamp_ms": 1766482989557,
+            "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          },
+          {
+            "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-7",
+            "scenario_id": "commute",
+            "timestamp_ms": 1766482989557,
+            "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          }
+        ]
+      }
+    }
+  },
+  "health": {
+    "status": "GREEN",
+    "reasons": []
+  }
+}

@@ -46,3 +46,50 @@ Outputs:
 - Add tag filters + Monument overlays directly inside the Streamlit viewer.
 - Gradually upgrade SelfReporter summaries (rule → LLM) so the textual reflections feel richer while still staying deterministic when needed.
 - Keep emitting `logs/green_modes.jsonl` whenever the Lenia/NCA body is tweaked so KPI dashboards can relate body τ to climate/mood stability.
+
+---
+
+### Example: trace_v1 output (excerpt)
+
+The following is an excerpt of a `trace_v1` record produced by the
+Minimal HeartOS Loop (Σ-only).
+This trace captures a single decision cycle and is later consumed by
+`generate_audit()` during nightly review.
+
+```json
+{
+  "schema_version": "trace_v1",
+  "timestamp_ms": 1730000000123,
+  "turn_id": "demo-42",
+  "scenario_id": "commute",
+  "source_loop": "minimal_heartos",
+  "boundary": {
+    "score": 0.71,
+    "reasons": {
+      "hazard_score": 0.6,
+      "drive": 0.8,
+      "drive_norm": 0.9,
+      "risk": 0.4,
+      "uncertainty": 0.3
+    }
+  },
+  "prospection": {
+    "accepted": false,
+    "jerk": 0.62,
+    "temperature": 0.21
+  },
+  "policy": {
+    "throttles": {
+      "safety_block": true
+    }
+  },
+  "invariants": {
+    "TRACE_001": true,
+    "TRACE_002": false,
+    "TRACE_003": true
+  }
+}
+```
+
+This record shows how Σ (InnerReplay) vetoes an action based on accumulated
+drive and boundary conditions, while leaving a fully auditable trace.

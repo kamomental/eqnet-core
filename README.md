@@ -359,10 +359,30 @@ python scripts/run_nightly_audit.py
 
 主要成果物:
 
-- `trace_v1/YYYY-MM-DD/*.jsonl`（trace_v1 監査ログ）
+- `trace_runs/<run_id>/YYYY-MM-DD/*.jsonl`（trace_v1 監査ログ）
 - `reports/nightly_audit_YYYYMMDD.json` / `reports/nightly_audit_YYYYMMDD.md`
 - `reports/audit/nightly_audit_YYYY-MM-DD.json`（generate_audit 出力）
 - `logs/activation_traces.jsonl`
+
+補足（設定・傾向）:
+
+- post 側の `post_risk_scale` は `config/runtime.yaml` の `heartos_transition.post_risk_scale_default` が既定値（現在は 0.85）。
+- 5-seed スモークでは 0.80 は「通りすぎ」傾向だったため、0.85 を基準値として運用（0.80 は境界試験用）。
+- TTL は短すぎると文脈の連続性が落ち、長すぎると誤推定を引きずりやすい（遷移や大きな観測更新で短縮する運用が相性良い）。
+- `uncertainty_factor` は 0.85 の相棒パラメータとして監視（上げると安全寄り、下げると境界リスクが増えるため、worst seed を優先して調整）。
+- 0.80 は性能チューニングではなく「壊れ方テスト」（過信・楽観バイアス耐性の確認）に限定して使う。
+- trace_v1 jsonl は最低限 `timestamp_ms`, `seed`, `world_type`, `post_risk_scale`, `transition_uncertainty_factor`, `decision` を残す。
+
+運用ログのテンプレ（詳細は `docs/ops_log_template.md`）:
+
+- 目的: 何を検証/説明するかを1行で明記。
+- 前提: 1行1イベント、run単位でまとまること。
+- 必須キー: `timestamp_ms`, `seed`, `world_type`, `post_risk_scale`, `transition_uncertainty_factor`, `decision`。
+- 解釈・再利用向けの optional fields は `docs/ops_log_template.md` に集約。
+
+ログの可視化（RPGリプレイ）:
+
+- `docs/replay/README.md` に手順とテンプレを集約。
 
 ### 最短E2E（実録→Nightly→可視化）
 

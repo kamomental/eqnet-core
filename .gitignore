@@ -45,3 +45,10 @@ reports/resonance_history.jsonl
 reports/culture_history.jsonl
 reports/plots/
 reports/policy_feedback_history.jsonl
+reports/nightly_audit_*.json
+reports/nightly_audit_*.md
+reports/exp_risk*.json
+reports/exp_risk*.md
+trace_runs/
+trace_v1/
+trace_v1_test/

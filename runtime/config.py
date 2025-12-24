@@ -204,6 +204,11 @@ class UiCfg:
 
 
 @dataclass
+class HeartosTransitionCfg:
+    post_risk_scale_default: float = field(default=0.85)
+
+
+@dataclass
 class RuntimeCfg:
     ignition: IgnitionCfg = field(default_factory=IgnitionCfg)
     telemetry: TelemetryCfg = field(default_factory=TelemetryCfg)
@@ -222,6 +227,7 @@ class RuntimeCfg:
     memory_reference: MemoryReferenceCfg = field(default_factory=MemoryReferenceCfg)
     observer: ObserverDisclaimerCfg = field(default_factory=ObserverDisclaimerCfg)
     ui: UiCfg = field(default_factory=UiCfg)
+    heartos_transition: HeartosTransitionCfg = field(default_factory=HeartosTransitionCfg)
 
 
 def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
@@ -261,6 +267,9 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
     memory_reference = _merge_dataclass(MemoryReferenceCfg(), payload.get("memory_reference", {}))
     observer_cfg = _merge_dataclass(ObserverDisclaimerCfg(), payload.get("observer", {}))
     ui_cfg = _merge_dataclass(UiCfg(), payload.get("ui", {}))
+    heartos_transition = _merge_dataclass(
+        HeartosTransitionCfg(), payload.get("heartos_transition", {})
+    )
     return RuntimeCfg(
         ignition=ignition,
         telemetry=telemetry,
@@ -279,6 +288,7 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
         memory_reference=memory_reference,
         observer=observer_cfg,
         ui=ui_cfg,
+        heartos_transition=heartos_transition,
     )
 
 
@@ -335,4 +345,5 @@ __all__ = [
     "PolicyRuntimeCfg",
     "GuardsCfg",
     "UiCfg",
+    "HeartosTransitionCfg",
 ]

@@ -167,3 +167,5 @@ pain_loop:
       l_inf: 0.3
 ui:
   community_update_ms: 400
+heartos_transition:
+  post_risk_scale_default: 0.85

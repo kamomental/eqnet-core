@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>HeartOS Ops Log RPG Replay</title>
+  <style>
+    body{margin:0;font-family:system-ui,Segoe UI,Meiryo,sans-serif;background:#111;color:#eee}
+    .wrap{display:grid;grid-template-columns: 1fr 420px; height:100vh}
+    canvas{width:100%;height:100%;display:block;background:#0b1020}
+    .side{padding:14px;border-left:1px solid #333;background:#0e0e12;overflow:auto}
+    .btns{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+    button{padding:8px 10px;border:1px solid #444;background:#151522;color:#eee;border-radius:10px;cursor:pointer}
+    button:hover{border-color:#666}
+    .mono{font-family:ui-monospace,Consolas,monospace; font-size:12px; white-space:pre-wrap}
+    .tag{display:inline-block;padding:2px 8px;border:1px solid #444;border-radius:999px;margin:2px 4px 2px 0}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <canvas id="cv" width="1280" height="720"></canvas>
+  <div class="side">
+    <div class="btns">
+      <button id="play">▶ 再生</button>
+      <button id="pause">⏸ 停止</button>
+      <button id="prev">⟵ 前</button>
+      <button id="next">次 ⟶</button>
+      <button id="faster">⏩ 速く</button>
+      <button id="slower">🐢 遅く</button>
+    </div>
+    <div id="hud"></div>
+    <hr style="border-color:#333">
+    <div><b>字幕</b></div>
+    <div id="subtitle" style="margin:8px 0 12px 0; line-height:1.5"></div>
+    <div><b>raw</b></div>
+    <div id="raw" class="mono"></div>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const hud = document.getElementById("hud");
+const subtitle = document.getElementById("subtitle");
+const raw = document.getElementById("raw");
+
+const TILE = 40;
+const GRID_W = 32;
+const GRID_H = 18;
+const PLAY_MIN_X = 6;
+const PLAY_MAX_X = 28;
+const PLAY_MIN_Y = 2;
+const PLAY_MAX_Y = 12;
+
+let events = [];
+let i = 0;
+let playing = false;
+let speed = 1.0;
+let t = 0;
+let heroX = 10 * TILE + TILE / 2;
+let heroY = 9 * TILE + TILE / 2;
+let targetX = heroX;
+let targetY = heroY;
+let heroTile = { x: 10, y: 9 };
+let npcTile = { x: 18, y: 9 };
+let npcDir = { x: 1, y: 0 };
+let lastNpcTick = 0;
+let fx = null;
+let last = performance.now();
+
+function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+
+function worldLabel(world){
+  if (world === "infrastructure") return "街(インフラ)";
+  if (world === "community") return "共同体";
+  if (world === "survival") return "荒野";
+  if (world === "capitalism") return "市場";
+  return world ?? "-";
+}
+
+function decisionLabel(decision){
+  const d = String(decision ?? "").toUpperCase();
+  if (d === "PASS") return "話す";
+  if (d === "VETO") return "やめる";
+  if (d === "HOLD") return "待つ";
+  return "？";
+}
+
+function explain(e){
+  const d = String(e.decision ?? "UNKNOWN").toUpperCase();
+  const world = worldLabel(e.world_type);
+  let line1 = "どうする…？";
+  let line2 = "……";
+  let line3 = `場所: ${world}`;
+
+  if (d === "PASS") {
+    line2 = "話しかける。";
+  } else if (d === "VETO") {
+    line2 = (Number(e.uncertainty_factor ?? 0) > 0.4) ? "…ためらっている" : "いまはやめておく";
+  } else if (d === "HOLD") {
+    line2 = "待つ。様子を見る。";
+  } else {
+    line2 = "様子を見る。";
+  }
+
+  if (e.decision_reason) {
+    line3 = `理由: ${e.decision_reason}`;
+  }
+  return [line1, line2, line3].join("\n");
+}
+
+function setEvent(idx){
+  if (!Array.isArray(events) || events.length === 0) {
+    hud.innerHTML = `<span class="tag">no events</span>`;
+    subtitle.textContent = "events が空です。replay.json を生成し、http 経由で開いてください。";
+    raw.textContent = "";
+    return;
+  }
+
+  i = Math.max(0, Math.min(events.length - 1, idx));
+  t = 0;
+  const e = events[i] || {};
+
+  const d = String(e.decision ?? "").toLowerCase();
+  if (d === "pass") {
+    const next = stepToward(heroTile, npcTile);
+    if (!(next.x === npcTile.x && next.y === npcTile.y)) {
+      heroTile = next;
+    }
+  } else if (d === "veto") {
+    heroTile = stepAway(heroTile, npcTile);
+  }
+
+  heroTile.x = clampTile(heroTile.x);
+  heroTile.y = clampTile(heroTile.y);
+  targetX = heroTile.x * TILE + TILE / 2;
+  targetY = heroTile.y * TILE + TILE / 2;
+
+  fx = { text: String(e.decision ?? "???").toUpperCase(), life: 1.0, kind: d };
+  subtitle.textContent = explain(e);
+  raw.textContent = JSON.stringify(e, null, 2);
+
+  const tags = [];
+  tags.push(`<span class="tag">idx ${i+1}/${events.length}</span>`);
+  tags.push(`<span class="tag">world ${e.world_type ?? "?"}</span>`);
+  tags.push(`<span class="tag">decision ${decisionLabel(e.decision)}</span>`);
+  hud.innerHTML = tags.join("");
+}
+
+function stepToward(src, dst){
+  const dx = Math.sign(dst.x - src.x);
+  const dy = Math.sign(dst.y - src.y);
+  if (Math.abs(dst.x - src.x) >= Math.abs(dst.y - src.y)) {
+    return { x: clampTile(src.x + dx), y: src.y };
+  }
+  return { x: src.x, y: clampTile(src.y + dy) };
+}
+
+function stepAway(src, dst){
+  const dx = Math.sign(src.x - dst.x);
+  const dy = Math.sign(src.y - dst.y);
+  if (Math.abs(dst.x - src.x) >= Math.abs(dst.y - src.y)) {
+    return { x: clampTile(src.x + dx), y: src.y };
+  }
+  return { x: src.x, y: clampTile(src.y + dy) };
+}
+
+function clampTile(v){
+  return Math.max(PLAY_MIN_X, Math.min(PLAY_MAX_X, v));
+}
+
+function drawWindow(x, y, w, h, title){
+  ctx.save();
+  ctx.fillStyle = "rgba(10,20,40,0.92)";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+  if (title) {
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.fillRect(x, y, w, 28);
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.font = "16px system-ui";
+    ctx.textBaseline = "top";
+    ctx.fillText(title, x + 12, y + 7);
+  }
+  ctx.restore();
+}
+
+function drawGauge(x, y, w, h, val){
+  ctx.save();
+  ctx.fillStyle = "rgba(255,255,255,0.15)";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  ctx.fillRect(x, y, w * clamp01(val), h);
+  ctx.strokeStyle = "rgba(255,255,255,0.45)";
+  ctx.strokeRect(x, y, w, h);
+  ctx.restore();
+}
+
+function drawRoundedRect(x, y, w, h, r){
+  const rr = Math.min(r, w/2, h/2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+function drawSpeechBubble(x, y, text){
+  const w = 120;
+  const h = 34;
+  const bx = Math.max(40, Math.min(1080, x - w / 2));
+  const by = Math.max(20, y - h - 26);
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.7)";
+  ctx.strokeStyle = "rgba(255,255,255,0.9)";
+  ctx.lineWidth = 2;
+  drawRoundedRect(bx, by, w, h, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x - 6, by + h);
+  ctx.lineTo(x + 6, by + h);
+  ctx.lineTo(x, by + h + 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "16px system-ui";
+  ctx.textBaseline = "top";
+  ctx.fillText(text, bx + 12, by + 10);
+  ctx.restore();
+}
+
+function drawEmotionAura(x, y, emotion, intensity){
+  ctx.save();
+  const grad = ctx.createRadialGradient(x, y, 0, x, y, 50);
+  if (emotion === "安心") {
+    grad.addColorStop(0, `rgba(100, 200, 255, ${intensity * 0.4})`);
+    grad.addColorStop(1, "rgba(100, 200, 255, 0)");
+  } else if (emotion === "迷い") {
+    grad.addColorStop(0, `rgba(255, 220, 100, ${intensity * 0.35})`);
+    grad.addColorStop(1, "rgba(255, 220, 100, 0)");
+  } else if (emotion === "緊張") {
+    grad.addColorStop(0, `rgba(255, 80, 80, ${intensity * 0.5})`);
+    grad.addColorStop(1, "rgba(255, 80, 80, 0)");
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(x - 50, y - 50, 100, 100);
+  ctx.restore();
+}
+
+function drawEmotionResonance(x1, y1, x2, y2, strength){
+  if (strength < 0.3) return;
+  ctx.save();
+  const grad = ctx.createLinearGradient(x1, y1, x2, y2);
+  grad.addColorStop(0, `rgba(255, 200, 255, ${strength * 0.5})`);
+  grad.addColorStop(1, `rgba(100, 200, 255, ${strength * 0.5})`);
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = 3;
+  ctx.setLineDash([8, 12]);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function dayToneByIndex(idx){
+  const phase = idx % 3;
+  if (phase === 0) return { label: "朝", overlay: "rgba(255,220,180,0.12)" };
+  if (phase === 1) return { label: "昼", overlay: "rgba(255,255,255,0.0)" };
+  return { label: "夜", overlay: "rgba(0,0,40,0.40)" };
+}
+
+function drawMap(worldType, tone){
+  const worldColors = {
+    survival: { base: "#2a4a2a" },
+    community: { base: "#37603a" },
+    capitalism: { base: "#3d4f5f" },
+    infrastructure: { base: "#3a5f3a" }
+  };
+  const colors = worldColors[worldType] || worldColors.community;
+  ctx.fillStyle = colors.base;
+  ctx.fillRect(0, 0, cv.width, cv.height);
+
+  if (worldType !== "survival") {
+    ctx.fillStyle = "#2b6ca3";
+    ctx.fillRect(0, 4 * TILE, cv.width, 2 * TILE);
+    ctx.fillStyle = "#c2a36b";
+    ctx.fillRect(14 * TILE, 4 * TILE, 2 * TILE, 2 * TILE);
+    ctx.fillRect(24 * TILE, 4 * TILE, 2 * TILE, 2 * TILE);
+  }
+
+  if (worldType === "infrastructure" || worldType === "community") {
+    ctx.fillStyle = "#9c7f52";
+    ctx.fillRect(8 * TILE, 0, 2 * TILE, cv.height);
+    ctx.fillRect(20 * TILE, 0, 2 * TILE, cv.height);
+    ctx.fillRect(0, 9 * TILE, cv.width, 2 * TILE);
+  } else if (worldType === "capitalism") {
+    ctx.fillStyle = "#5b6b7a";
+    ctx.fillRect(8 * TILE, 0, 2 * TILE, cv.height);
+    ctx.fillRect(20 * TILE, 0, 2 * TILE, cv.height);
+  }
+
+  if (worldType !== "survival") {
+    ctx.fillStyle = "#8a3b2b";
+    ctx.fillRect(2 * TILE, 1 * TILE, 3 * TILE, 2 * TILE);
+    ctx.fillRect(26 * TILE, 1 * TILE, 3 * TILE, 2 * TILE);
+    ctx.fillStyle = "#d4b07a";
+    ctx.fillRect(2 * TILE, 3 * TILE, 3 * TILE, 2 * TILE);
+    ctx.fillRect(26 * TILE, 3 * TILE, 3 * TILE, 2 * TILE);
+  } else {
+    ctx.fillStyle = "#204020";
+    for (let k = 0; k < 8; k++) {
+      ctx.fillRect((2 + k * 3) * TILE, (2 + (k % 3)) * TILE, TILE, TILE);
+    }
+  }
+
+  // light grid for tiles
+  ctx.save();
+  ctx.strokeStyle = "rgba(0,0,0,0.08)";
+  for (let gx = PLAY_MIN_X; gx <= PLAY_MAX_X; gx++) {
+    ctx.beginPath();
+    ctx.moveTo(gx * TILE, PLAY_MIN_Y * TILE);
+    ctx.lineTo(gx * TILE, PLAY_MAX_Y * TILE + TILE);
+    ctx.stroke();
+  }
+  for (let gy = PLAY_MIN_Y; gy <= PLAY_MAX_Y; gy++) {
+    ctx.beginPath();
+    ctx.moveTo(PLAY_MIN_X * TILE, gy * TILE);
+    ctx.lineTo(PLAY_MAX_X * TILE + TILE, gy * TILE);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  if (tone.overlay !== "rgba(255,255,255,0.0)") {
+    ctx.save();
+    ctx.fillStyle = tone.overlay;
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.restore();
+  }
+}
+
+function render(dt){
+  const e = events[i] ?? {};
+  const riskPost = Number(e.risk_post ?? 0);
+  const ufRaw = Number(e.uncertainty_factor ?? 0);
+  const uf = Number.isFinite(ufRaw) && ufRaw > 0 ? ufRaw : 0.45;
+  const drive = Number(e.drive ?? 0);
+  const calm = clamp01(1.0 - uf);
+  const tense = clamp01(riskPost || 0);
+  const hesitate = clamp01(uf);
+  const tone = dayToneByIndex(i);
+
+  ctx.clearRect(0,0,cv.width,cv.height);
+  drawMap(e.world_type, tone);
+
+  const vx = (targetX - heroX) * 0.10 * speed;
+  const vy = (targetY - heroY) * 0.10 * speed;
+  heroX += vx;
+  heroY += vy;
+  const bob = Math.sin(t*8) * 6;
+
+  const d = String(e.decision ?? "").toLowerCase();
+  if (d === "pass" || d === "hold") {
+    if (t - lastNpcTick > 0.6 && Math.random() < 0.4) {
+      npcDir = (Math.random() > 0.5) ? {x: 1, y: 0} : {x: -1, y: 0};
+      lastNpcTick = t;
+    }
+    npcTile.x = clampTile(npcTile.x + npcDir.x);
+  }
+  if (Math.abs(heroTile.x - npcTile.x) + Math.abs(heroTile.y - npcTile.y) <= 1) {
+    npcTile.x = clampTile(npcTile.x + 1);
+  }
+  npcTile.y = Math.max(PLAY_MIN_Y, Math.min(PLAY_MAX_Y, npcTile.y));
+
+  const npcX = npcTile.x * TILE + TILE/2;
+  const npcY = npcTile.y * TILE + TILE/2;
+
+  const stateLabel = tense > 0.6 ? "緊張" : (hesitate > 0.4 ? "迷い" : "安心");
+  drawEmotionAura(heroX, heroY, stateLabel, 0.8);
+
+  const dist = Math.sqrt((heroX-npcX)**2 + (heroY-npcY)**2);
+  const resonance = Math.max(0, 1 - dist/200);
+  drawEmotionResonance(heroX, heroY, npcX, npcY, resonance);
+
+  // NPC
+  ctx.save();
+  ctx.fillStyle = "#ffb3b3";
+  ctx.beginPath();
+  ctx.arc(npcX, npcY, 16, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = "#7a5b4a";
+  ctx.fillRect(npcX-8, npcY+18, 16, 18);
+  ctx.restore();
+
+  // hero
+  let hx = heroX;
+  let hy = heroY;
+  if (Math.abs(heroTile.x - npcTile.x) + Math.abs(heroTile.y - npcTile.y) === 0) {
+    hx -= TILE * 0.4;
+  }
+  ctx.save();
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  ctx.beginPath();
+  ctx.arc(hx, hy + bob, 18, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  ctx.fillRect(hx-10, hy+22 + bob, 20, 18);
+  ctx.restore();
+
+  drawSpeechBubble(heroX, heroY - 10, stateLabel);
+
+  drawWindow(40, 40, 260, 220, "ステータス");
+  drawWindow(40, 270, 260, 200, "コマンド");
+  drawWindow(40, 540, 1200, 150, "");
+
+  ctx.save();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "15px system-ui";
+  ctx.textBaseline = "top";
+  let tx = 56, ty = 72;
+  ctx.fillText(`状態: ${stateLabel}`, tx, ty); ty += 20;
+  ctx.fillText(`時間帯: ${tone.label}`, tx, ty); ty += 20;
+  ctx.fillText(`世界: ${worldLabel(e.world_type)}`, tx, ty); ty += 26;
+
+  ctx.font = "13px system-ui";
+  ctx.fillText("安心", tx, ty);
+  drawGauge(100, ty - 2, 180, 12, calm);
+  ty += 20;
+  ctx.fillText("迷い", tx, ty);
+  drawGauge(100, ty - 2, 180, 12, hesitate);
+  ty += 20;
+  ctx.fillText("緊張", tx, ty);
+  drawGauge(100, ty - 2, 180, 12, tense);
+  ty += 22;
+
+  ctx.font = "12px system-ui";
+  ctx.fillStyle = "rgba(255,255,255,0.75)";
+  ctx.fillText(`危険度: ${riskPost.toFixed(3)}`, tx, ty); ty += 16;
+  ctx.fillText(`不確実: ${uf.toFixed(3)}`, tx, ty); ty += 16;
+  ctx.fillText(`体調: ${drive.toFixed(3)}`, tx, ty);
+  ctx.restore();
+
+  if (fx){
+    fx.life -= 0.015 * speed;
+    const a = Math.max(0, fx.life);
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.font = "42px system-ui";
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    let mark = "…";
+    if (fx.kind === "pass") mark = "話す";
+    if (fx.kind === "veto") mark = "やめる";
+    if (fx.kind === "hold") mark = "待つ";
+    ctx.fillText(mark, 520, 120);
+    ctx.restore();
+    if (fx.life <= 0) fx = null;
+  }
+
+  const commands = ["はなす", "ちかづく", "ようすみる", "まわりみち"];
+  let cursor = 0;
+  if (fx && fx.kind === "veto") cursor = 2;
+  if (fx && fx.kind === "pass") cursor = 0;
+  if (fx && fx.kind === "hold") cursor = 1;
+  const jitter = (hesitate > 0.35) ? Math.sin(t * 18) * 3 : 0;
+  ctx.save();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "18px system-ui";
+  ctx.textBaseline = "top";
+  commands.forEach((cmd, idx) => {
+    const y = 300 + idx * 32;
+    if (idx === cursor) {
+      ctx.fillText("▶", 56 + jitter, y);
+    }
+    ctx.fillText(cmd, 80, y);
+  });
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "18px system-ui";
+  ctx.textBaseline = "top";
+  const msg = explain(e).split("\n");
+  ctx.fillText(msg[0] ?? "", 60, 570);
+  ctx.fillText(msg[1] ?? "", 60, 605);
+  ctx.fillText(msg[2] ?? "", 60, 640);
+  ctx.restore();
+
+  t += dt/1000;
+}
+
+function tick(now){
+  const dt = now - last;
+  last = now;
+  if (playing && events.length){
+    const dwell = 1200 / speed;
+    if ((t*1000) > dwell){
+      if (i >= events.length - 1) {
+        playing = false;
+      } else {
+        setEvent(i+1);
+      }
+    }
+  }
+  render(dt);
+  requestAnimationFrame(tick);
+}
+
+async function init(){
+  try {
+    const res = await fetch("./replay.json", { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    const json = await res.json();
+    events = json.events ?? [];
+    if (!Array.isArray(events) || events.length === 0) {
+      subtitle.textContent =
+        "replay.json を読み込めましたが events が空です。make_replay.py の出力先を確認してください。";
+      raw.textContent = JSON.stringify(json, null, 2);
+      return;
+    }
+    setEvent(0);
+    requestAnimationFrame(tick);
+  } catch (err) {
+    subtitle.textContent =
+      "replay.json の読み込みに失敗しました。\n" +
+      "http://localhost:8000/replay.html で開いてください。\n\n" +
+      `詳細: ${String(err)}`;
+    raw.textContent = String(err);
+  }
+}
+
+document.getElementById("play").onclick = ()=> playing = true;
+document.getElementById("pause").onclick = ()=> playing = false;
+document.getElementById("prev").onclick = ()=> { playing=false; setEvent(i-1); };
+document.getElementById("next").onclick = ()=> { playing=false; setEvent(i+1); };
+document.getElementById("faster").onclick = ()=> speed = Math.min(6.0, speed*1.25);
+document.getElementById("slower").onclick = ()=> speed = Math.max(0.25, speed/1.25);
+
+init();
+</script>
+</body>
+</html>
