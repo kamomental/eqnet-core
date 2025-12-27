@@ -1,0 +1,943 @@
+{
+  "schema_version": "nightly_audit_v1",
+  "date": "2025-12-27",
+  "trace_files": [
+    "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+  ],
+  "invariants": {
+    "summary": {
+      "TRACE_001": {
+        "total": 644,
+        "pass": 644,
+        "pass_rate": 1.0
+      },
+      "TRACE_002": {
+        "total": 644,
+        "pass": 644,
+        "pass_rate": 1.0
+      },
+      "TRACE_003": {
+        "total": 644,
+        "pass": 644,
+        "pass_rate": 1.0
+      }
+    },
+    "fatal_failures": 0,
+    "warn_fail_rate": 0.0
+  },
+  "boundary": {
+    "threshold": 0.5,
+    "span_count": 110,
+    "max_length": 1,
+    "spans": [
+      {
+        "start_ts": 1766825852150,
+        "end_ts": 1766825852150,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852157,
+        "end_ts": 1766825852157,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852162,
+        "end_ts": 1766825852162,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852164,
+        "end_ts": 1766825852164,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852168,
+        "end_ts": 1766825852168,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852176,
+        "end_ts": 1766825852176,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852178,
+        "end_ts": 1766825852178,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852181,
+        "end_ts": 1766825852181,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852181,
+        "end_ts": 1766825852181,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852186,
+        "end_ts": 1766825852186,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852186,
+        "end_ts": 1766825852186,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852192,
+        "end_ts": 1766825852192,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852192,
+        "end_ts": 1766825852192,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852192,
+        "end_ts": 1766825852192,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852198,
+        "end_ts": 1766825852198,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852200,
+        "end_ts": 1766825852200,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852204,
+        "end_ts": 1766825852204,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852204,
+        "end_ts": 1766825852204,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852210,
+        "end_ts": 1766825852210,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852210,
+        "end_ts": 1766825852210,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852210,
+        "end_ts": 1766825852210,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852219,
+        "end_ts": 1766825852219,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852222,
+        "end_ts": 1766825852222,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852222,
+        "end_ts": 1766825852222,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852232,
+        "end_ts": 1766825852232,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852234,
+        "end_ts": 1766825852234,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852234,
+        "end_ts": 1766825852234,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852240,
+        "end_ts": 1766825852240,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852241,
+        "end_ts": 1766825852241,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852241,
+        "end_ts": 1766825852241,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852246,
+        "end_ts": 1766825852246,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852246,
+        "end_ts": 1766825852246,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852254,
+        "end_ts": 1766825852254,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852256,
+        "end_ts": 1766825852256,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852258,
+        "end_ts": 1766825852258,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852277,
+        "end_ts": 1766825852277,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852277,
+        "end_ts": 1766825852277,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852283,
+        "end_ts": 1766825852283,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852289,
+        "end_ts": 1766825852289,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852291,
+        "end_ts": 1766825852291,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852291,
+        "end_ts": 1766825852291,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852291,
+        "end_ts": 1766825852291,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852295,
+        "end_ts": 1766825852295,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852299,
+        "end_ts": 1766825852299,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852301,
+        "end_ts": 1766825852301,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852301,
+        "end_ts": 1766825852301,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852304,
+        "end_ts": 1766825852304,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852306,
+        "end_ts": 1766825852306,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852307,
+        "end_ts": 1766825852307,
+        "length": 1
+      },
+      {
+        "start_ts": 1766825852313,
+        "end_ts": 1766825852313,
+        "length": 1
+      }
+    ]
+  },
+  "prospection": {
+    "total": 644,
+    "reject": 62,
+    "reject_rate": 0.09627329192546584,
+    "accept_rate": 0.9037267080745341,
+    "top_jerk": [
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-313",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1766825852332,
+        "jerk": 0.3375287084152899,
+        "temperature": 0.13522129158471013,
+        "accepted": false,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-630",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1766825852519,
+        "jerk": 0.3373116839718072,
+        "temperature": 0.13543831602819284,
+        "accepted": false,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-310",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1766825852331,
+        "jerk": 0.33727723060418713,
+        "temperature": 0.13547276939581288,
+        "accepted": false,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-250",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1766825852295,
+        "jerk": 0.3368695008367987,
+        "temperature": 0.13588049916320133,
+        "accepted": false,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-268",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1766825852306,
+        "jerk": 0.3368695008367987,
+        "temperature": 0.13588049916320133,
+        "accepted": false,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-627",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1766825852519,
+        "jerk": 0.3368695008367987,
+        "temperature": 0.13588049916320133,
+        "accepted": false,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-307",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1766825852329,
+        "jerk": 0.33680477235119577,
+        "temperature": 0.1359452276488043,
+        "accepted": false,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-491",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1766825852434,
+        "jerk": 0.33680477235119577,
+        "temperature": 0.1359452276488043,
+        "accepted": false,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-247",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1766825852291,
+        "jerk": 0.33603875926738414,
+        "temperature": 0.13671124073261592,
+        "accepted": false,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-265",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1766825852304,
+        "jerk": 0.33603875926738414,
+        "temperature": 0.13671124073261592,
+        "accepted": false,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      }
+    ],
+    "top_temperature": [
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-0",
+        "scenario_id": "family_roles",
+        "timestamp_ms": 1766825852147,
+        "jerk": 0.034624999999999975,
+        "temperature": 0.47562499999999996,
+        "accepted": true,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-140",
+        "scenario_id": "family_roles",
+        "timestamp_ms": 1766825852228,
+        "jerk": 0.05704066666666667,
+        "temperature": 0.45320933333333324,
+        "accepted": true,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-210",
+        "scenario_id": "family_roles",
+        "timestamp_ms": 1766825852271,
+        "jerk": 0.05704066666666667,
+        "temperature": 0.45320933333333324,
+        "accepted": true,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-340",
+        "scenario_id": "family_roles",
+        "timestamp_ms": 1766825852348,
+        "jerk": 0.05704066666666667,
+        "temperature": 0.45320933333333324,
+        "accepted": true,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-347",
+        "scenario_id": "family_roles",
+        "timestamp_ms": 1766825852350,
+        "jerk": 0.05704066666666667,
+        "temperature": 0.45320933333333324,
+        "accepted": true,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-371",
+        "scenario_id": "family_roles",
+        "timestamp_ms": 1766825852365,
+        "jerk": 0.05704066666666667,
+        "temperature": 0.45320933333333324,
+        "accepted": true,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-520",
+        "scenario_id": "family_roles",
+        "timestamp_ms": 1766825852452,
+        "jerk": 0.05704066666666667,
+        "temperature": 0.45320933333333324,
+        "accepted": true,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-549",
+        "scenario_id": "family_roles",
+        "timestamp_ms": 1766825852470,
+        "jerk": 0.05704066666666667,
+        "temperature": 0.45320933333333324,
+        "accepted": true,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-177",
+        "scenario_id": "family_roles",
+        "timestamp_ms": 1766825852252,
+        "jerk": 0.057109080802416404,
+        "temperature": 0.4531409191975836,
+        "accepted": true,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      },
+      {
+        "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-120",
+        "scenario_id": "family_roles",
+        "timestamp_ms": 1766825852217,
+        "jerk": 0.05722962307277556,
+        "temperature": 0.4530203769272244,
+        "accepted": true,
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+      }
+    ]
+  },
+  "policy": {
+    "offer_throttle_counts": {
+      "safety_block": 62
+    },
+    "offer_throttle_examples": {
+      "safety_block": [
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-27",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852164,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-56",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852181,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-59",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852181,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-68",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852186,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-77",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852192,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-80",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852192,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-90",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852200,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-102",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852204,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-111",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852210,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-114",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852210,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        }
+      ]
+    }
+  },
+  "evidence": {
+    "invariants": {
+      "fatal_failures": [],
+      "warn_failures": []
+    },
+    "boundary_spans": [
+      {
+        "start_ts": 1766825852150,
+        "end_ts": 1766825852150,
+        "length": 1,
+        "start_turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-4",
+        "start_scenario_id": "workplace_safety",
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl",
+        "boundary_reasons": {
+          "hazard_score": 0.65,
+          "risk": 0.7839988,
+          "uncertainty": 0.4089366
+        }
+      },
+      {
+        "start_ts": 1766825852157,
+        "end_ts": 1766825852157,
+        "length": 1,
+        "start_turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-15",
+        "start_scenario_id": "workplace_safety",
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl",
+        "boundary_reasons": {
+          "hazard_score": 0.65,
+          "risk": 0.7819828000000001,
+          "uncertainty": 0.40742459999999997
+        }
+      },
+      {
+        "start_ts": 1766825852162,
+        "end_ts": 1766825852162,
+        "length": 1,
+        "start_turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-24",
+        "start_scenario_id": "workplace_safety",
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl",
+        "boundary_reasons": {
+          "hazard_score": 0.65,
+          "risk": 0.7839988,
+          "uncertainty": 0.4089366
+        }
+      },
+      {
+        "start_ts": 1766825852164,
+        "end_ts": 1766825852164,
+        "length": 1,
+        "start_turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-27",
+        "start_scenario_id": "workplace_safety",
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl",
+        "boundary_reasons": {
+          "hazard_score": 0.65,
+          "risk": 0.79777080766976,
+          "uncertainty": 0.41926560575231997
+        }
+      },
+      {
+        "start_ts": 1766825852168,
+        "end_ts": 1766825852168,
+        "length": 1,
+        "start_turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-33",
+        "start_scenario_id": "family_roles",
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl",
+        "boundary_reasons": {
+          "hazard_score": 0.22,
+          "risk": 0.3863677333333333,
+          "uncertainty": 0.24580080000000004
+        }
+      },
+      {
+        "start_ts": 1766825852176,
+        "end_ts": 1766825852176,
+        "length": 1,
+        "start_turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-47",
+        "start_scenario_id": "workplace_safety",
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl",
+        "boundary_reasons": {
+          "hazard_score": 0.65,
+          "risk": 0.7819828000000001,
+          "uncertainty": 0.40742459999999997
+        }
+      },
+      {
+        "start_ts": 1766825852178,
+        "end_ts": 1766825852178,
+        "length": 1,
+        "start_turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-51",
+        "start_scenario_id": "family_roles",
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl",
+        "boundary_reasons": {
+          "hazard_score": 0.09,
+          "risk": 0.20434999999999998,
+          "uncertainty": 0.21290040000000002
+        }
+      },
+      {
+        "start_ts": 1766825852181,
+        "end_ts": 1766825852181,
+        "length": 1,
+        "start_turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-56",
+        "start_scenario_id": "workplace_safety",
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl",
+        "boundary_reasons": {
+          "hazard_score": 0.65,
+          "risk": 0.79777080766976,
+          "uncertainty": 0.41926560575231997
+        }
+      },
+      {
+        "start_ts": 1766825852181,
+        "end_ts": 1766825852181,
+        "length": 1,
+        "start_turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-56",
+        "start_scenario_id": "workplace_safety",
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl",
+        "boundary_reasons": {
+          "hazard_score": 0.65,
+          "risk": 0.79777080766976,
+          "uncertainty": 0.41926560575231997
+        }
+      },
+      {
+        "start_ts": 1766825852186,
+        "end_ts": 1766825852186,
+        "length": 1,
+        "start_turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-64",
+        "start_scenario_id": "workplace_safety",
+        "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl",
+        "boundary_reasons": {
+          "hazard_score": 0.3,
+          "risk": 0.463036,
+          "uncertainty": 0.24265199999999998
+        }
+      }
+    ],
+    "prospection": {
+      "top_jerk": [
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-313",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852332,
+          "jerk": 0.3375287084152899,
+          "temperature": 0.13522129158471013,
+          "accepted": false,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-630",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852519,
+          "jerk": 0.3373116839718072,
+          "temperature": 0.13543831602819284,
+          "accepted": false,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-310",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852331,
+          "jerk": 0.33727723060418713,
+          "temperature": 0.13547276939581288,
+          "accepted": false,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-250",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852295,
+          "jerk": 0.3368695008367987,
+          "temperature": 0.13588049916320133,
+          "accepted": false,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-268",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852306,
+          "jerk": 0.3368695008367987,
+          "temperature": 0.13588049916320133,
+          "accepted": false,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-627",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852519,
+          "jerk": 0.3368695008367987,
+          "temperature": 0.13588049916320133,
+          "accepted": false,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-307",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852329,
+          "jerk": 0.33680477235119577,
+          "temperature": 0.1359452276488043,
+          "accepted": false,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-491",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852434,
+          "jerk": 0.33680477235119577,
+          "temperature": 0.1359452276488043,
+          "accepted": false,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-247",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852291,
+          "jerk": 0.33603875926738414,
+          "temperature": 0.13671124073261592,
+          "accepted": false,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-265",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1766825852304,
+          "jerk": 0.33603875926738414,
+          "temperature": 0.13671124073261592,
+          "accepted": false,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        }
+      ],
+      "top_temperature": [
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-0",
+          "scenario_id": "family_roles",
+          "timestamp_ms": 1766825852147,
+          "jerk": 0.034624999999999975,
+          "temperature": 0.47562499999999996,
+          "accepted": true,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-140",
+          "scenario_id": "family_roles",
+          "timestamp_ms": 1766825852228,
+          "jerk": 0.05704066666666667,
+          "temperature": 0.45320933333333324,
+          "accepted": true,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-210",
+          "scenario_id": "family_roles",
+          "timestamp_ms": 1766825852271,
+          "jerk": 0.05704066666666667,
+          "temperature": 0.45320933333333324,
+          "accepted": true,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-340",
+          "scenario_id": "family_roles",
+          "timestamp_ms": 1766825852348,
+          "jerk": 0.05704066666666667,
+          "temperature": 0.45320933333333324,
+          "accepted": true,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-347",
+          "scenario_id": "family_roles",
+          "timestamp_ms": 1766825852350,
+          "jerk": 0.05704066666666667,
+          "temperature": 0.45320933333333324,
+          "accepted": true,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-371",
+          "scenario_id": "family_roles",
+          "timestamp_ms": 1766825852365,
+          "jerk": 0.05704066666666667,
+          "temperature": 0.45320933333333324,
+          "accepted": true,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-520",
+          "scenario_id": "family_roles",
+          "timestamp_ms": 1766825852452,
+          "jerk": 0.05704066666666667,
+          "temperature": 0.45320933333333324,
+          "accepted": true,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-549",
+          "scenario_id": "family_roles",
+          "timestamp_ms": 1766825852470,
+          "jerk": 0.05704066666666667,
+          "temperature": 0.45320933333333324,
+          "accepted": true,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-177",
+          "scenario_id": "family_roles",
+          "timestamp_ms": 1766825852252,
+          "jerk": 0.057109080802416404,
+          "temperature": 0.4531409191975836,
+          "accepted": true,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        },
+        {
+          "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-120",
+          "scenario_id": "family_roles",
+          "timestamp_ms": 1766825852217,
+          "jerk": 0.05722962307277556,
+          "temperature": 0.4530203769272244,
+          "accepted": true,
+          "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+        }
+      ]
+    },
+    "policy": {
+      "throttle_examples": {
+        "safety_block": [
+          {
+            "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-27",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1766825852164,
+            "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+          },
+          {
+            "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-56",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1766825852181,
+            "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+          },
+          {
+            "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-59",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1766825852181,
+            "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+          },
+          {
+            "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-68",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1766825852186,
+            "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+          },
+          {
+            "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-77",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1766825852192,
+            "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+          },
+          {
+            "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-80",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1766825852192,
+            "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+          },
+          {
+            "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-90",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1766825852200,
+            "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+          },
+          {
+            "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-102",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1766825852204,
+            "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+          },
+          {
+            "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-111",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1766825852210,
+            "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+          },
+          {
+            "turn_id": "5d0d74ac-894a-4cae-b4af-b51b500ad4c5-114",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1766825852210,
+            "trace_file": "trace_runs\\5d0d74ac-894a-4cae-b4af-b51b500ad4c5\\2025-12-27\\minimal-5d0d74ac-894a-4cae-b4af-b51b500ad4c5.jsonl"
+          }
+        ]
+      }
+    }
+  },
+  "health": {
+    "status": "YELLOW",
+    "reasons": [
+      {
+        "level": "YELLOW",
+        "reason": "prospection reject rate 0.10 outside [0.20, 0.80]"
+      }
+    ]
+  }
+}

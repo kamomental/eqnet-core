@@ -1,0 +1,625 @@
+# EQNet Core Experiment Log (Deviant Trace)
+
+Purpose
+- Capture deviant_event (high boundary + execute) in trace_v1
+- Keep Nightly KPI clean while counting deviant separately
+
+Baseline problem
+- executed_count was near zero, so deviant could not appear
+- Nightly cancel summary showed uncertainty dominance (598 / 599)
+
+Interventions and outcomes (causal only)
+1) Add cancel reason summary to Nightly
+   - Result: cancellation dominated by uncertainty
+   - Conclusion: boundary thresholds were not the bottleneck
+
+2) Add drive_floor (0.1 -> 0.2)
+   - Result: executed_boundary rose (~0.09 -> ~0.13 -> ~0.18)
+   - executed_count stayed low without gate changes
+   - Conclusion: drive_floor raises boundary but does not create execute mass
+
+3) Add uncertainty_scale and lower to 0.6
+   - Result: executed_count jumped to 200
+   - cancel reasons shifted to risk / uncertainty
+   - Conclusion: uncertainty gate was the root bottleneck for execute mass
+
+4) Raise drive_limit to 1.05
+   - Result: drive_norm no longer dominates cancel reasons
+   - cancel reasons remained risk / uncertainty
+   - Conclusion: drive_norm was not the core gate
+
+5) Add risk_scale = 0.85
+   - Result: risk value dropped slightly (e.g., 0.245 -> 0.220)
+   - cancel reasons still split between risk / uncertainty
+   - Conclusion: both gates remain active; single-step reduction was insufficient
+
+Current facts (stable)
+- executed_count can be made large (>= 200) via uncertainty_scale=0.6
+- executed_boundary remains low (~0.16 - 0.18)
+- cancel gates are now risk + uncertainty (two-brake regime)
+
+Next action (queued)
+- Lower uncertainty_scale to 0.5 (temporary)
+- Re-evaluate cancel_reasons, executed_boundary_max, deviant.count
+- If uncertainty drops and risk dominates, adjust risk_scale next
+
+Milestone (pipeline closed with real data)
+- Goal: validate deviant_event pipeline (record -> separate count -> 3-day window -> manual proposal)
+- Conditions (test-only):
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.85
+  - deviant_boundary_threshold=0.20 (concept validation)
+  - executed_count=200
+- Results:
+  - deviant.count=199 (ratio=0.995)
+  - deviant_window reflected
+  - world_prior_proposals=1 (infrastructure, ratio=0.995)
+  - executed_boundary_max=0.202
+- Interpretation (1-line):
+  - In low-hazard worlds, drive alone cannot reach 0.55; world distribution caps boundary.
+- Next step:
+  - introduce world_mixture
+  - restore deviant_boundary_threshold=0.55
+  - move toward "only true deviant" retention
+
+Run Log (world_mixture map swap)
+- Purpose: test whether map swap alone can raise boundary and unlock executed in infrastructure/capitalism
+- Conditions:
+  - world_mixture=infra:0.6, community:0.25, capitalism:0.15
+  - world_mixture_map=infra:workplace_safety, community:family_roles, capitalism:commute
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - deviant_boundary_threshold=0.55
+- Observations (world_breakdown):
+  - infrastructure: executed_count=0, cancel_reasons=risk (all)
+  - community: executed_count=27, executed_boundary_max=0.199, cancel_reasons=risk+drive
+  - capitalism: executed_count=0, cancel_reasons=risk+drive
+- Interpretation:
+  - map swap alone did not unlock infrastructure/capitalism; risk gate still dominant
+- Next step:
+  - externalize risk gate (e.g., w_risk / veto weighting) and test one knob
+
+Run Log (w_risk=0.35, map swap baseline)
+- Purpose: test if lowering risk weight unlocks high-boundary execute in capitalism
+- Conditions:
+  - world_mixture=infra:0.4, community:0.3, capitalism:0.3
+  - world_mixture_map=infra:commute, community:family_roles, capitalism:workplace_safety
+  - drive_limit=1.05
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - w_uncert=0.20
+  - w_risk=0.35
+  - deviant_boundary_threshold=0.55
+  - run_id=c9632ad1-471a-4553-8cf6-560985acdaec
+- Observations:
+  - decision_cycle_total=672, executed=282
+  - deviant.count=0
+  - executed_boundary_max=0.341 (capitalism)
+  - cancel_boundary_max=0.575 (capitalism)
+  - world_breakdown:
+    - capitalism: executed=16, executed_boundary_max=0.341, cancel_total=185 (risk)
+    - community: executed=122, executed_boundary_max=0.225, cancel_total=61 (risk)
+    - infrastructure: executed=144, executed_boundary_max=0.244, cancel_total=144 (risk)
+- Interpretation:
+  - High-boundary states exist (cancel_boundary_max=0.575) but are blocked by risk gate.
+  - Executed boundary improved but still below 0.55 threshold.
+- Next step:
+  - lower w_risk to 0.30 (one knob) and re-check capitalism executed + boundary tail
+
+Run Log (w_risk=0.30)
+- Purpose: test whether lowering risk weight further unlocks high-boundary execute
+- Conditions:
+  - world_mixture=infra:0.4, community:0.3, capitalism:0.3
+  - world_mixture_map=infra:commute, community:family_roles, capitalism:workplace_safety
+  - drive_limit=1.05
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - w_uncert=0.20
+  - w_risk=0.30
+  - deviant_boundary_threshold=0.55
+  - run_id=8c526c83-8af6-4bf3-8892-93897d536bd4
+- Observations:
+  - decision_cycle_total=696, executed=305
+  - deviant.count=0
+  - executed_boundary_max=0.352 (capitalism)
+  - cancel_boundary_max=0.571 (capitalism)
+  - world_breakdown:
+    - capitalism: executed=19, executed_boundary_max=0.352, cancel_total=152 (risk)
+    - community: executed=94, executed_boundary_max=0.222, cancel_total=47 (risk)
+    - infrastructure: executed=192, executed_boundary_max=0.244, cancel_total=192 (risk)
+- Interpretation:
+  - Capitalism executed increased slightly and boundary tail moved up a bit.
+  - High-boundary cancel remains; risk gate still blocks 0.55-level states.
+- Next step:
+  - lower w_risk to 0.28 (one knob) or consider scenario mix shift if tail stalls
+
+Run Log (w_risk=0.28)
+- Purpose: test if risk gate relaxation can push executed boundary into deviant threshold
+- Conditions:
+  - world_mixture=infra:0.4, community:0.3, capitalism:0.3
+  - world_mixture_map=infra:commute, community:family_roles, capitalism:workplace_safety
+  - drive_limit=1.05
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - w_uncert=0.20
+  - w_risk=0.28
+  - deviant_boundary_threshold=0.55
+  - run_id=d3398315-7449-41ed-be83-adef88fe9e76
+- Observations:
+  - decision_cycle_total=678, executed=334
+  - deviant.count=0
+  - executed_boundary_max=0.352 (capitalism)
+  - cancel_boundary_max=0.571 (capitalism)
+  - world_breakdown:
+    - capitalism: executed=46, executed_boundary_max=0.352, cancel_total=143 (risk)
+    - community: executed=118, executed_boundary_max=0.222, cancel_total=59 (risk)
+    - infrastructure: executed=170, executed_boundary_max=0.304, cancel_total=142 (risk)
+- Interpretation:
+  - Capitalism executed increased; infrastructure boundary max rose to 0.304.
+  - High-boundary cancel persists; deviant still not triggered.
+- Next step:
+  - shift mixture toward capitalism to increase tail sample count
+  - or lower w_risk to 0.26 if you want another gate step
+
+Run Log (mixture shift: capitalism 0.50)
+- Purpose: increase tail sample count by sampling high-boundary world more often
+- Conditions:
+  - world_mixture=infra:0.25, community:0.25, capitalism:0.50
+  - world_mixture_map=infra:commute, community:family_roles, capitalism:workplace_safety
+  - drive_limit=1.05
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - w_uncert=0.20
+  - w_risk=0.28
+  - deviant_boundary_threshold=0.55
+  - run_id=82822cd0-dc66-47de-b591-dd1b8da9df5c
+- Observations:
+  - decision_cycle_total=657, executed=294
+  - deviant.count=0
+  - executed_boundary_max=0.362 (capitalism)
+  - cancel_boundary_max=0.579 (capitalism)
+  - world_breakdown:
+    - capitalism: executed=62, executed_boundary_max=0.362, cancel_total=214 (risk)
+    - community: executed=102, executed_boundary_max=0.227, cancel_total=51 (risk)
+    - infrastructure: executed=130, executed_boundary_max=0.304, cancel_total=98 (risk)
+- Interpretation:
+  - Capitalism executed increased and boundary tail rose slightly (0.352 -> 0.362).
+  - Deviant still zero; risk gate continues to block 0.55-level states.
+- Next step:
+  - externalize tau_execute (or risk gate threshold) to raise executed-side ceiling
+  - or lower w_risk further only if you want to keep one-knob gate probing
+
+Run Log (tau_execute=-0.05)
+- Purpose: test whether execute ceiling is dominated by tau_execute offset
+- Conditions:
+  - world_mixture=infra:0.25, community:0.25, capitalism:0.50
+  - world_mixture_map=infra:commute, community:family_roles, capitalism:workplace_safety
+  - drive_limit=1.05
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - w_uncert=0.20
+  - w_risk=0.28
+  - tau_execute=-0.05
+  - deviant_boundary_threshold=0.55
+  - run_id=d41564f6-5c25-414b-af25-96ba309e6c9c
+- Observations:
+  - decision_cycle_total=653, executed=313
+  - deviant.count=0
+  - executed_boundary_max=0.36 (capitalism)
+  - cancel_boundary_max=0.577 (capitalism)
+  - world_breakdown:
+    - capitalism: executed=75, executed_boundary_max=0.36, cancel_total=234 (risk)
+    - community: executed=88, executed_boundary_max=0.222, cancel_total=44 (risk)
+    - infrastructure: executed=150, executed_boundary_max=0.325, cancel_total=62 (risk)
+- Interpretation:
+  - Lowering tau_execute did not lift executed_boundary_max beyond ~0.36.
+  - High-boundary cancel persists (0.577), so executed ceiling is not set by tau_execute alone.
+- Next step:
+  - verify whether boundary_score is actually used in execute decision (score source audit)
+  - or externalize explicit risk/uncertainty gate thresholds if they exist outside tau
+
+Run Log (decision_score instrumentation)
+- Purpose: log decision_score/u_hat/veto_score to identify execute ceiling source
+- Conditions:
+  - world_mixture=infra:0.25, community:0.25, capitalism:0.50
+  - world_mixture_map=infra:commute, community:family_roles, capitalism:workplace_safety
+  - drive_limit=1.05
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - w_uncert=0.20
+  - w_risk=0.28
+  - tau_execute=-0.05
+  - deviant_boundary_threshold=0.55
+  - run_id=5e1cd321-3c1a-470c-bfe6-cc23f56c36ae
+- Observations:
+  - decision_cycle_total=653, executed=318
+  - deviant.count=0
+  - executed_boundary_max=0.362 (capitalism)
+  - cancel_boundary_max=0.578 (capitalism)
+  - decision_score_executed_max=0.257
+  - decision_score_cancel_max=-0.063
+  - u_hat_executed_max=0.321
+  - veto_score_executed_min=0.064
+  - world_breakdown:
+    - capitalism: decision_score_executed_max=0.124, decision_score_cancel_max=-0.063
+    - community: decision_score_executed_max=0.257, decision_score_cancel_max=-0.085
+    - infrastructure: decision_score_executed_max=0.159, decision_score_cancel_max=-0.088
+- Interpretation:
+  - Decision score cleanly separates execute vs cancel; cancel ceiling is negative.
+  - High boundary cancels persist because decision score is suppressed (risk/veto dominated), not because tau_execute blocks.
+- Next step:
+  - adjust decision score terms directly (beta_veto or w_risk/w_uncert in ReplayConfig)
+  - or add decision_score stats to nightly per world to target the dominant term
+
+Run Log (beta_veto=0.8)
+- Purpose: reduce decision_score suppression via beta_veto
+- Conditions:
+  - world_mixture=infra:0.25, community:0.25, capitalism:0.50
+  - world_mixture_map=infra:commute, community:family_roles, capitalism:workplace_safety
+  - drive_limit=1.05
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - w_uncert=0.20
+  - w_risk=0.28
+  - tau_execute=-0.05
+  - beta_veto=0.8
+  - deviant_boundary_threshold=0.55
+  - run_id=15d1b446-0826-43b6-b782-b704db086ee0
+- Observations:
+  - decision_cycle_total=640, executed=399
+  - deviant.count=0
+  - executed_boundary_max=0.362 (capitalism)
+  - cancel_boundary_max=0.578 (capitalism)
+  - decision_score_executed_max=0.27
+  - decision_score_cancel_max=-0.05
+  - u_hat_executed_max=0.321
+  - veto_score_cancel_max=0.362
+  - world_breakdown:
+    - capitalism: executed=100, executed_boundary_max=0.362, decision_score_executed_max=0.15, decision_score_cancel_max=-0.112
+    - community: executed=179, executed_boundary_max=0.292, decision_score_executed_max=0.27, decision_score_cancel_max=-0.05
+    - infrastructure: executed=120, executed_boundary_max=0.323, decision_score_executed_max=0.178, decision_score_cancel_max=-0.116
+- Interpretation:
+  - beta_veto reduction increased executed_count but did not lift boundary ceiling.
+  - Cancel-side risk veto remains dominant; boundary high states still cancel.
+- Next step:
+  - consider stronger beta_veto drop (0.6) or reduce w_risk/w_uncert in decision score
+
+Run Log (w_reward=1.25)
+- Purpose: lift u_hat on high-boundary cancels by increasing reward weight
+- Conditions:
+  - world_mixture=infra:0.25, community:0.25, capitalism:0.50
+  - world_mixture_map=infra:commute, community:family_roles, capitalism:workplace_safety
+  - drive_limit=1.05
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - w_reward=1.25
+  - w_uncert=0.20
+  - w_risk=0.28
+  - tau_execute=-0.05
+  - beta_veto=0.8
+  - deviant_boundary_threshold=0.55
+  - run_id=62d2dd55-caab-4166-a3a6-e2ca2abd2726
+- Observations:
+  - decision_cycle_total=643, executed=535
+  - deviant.count=0
+  - executed_boundary_max=0.427 (capitalism)
+  - cancel_boundary_max=0.579 (capitalism)
+  - decision_score_executed_max=0.395
+  - decision_score_cancel_max=-0.154
+  - high_boundary_cancel:
+    - count=62
+    - u_hat p50=0.114 (positive now)
+    - decision_score p50=-0.172 (still negative)
+    - veto_score p50=0.358
+  - world_breakdown:
+    - capitalism: executed=216, executed_boundary_max=0.427, decision_score_executed_max=0.275, decision_score_cancel_max=-0.154
+    - community: executed=147, executed_boundary_max=0.294
+    - infrastructure: executed=172, executed_boundary_max=0.326
+- Interpretation:
+  - w_reward lifts u_hat and executed_boundary tail (0.362 -> 0.427).
+  - High-boundary cancels persist because veto_score remains high; decision_score still negative.
+- Next step:
+  - reduce veto impact (beta_veto further down) or lower w_risk/w_uncert in decision score
+
+Run Log (beta_veto=0.6)
+- Purpose: reduce veto penalty after u_hat turned positive in high-boundary cancels
+- Conditions:
+  - world_mixture=infra:0.25, community:0.25, capitalism:0.50
+  - world_mixture_map=infra:commute, community:family_roles, capitalism:workplace_safety
+  - drive_limit=1.05
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - w_reward=1.25
+  - w_uncert=0.20
+  - w_risk=0.28
+  - tau_execute=-0.05
+  - beta_veto=0.6
+  - deviant_boundary_threshold=0.55
+  - run_id=5193f0a9-f942-425a-80d0-96156b6933c9
+- Observations:
+  - decision_cycle_total=641, executed=538
+  - deviant.count=0
+  - executed_boundary_max=0.426 (capitalism)
+  - cancel_boundary_max=0.578 (capitalism)
+  - decision_score_executed_max=0.408
+  - decision_score_cancel_max=-0.085
+  - high_boundary_cancel:
+    - count=53
+    - u_hat p50=0.114 (positive)
+    - decision_score p50=-0.101 (still negative)
+    - veto_score p50=0.358
+  - world_breakdown:
+    - capitalism: executed=206, executed_boundary_max=0.426, decision_score_executed_max=0.301, decision_score_cancel_max=-0.085
+- Interpretation:
+  - beta_veto drop shifts decision scores upward but high-boundary cancels remain negative.
+  - Boundary ceiling stays ~0.426; deviant still absent.
+- Next step:
+  - reduce w_risk/w_uncert in decision score (target veto dominance)
+  - or raise w_reward further if you want another value-side push
+
+Run Log (w_risk=0.22)
+- Purpose: reduce risk dominance inside veto after beta_veto and w_reward shifts
+- Conditions:
+  - world_mixture=infra:0.25, community:0.25, capitalism:0.50
+  - world_mixture_map=infra:commute, community:family_roles, capitalism:workplace_safety
+  - drive_limit=1.05
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - w_reward=1.25
+  - w_uncert=0.20
+  - w_risk=0.22
+  - tau_execute=-0.05
+  - beta_veto=0.6
+  - deviant_boundary_threshold=0.55
+  - run_id=650004a1-9bc3-4fa9-bc70-a7c28dc9191d
+- Observations:
+  - decision_cycle_total=645, executed=645
+  - deviant.count=108 (ratio=0.167, capitalism only)
+  - executed_boundary_max=0.579 (capitalism)
+  - cancel_boundary_max=0.0 (no cancels)
+  - decision_score_executed_max=0.466
+  - high_boundary_cancel_count=0
+  - world_breakdown:
+    - capitalism: executed=324, executed_boundary_max=0.579, deviant_count=108
+    - community: executed=141, executed_boundary_max=0.295
+    - infrastructure: executed=180, executed_boundary_max=0.326
+  - world_prior_proposals: capitalism ratio=0.333 (manual proposal emitted)
+- Interpretation:
+  - Risk gate fully opened; all decision_cycle rows execute.
+  - Deviant pipeline fires and proposals appear, but safety selectivity is lost.
+- Next step:
+  - restore some gate selectivity (raise w_risk slightly or reintroduce beta_veto)
+  - or move deviant threshold back to strict mode after confirming pipeline
+
+Run Log (w_risk=0.24)
+- Purpose: reintroduce selectivity after full-open gate at w_risk=0.22
+- Conditions:
+  - world_mixture=infra:0.25, community:0.25, capitalism:0.50
+  - world_mixture_map=infra:commute, community:family_roles, capitalism:workplace_safety
+  - drive_limit=1.05
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - w_reward=1.25
+  - w_uncert=0.20
+  - w_risk=0.24
+  - tau_execute=-0.05
+  - beta_veto=0.6
+  - deviant_boundary_threshold=0.55
+  - run_id=6ccf446f-1533-435d-9292-64f4be89abb7
+- Observations:
+  - decision_cycle_total=656, executed=638
+  - deviant.count=75 (ratio=0.118, capitalism only)
+  - executed_boundary_max=0.564 (capitalism)
+  - cancel_boundary_max=0.577
+  - high_boundary_cancel_count=18 (decision_score p50=-0.049)
+  - world_breakdown:
+    - capitalism: executed=261, executed_boundary_max=0.564, deviant_count=75, cancel_total=18
+    - community: executed=153, executed_boundary_max=0.293
+    - infrastructure: executed=224, executed_boundary_max=0.323
+  - world_prior_proposals: capitalism ratio=0.287
+- Interpretation:
+  - Selectivity partially restored (some cancels return).
+  - Deviant still high; further tightening needed for rare-event target.
+- Next step:
+  - move to w_risk=0.26 (binary search step)
+  - or raise deviant_boundary_threshold if counts remain high
+
+Run Log (w_risk=0.26)
+- Purpose: binary search step toward rare-event regime
+- Conditions:
+  - world_mixture=infra:0.25, community:0.25, capitalism:0.50
+  - world_mixture_map=infra:commute, community:family_roles, capitalism:workplace_safety
+  - drive_limit=1.05
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - w_reward=1.25
+  - w_uncert=0.20
+  - w_risk=0.26
+  - tau_execute=-0.05
+  - beta_veto=0.6
+  - deviant_boundary_threshold=0.55
+  - run_id=305462c6-f332-41dd-bcd9-da5e63e81a27
+- Observations:
+  - decision_cycle_total=651, executed=554
+  - deviant.count=0 (ratio=0.0)
+  - executed_boundary_max=0.427 (capitalism)
+  - cancel_boundary_max=0.579
+  - high_boundary_cancel_count=49 (decision_score p50=-0.075)
+  - world_breakdown:
+    - capitalism: executed=194, executed_boundary_max=0.427, cancel_total=97
+    - community: executed=156, executed_boundary_max=0.294
+    - infrastructure: executed=204, executed_boundary_max=0.326
+- Interpretation:
+  - Gate tightened too far; high-boundary executes disappeared.
+  - Deviant became zero, so rare-event target overshot.
+- Next step:
+  - try midpoint w_risk=0.25 to balance selectivity vs deviant emergence
+
+Run Log (w_risk=0.25)
+- Purpose: midpoint test between over-open (0.24) and over-closed (0.26)
+- Conditions:
+  - world_mixture=infra:0.25, community:0.25, capitalism:0.50
+  - world_mixture_map=infra:commute, community:family_roles, capitalism:workplace_safety
+  - drive_limit=1.05
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - w_reward=1.25
+  - w_uncert=0.20
+  - w_risk=0.25
+  - tau_execute=-0.05
+  - beta_veto=0.6
+  - deviant_boundary_threshold=0.55
+  - run_id=eb7db7ff-764b-41d6-affe-47c86ad246f9
+- Observations:
+  - decision_cycle_total=650, executed=607
+  - deviant.count=48 (ratio=0.079, capitalism only)
+  - executed_boundary_max=0.549 (capitalism)
+  - cancel_boundary_max=0.579
+  - high_boundary_cancel_count=43 (decision_score p50=-0.058)
+  - world_breakdown:
+    - capitalism: executed=230, executed_boundary_max=0.549, deviant_count=48, cancel_total=43
+    - community: executed=177, executed_boundary_max=0.293
+    - infrastructure: executed=200, executed_boundary_max=0.326
+  - world_prior_proposals: capitalism ratio=0.209
+- Interpretation:
+  - Executed ratio ~0.934 with deviant_ratio 0.079 (still above rare-event goal).
+  - Gate is close; further tightening or threshold raise needed.
+- Next step:
+  - raise deviant_boundary_threshold to 0.60 (definition tighten)
+  - or nudge w_risk slightly upward (0.255) if you want more selectivity
+
+Run Log (deviant_boundary_threshold=0.60)
+- Purpose: tighten deviant definition without touching the gate
+- Conditions:
+  - world_mixture=infra:0.25, community:0.25, capitalism:0.50
+  - world_mixture_map=infra:commute, community:family_roles, capitalism:workplace_safety
+  - drive_limit=1.05
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - w_reward=1.25
+  - w_uncert=0.20
+  - w_risk=0.25
+  - tau_execute=-0.05
+  - beta_veto=0.6
+  - deviant_boundary_threshold=0.60
+  - run_id=8fed97a1-cce5-4e3d-a2a9-526d8813349c
+- Observations:
+  - decision_cycle_total=666, executed=620
+  - deviant.count=39 (ratio=0.063, capitalism only)
+  - executed_boundary_max=0.549
+  - cancel_boundary_max=0.579
+  - high_boundary_cancel_count=46 (decision_score p50=-0.062)
+  - world_breakdown:
+    - capitalism: executed=209, executed_boundary_max=0.549, deviant_count=39, cancel_total=46
+    - community: executed=147, executed_boundary_max=0.293
+    - infrastructure: executed=264, executed_boundary_max=0.326
+  - world_prior_proposals: capitalism ratio=0.187
+- Interpretation:
+  - Deviant ratio decreased (0.079 -> 0.063) but still slightly above target band.
+  - Gate stability preserved; threshold tweak works as expected.
+- Next step:
+  - consider deviant_threshold 0.62 or 0.65 if you want 0.01-0.05 band
+  - or accept 0.063 as near-target and lock parameters for a longer run
+
+Run Log (deviant_boundary_threshold=0.65)
+- Purpose: push deviant into rare-event band without touching gate
+- Conditions:
+  - world_mixture=infra:0.25, community:0.25, capitalism:0.50
+  - world_mixture_map=infra:commute, community:family_roles, capitalism:workplace_safety
+  - drive_limit=1.05
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - w_reward=1.25
+  - w_uncert=0.20
+  - w_risk=0.25
+  - tau_execute=-0.05
+  - beta_veto=0.6
+  - deviant_boundary_threshold=0.65
+  - run_id=0db6086f-1a88-440c-9953-fb7b5ebafffe
+- Observations:
+  - decision_cycle_total=640, executed=581
+  - deviant.count=54 (ratio=0.093, capitalism only)
+  - executed_boundary_max=0.549
+  - cancel_boundary_max=0.579
+  - high_boundary_cancel_count=59 (decision_score p50=-0.062)
+  - world_breakdown:
+    - capitalism: executed=280, executed_boundary_max=0.549, deviant_count=54, cancel_total=59
+    - community: executed=141, executed_boundary_max=0.294
+    - infrastructure: executed=160, executed_boundary_max=0.326
+  - world_prior_proposals: capitalism ratio=0.193
+- Interpretation:
+  - Deviant ratio did not decrease as expected; boundary max remains below threshold.
+  - Indicates boundary threshold is not the primary limiter at this point.
+- Next step:
+  - re-check deviant trigger logic or confirm threshold applied as intended
+  - consider reverting to 0.60 and adjust gate selectivity instead
+
+Run Log (boundary_only + deviant_boundary_threshold=0.60)
+- Purpose: verify deviant fires only when boundary crosses threshold
+- Conditions:
+  - world_mixture=infra:0.25, community:0.25, capitalism:0.50
+  - world_mixture_map=infra:commute, community:family_roles, capitalism:workplace_safety
+  - drive_limit=1.05
+  - drive_floor=0.3
+  - uncertainty_scale=0.5
+  - risk_scale=0.7
+  - w_reward=1.25
+  - w_uncert=0.20
+  - w_risk=0.25
+  - tau_execute=-0.05
+  - beta_veto=0.6
+  - deviant_mode=boundary_only
+  - deviant_boundary_threshold=0.60
+  - run_id=5d0d74ac-894a-4cae-b4af-b51b500ad4c5
+- Observations:
+  - decision_cycle_total=644, executed=582
+  - deviant.count=0 (ratio=0.0)
+  - executed_boundary_max=0.549
+  - cancel_boundary_max=0.579
+  - world_breakdown:
+    - capitalism: executed=268, executed_boundary_max=0.549, deviant_count=0, cancel_total=62
+    - community: executed=138, executed_boundary_max=0.294
+    - infrastructure: executed=176, executed_boundary_max=0.326
+- Interpretation:
+  - As expected, no deviant when executed_boundary_max < threshold.
+  - Definition mixing is resolved; boundary-only behaves correctly.
+
+Operational Readiness Notes (Deviant/Resonance split)
+- Status: Ready to operate now
+- Why now:
+  - deviant (boundary_only) definition fixed and reproducible
+  - resonance (risk_only) separated from KPI impact
+  - Nightly -> 3-day window -> proposals proven with real logs
+  - thresholds/modes are CLI-controlled and auditable
+- What verification gave us (facts):
+  - boundary_score is explanatory, decision_score is the actual gate
+  - deviant has two distinct meanings (boundary vs risk), mixing breaks tuning
+  - w_risk is peak-sensitive due to double-penalty + uncalibrated scales
+- How reactions change (operational behavior):
+  - deviant (boundary_only): structural anomaly signal -> world/model feedback
+  - resonance (risk_only): safety/ethics signal -> cautionary notices
+- Immediate operating posture:
+  - run with boundary_only for deviant
+  - run risk_only for resonance KPI
+  - keep proposals separate (world_prior vs resonance notices)
+
+Notes
+- All gate changes are test-only knobs; do not harden into runtime.yaml yet.
+- Goal is observability and a stable path to deviant capture, not model realism.

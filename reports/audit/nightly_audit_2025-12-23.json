@@ -2,7 +2,7 @@
   "schema_version": "nightly_audit_v1",
   "date": "2025-12-23",
   "trace_files": [
-    "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+    "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
   ],
   "invariants": {
     "summary": {
@@ -38,168 +38,168 @@
     "accept_rate": 0.2222222222222222,
     "top_jerk": [
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-2",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-2",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989550,
+        "timestamp_ms": 1766482637333,
         "jerk": 0.5052390666666666,
         "temperature": -0.1517390666666667,
         "accepted": false,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       },
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-6",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-6",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989557,
-        "jerk": 0.40406250822314677,
-        "temperature": -0.04431250822314674,
+        "timestamp_ms": 1766482637336,
+        "jerk": 0.4175894842231466,
+        "temperature": -0.05783948422314669,
         "accepted": false,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       },
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-3",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-3",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989550,
+        "timestamp_ms": 1766482637333,
         "jerk": 0.37361812426666674,
         "temperature": -0.008868124266666694,
         "accepted": false,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       },
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-4",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-4",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989550,
-        "jerk": 0.3268999357653333,
-        "temperature": 0.07410006423466665,
+        "timestamp_ms": 1766482637333,
+        "jerk": 0.3384926857653333,
+        "temperature": 0.06250731423466667,
         "accepted": false,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       },
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-0",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-0",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989548,
+        "timestamp_ms": 1766482637331,
         "jerk": 0.325775,
         "temperature": 0.07022499999999998,
         "accepted": false,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       },
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-7",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-7",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989557,
-        "jerk": 0.2514058199118506,
-        "temperature": 0.11646918008814935,
+        "timestamp_ms": 1766482637336,
+        "jerk": 0.26097418071185063,
+        "temperature": 0.10690081928814935,
         "accepted": false,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       },
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-1",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-1",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989550,
+        "timestamp_ms": 1766482637331,
         "jerk": 0.22490133333333334,
         "temperature": 0.12609866666666664,
         "accepted": false,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       },
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-5",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-5",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989557,
-        "jerk": 0.1688269352789334,
-        "temperature": 0.18467306472106668,
+        "timestamp_ms": 1766482637336,
+        "jerk": 0.17496565527893337,
+        "temperature": 0.17853434472106663,
         "accepted": true,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       },
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-transition-4",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-transition-4",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989550,
+        "timestamp_ms": 1766482637333,
         "jerk": 0.0,
         "temperature": 0.0,
         "accepted": true,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       }
     ],
     "top_temperature": [
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-5",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-5",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989557,
-        "jerk": 0.1688269352789334,
-        "temperature": 0.18467306472106668,
+        "timestamp_ms": 1766482637336,
+        "jerk": 0.17496565527893337,
+        "temperature": 0.17853434472106663,
         "accepted": true,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       },
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-1",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-1",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989550,
+        "timestamp_ms": 1766482637331,
         "jerk": 0.22490133333333334,
         "temperature": 0.12609866666666664,
         "accepted": false,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       },
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-7",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-7",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989557,
-        "jerk": 0.2514058199118506,
-        "temperature": 0.11646918008814935,
+        "timestamp_ms": 1766482637336,
+        "jerk": 0.26097418071185063,
+        "temperature": 0.10690081928814935,
         "accepted": false,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       },
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-4",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-0",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989550,
-        "jerk": 0.3268999357653333,
-        "temperature": 0.07410006423466665,
-        "accepted": false,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
-      },
-      {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-0",
-        "scenario_id": "commute",
-        "timestamp_ms": 1766482989548,
+        "timestamp_ms": 1766482637331,
         "jerk": 0.325775,
         "temperature": 0.07022499999999998,
         "accepted": false,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       },
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-transition-4",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-4",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989550,
+        "timestamp_ms": 1766482637333,
+        "jerk": 0.3384926857653333,
+        "temperature": 0.06250731423466667,
+        "accepted": false,
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
+      },
+      {
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-transition-4",
+        "scenario_id": "commute",
+        "timestamp_ms": 1766482637333,
         "jerk": 0.0,
         "temperature": 0.0,
         "accepted": true,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       },
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-3",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-3",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989550,
+        "timestamp_ms": 1766482637333,
         "jerk": 0.37361812426666674,
         "temperature": -0.008868124266666694,
         "accepted": false,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       },
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-6",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-6",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989557,
-        "jerk": 0.40406250822314677,
-        "temperature": -0.04431250822314674,
+        "timestamp_ms": 1766482637336,
+        "jerk": 0.4175894842231466,
+        "temperature": -0.05783948422314669,
         "accepted": false,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       },
       {
-        "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-2",
+        "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-2",
         "scenario_id": "commute",
-        "timestamp_ms": 1766482989550,
+        "timestamp_ms": 1766482637333,
         "jerk": 0.5052390666666666,
         "temperature": -0.1517390666666667,
         "accepted": false,
-        "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+        "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
       }
     ]
   },
@@ -210,46 +210,46 @@
     "offer_throttle_examples": {
       "safety_block": [
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-0",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-0",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989548,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "timestamp_ms": 1766482637331,
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-1",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-1",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989550,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "timestamp_ms": 1766482637331,
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-2",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-2",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989550,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "timestamp_ms": 1766482637333,
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-3",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-3",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989550,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "timestamp_ms": 1766482637333,
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-4",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-4",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989550,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "timestamp_ms": 1766482637333,
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-6",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-6",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989557,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "timestamp_ms": 1766482637336,
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-7",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-7",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989557,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "timestamp_ms": 1766482637336,
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         }
       ]
     }
@@ -263,168 +263,168 @@
     "prospection": {
       "top_jerk": [
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-2",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-2",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989550,
+          "timestamp_ms": 1766482637333,
           "jerk": 0.5052390666666666,
           "temperature": -0.1517390666666667,
           "accepted": false,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-6",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-6",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989557,
-          "jerk": 0.40406250822314677,
-          "temperature": -0.04431250822314674,
+          "timestamp_ms": 1766482637336,
+          "jerk": 0.4175894842231466,
+          "temperature": -0.05783948422314669,
           "accepted": false,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-3",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-3",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989550,
+          "timestamp_ms": 1766482637333,
           "jerk": 0.37361812426666674,
           "temperature": -0.008868124266666694,
           "accepted": false,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-4",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-4",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989550,
-          "jerk": 0.3268999357653333,
-          "temperature": 0.07410006423466665,
+          "timestamp_ms": 1766482637333,
+          "jerk": 0.3384926857653333,
+          "temperature": 0.06250731423466667,
           "accepted": false,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-0",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-0",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989548,
+          "timestamp_ms": 1766482637331,
           "jerk": 0.325775,
           "temperature": 0.07022499999999998,
           "accepted": false,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-7",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-7",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989557,
-          "jerk": 0.2514058199118506,
-          "temperature": 0.11646918008814935,
+          "timestamp_ms": 1766482637336,
+          "jerk": 0.26097418071185063,
+          "temperature": 0.10690081928814935,
           "accepted": false,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-1",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-1",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989550,
+          "timestamp_ms": 1766482637331,
           "jerk": 0.22490133333333334,
           "temperature": 0.12609866666666664,
           "accepted": false,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-5",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-5",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989557,
-          "jerk": 0.1688269352789334,
-          "temperature": 0.18467306472106668,
+          "timestamp_ms": 1766482637336,
+          "jerk": 0.17496565527893337,
+          "temperature": 0.17853434472106663,
           "accepted": true,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-transition-4",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-transition-4",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989550,
+          "timestamp_ms": 1766482637333,
           "jerk": 0.0,
           "temperature": 0.0,
           "accepted": true,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         }
       ],
       "top_temperature": [
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-5",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-5",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989557,
-          "jerk": 0.1688269352789334,
-          "temperature": 0.18467306472106668,
+          "timestamp_ms": 1766482637336,
+          "jerk": 0.17496565527893337,
+          "temperature": 0.17853434472106663,
           "accepted": true,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-1",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-1",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989550,
+          "timestamp_ms": 1766482637331,
           "jerk": 0.22490133333333334,
           "temperature": 0.12609866666666664,
           "accepted": false,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-7",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-7",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989557,
-          "jerk": 0.2514058199118506,
-          "temperature": 0.11646918008814935,
+          "timestamp_ms": 1766482637336,
+          "jerk": 0.26097418071185063,
+          "temperature": 0.10690081928814935,
           "accepted": false,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-4",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-0",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989550,
-          "jerk": 0.3268999357653333,
-          "temperature": 0.07410006423466665,
-          "accepted": false,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
-        },
-        {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-0",
-          "scenario_id": "commute",
-          "timestamp_ms": 1766482989548,
+          "timestamp_ms": 1766482637331,
           "jerk": 0.325775,
           "temperature": 0.07022499999999998,
           "accepted": false,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-transition-4",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-4",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989550,
+          "timestamp_ms": 1766482637333,
+          "jerk": 0.3384926857653333,
+          "temperature": 0.06250731423466667,
+          "accepted": false,
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
+        },
+        {
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-transition-4",
+          "scenario_id": "commute",
+          "timestamp_ms": 1766482637333,
           "jerk": 0.0,
           "temperature": 0.0,
           "accepted": true,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-3",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-3",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989550,
+          "timestamp_ms": 1766482637333,
           "jerk": 0.37361812426666674,
           "temperature": -0.008868124266666694,
           "accepted": false,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-6",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-6",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989557,
-          "jerk": 0.40406250822314677,
-          "temperature": -0.04431250822314674,
+          "timestamp_ms": 1766482637336,
+          "jerk": 0.4175894842231466,
+          "temperature": -0.05783948422314669,
           "accepted": false,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         },
         {
-          "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-2",
+          "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-2",
           "scenario_id": "commute",
-          "timestamp_ms": 1766482989550,
+          "timestamp_ms": 1766482637333,
           "jerk": 0.5052390666666666,
           "temperature": -0.1517390666666667,
           "accepted": false,
-          "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+          "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
         }
       ]
     },
@@ -432,46 +432,46 @@
       "throttle_examples": {
         "safety_block": [
           {
-            "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-0",
+            "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-0",
             "scenario_id": "commute",
-            "timestamp_ms": 1766482989548,
-            "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+            "timestamp_ms": 1766482637331,
+            "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
           },
           {
-            "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-1",
+            "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-1",
             "scenario_id": "commute",
-            "timestamp_ms": 1766482989550,
-            "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+            "timestamp_ms": 1766482637331,
+            "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
           },
           {
-            "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-2",
+            "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-2",
             "scenario_id": "commute",
-            "timestamp_ms": 1766482989550,
-            "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+            "timestamp_ms": 1766482637333,
+            "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
           },
           {
-            "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-3",
+            "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-3",
             "scenario_id": "commute",
-            "timestamp_ms": 1766482989550,
-            "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+            "timestamp_ms": 1766482637333,
+            "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
           },
           {
-            "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-4",
+            "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-4",
             "scenario_id": "commute",
-            "timestamp_ms": 1766482989550,
-            "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+            "timestamp_ms": 1766482637333,
+            "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
           },
           {
-            "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-6",
+            "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-6",
             "scenario_id": "commute",
-            "timestamp_ms": 1766482989557,
-            "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+            "timestamp_ms": 1766482637336,
+            "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
           },
           {
-            "turn_id": "e6c6629c-9232-469e-a7cb-2805161dc3e7-7",
+            "turn_id": "ee5e930c-5491-49e8-a113-fdf446546109-7",
             "scenario_id": "commute",
-            "timestamp_ms": 1766482989557,
-            "trace_file": "trace_runs\\e6c6629c-9232-469e-a7cb-2805161dc3e7\\2025-12-23\\minimal-e6c6629c-9232-469e-a7cb-2805161dc3e7.jsonl"
+            "timestamp_ms": 1766482637336,
+            "trace_file": "trace_runs\\ee5e930c-5491-49e8-a113-fdf446546109\\2025-12-23\\minimal-ee5e930c-5491-49e8-a113-fdf446546109.jsonl"
           }
         ]
       }

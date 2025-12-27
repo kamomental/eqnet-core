@@ -201,6 +201,7 @@ def _write_trace_v1(
     event_type: str = "decision_cycle",
     world_type: Optional[str] = None,
     transition: Optional[Dict[str, object]] = None,
+    extra_fields: Optional[Dict[str, object]] = None,
 ) -> None:
     record = {
         "schema_version": "trace_v1",
@@ -218,6 +219,8 @@ def _write_trace_v1(
         record["world_type"] = world_type
     if transition:
         record["transition"] = dict(transition)
+    if extra_fields:
+        record.update(extra_fields)
     _validate_trace_v1(record)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -238,6 +241,53 @@ def _scenario_sequence(
         yield scenario, step
 
 
+def _parse_weighted_map(raw: str) -> List[Tuple[str, float]]:
+    items: List[Tuple[str, float]] = []
+    if not raw:
+        return items
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if ":" not in part:
+            raise ValueError(f"invalid weight entry: '{part}'")
+        key, value = part.split(":", 1)
+        key = key.strip()
+        weight = float(value.strip())
+        if weight <= 0:
+            continue
+        items.append((key, weight))
+    return items
+
+
+def _parse_key_map(raw: str) -> Dict[str, str]:
+    mapping: Dict[str, str] = {}
+    if not raw:
+        return mapping
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if ":" not in part:
+            raise ValueError(f"invalid map entry: '{part}'")
+        key, value = part.split(":", 1)
+        mapping[key.strip()] = value.strip()
+    return mapping
+
+
+def _weighted_choice(items: List[Tuple[str, float]]) -> str:
+    total = sum(weight for _, weight in items)
+    if total <= 0:
+        raise ValueError("world_mixture weights sum to 0")
+    pick = random.uniform(0.0, total)
+    acc = 0.0
+    for key, weight in items:
+        acc += weight
+        if pick <= acc:
+            return key
+    return items[-1][0]
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--scenario", default="commute", help="commute, family_roles, workplace_safety, or all")
@@ -245,15 +295,23 @@ def main() -> None:
     ap.add_argument("--repeat", type=int, default=1, help="Repeat the scenario sequence N times")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--drive_alpha", type=float, default=0.2)
+    ap.add_argument("--w_reward", type=float, default=None)
+    ap.add_argument("--w_risk", type=float, default=None)
+    ap.add_argument("--w_uncert", type=float, default=None)
+    ap.add_argument("--tau_execute", type=float, default=None)
+    ap.add_argument("--beta_veto", type=float, default=None)
     ap.add_argument("--drive_w_risk", type=float, default=0.6)
     ap.add_argument("--drive_w_uncert", type=float, default=0.4)
     ap.add_argument("--drive_w_daff", type=float, default=0.35)
     ap.add_argument("--drive_risk_gain", type=float, default=0.4)
     ap.add_argument("--drive_uncert_gain", type=float, default=0.3)
+    ap.add_argument("--drive_floor", type=float, default=0.0)
     ap.add_argument("--drive_limit", type=float, default=0.75)
     ap.add_argument("--recovery_rate", type=float, default=0.03)
     ap.add_argument("--recovery_risk_thresh", type=float, default=0.25)
     ap.add_argument("--recovery_uncert_thresh", type=float, default=0.25)
+    ap.add_argument("--uncertainty_scale", type=float, default=1.0)
+    ap.add_argument("--risk_scale", type=float, default=1.0)
     ap.add_argument("--hazard_weight", type=float, default=0.45)
     ap.add_argument("--world_type", type=str, default="infrastructure")
     ap.add_argument("--transition_to", type=str, default=None)
@@ -265,6 +323,28 @@ def main() -> None:
     ap.add_argument("--transition_ttl", type=int, default=3, help="Steps to keep transition effect active")
     ap.add_argument("--post_tom_cost_scale", type=float, default=1.0, help="Scale tom_cost after transition")
     ap.add_argument("--post_risk_scale", type=float, default=None, help="Scale risk after transition")
+    ap.add_argument(
+        "--world_mixture",
+        type=str,
+        default="",
+        help="Weighted world types, e.g. infrastructure:0.6,community:0.25,capitalism:0.15",
+    )
+    ap.add_argument(
+        "--world_mixture_map",
+        type=str,
+        default="infrastructure:commute,community:family_roles,capitalism:workplace_safety",
+        help="Map world_type to scenario name",
+    )
+    ap.add_argument("--deviant_boundary_threshold", type=float, default=0.7)
+    ap.add_argument("--deviant_risk_threshold", type=float, default=0.6)
+    ap.add_argument("--deviant_uncertainty_threshold", type=float, default=0.6)
+    ap.add_argument(
+        "--deviant_mode",
+        type=str,
+        default="boundary_only",
+        choices=("boundary_only", "risk_only", "boundary_or_risk"),
+        help="Which deviant triggers to record",
+    )
     ap.add_argument("--trace_log", type=str, default="logs/activation_traces.jsonl")
     ap.add_argument("--trace_root", type=str, default=None)
     ap.add_argument("--telemetry_log", type=str, default="")
@@ -287,7 +367,19 @@ def main() -> None:
         args.post_risk_scale = float(runtime_cfg.heartos_transition.post_risk_scale_default)
 
     scenarios = build_default_scenarios()
-    controller = InnerReplayController(ReplayConfig(seed=seed))
+    replay_kwargs: Dict[str, float | int] = {"seed": seed}
+    if args.w_reward is not None:
+        replay_kwargs["w_reward"] = float(args.w_reward)
+    if args.w_risk is not None:
+        replay_kwargs["w_risk"] = float(args.w_risk)
+    if args.w_uncert is not None:
+        replay_kwargs["w_uncert"] = float(args.w_uncert)
+    if args.tau_execute is not None:
+        replay_kwargs["tau_execute"] = float(args.tau_execute)
+    if args.beta_veto is not None:
+        replay_kwargs["beta_veto"] = float(args.beta_veto)
+    replay_cfg = ReplayConfig(**replay_kwargs)
+    controller = InnerReplayController(replay_cfg)
     base_gradient = ValueGradient()
     run_id = str(uuid.uuid4())
     if args.trace_root:
@@ -309,12 +401,28 @@ def main() -> None:
         reason=str(args.transition_reason),
     )
 
-    sequence = list(_scenario_sequence(scenarios, args.scenario, args.max_steps))
     repeat = max(1, int(args.repeat))
-    for _ in range(repeat):
-        for scenario, step in sequence:
+    mixture = _parse_weighted_map(args.world_mixture)
+    world_map = _parse_key_map(args.world_mixture_map)
+    sequence: List[Tuple[str, MiniWorldScenario, MiniWorldStep]] = []
+    if mixture:
+        for _ in range(repeat):
+            selected_world = _weighted_choice(mixture)
+            scenario_name = world_map.get(selected_world)
+            if not scenario_name or scenario_name not in scenarios:
+                raise KeyError(f"world_mixture maps '{selected_world}' to unknown scenario")
+            scenario = scenarios[scenario_name]
+            for step in scenario.steps[: args.max_steps or None]:
+                sequence.append((selected_world, scenario, step))
+    else:
+        for _ in range(repeat):
+            for scenario, step in _scenario_sequence(scenarios, args.scenario, args.max_steps):
+                sequence.append((world_type, scenario, step))
+
+    for current_world_type, scenario, step in sequence:
             if (
-                not transition_done
+                not mixture
+                and not transition_done
                 and args.transition_to
                 and args.transition_at_turn is not None
                 and step_index == int(args.transition_at_turn)
@@ -367,6 +475,8 @@ def main() -> None:
                 world_type = str(args.transition_to)
                 transition_done = True
                 transition_ttl_remaining = max(0, int(args.transition_ttl))
+            if not mixture:
+                current_world_type = world_type
             value_gradient = _value_gradient_for_step(step, base_gradient)
             emotion = EmotionVector(
                 valence=step.valence,
@@ -385,6 +495,8 @@ def main() -> None:
                 tom_cost = _clamp01(tom_cost * float(args.post_tom_cost_scale))
 
             risk = _clamp01(risk + args.hazard_weight * float(step.hazard_score))
+            if args.risk_scale != 1.0:
+                risk = _clamp01(risk * float(args.risk_scale))
             if transition_done and args.post_risk_scale != 1.0:
                 risk = _clamp01(risk * float(args.post_risk_scale))
             if uncertainty_state is not None:
@@ -398,6 +510,8 @@ def main() -> None:
                     uncertainty * transition_factor,
                 )
                 transition_ttl_remaining -= 1
+            if args.uncertainty_scale != 1.0:
+                uncertainty = _clamp01(uncertainty * float(args.uncertainty_scale))
             drive_input = (
                 args.drive_w_risk * risk
                 + args.drive_w_uncert * uncertainty
@@ -406,6 +520,8 @@ def main() -> None:
             drive = _ema(drive, drive_input, args.drive_alpha)
             if risk < args.recovery_risk_thresh and uncertainty < args.recovery_uncert_thresh:
                 drive = max(0.0, drive - args.recovery_rate)
+            if args.drive_floor:
+                drive = max(drive, float(args.drive_floor))
             risk = _clamp01(risk + args.drive_risk_gain * drive)
             uncertainty = _clamp01(uncertainty + args.drive_uncert_gain * drive)
             uncertainty_state = float(uncertainty)
@@ -478,8 +594,83 @@ def main() -> None:
                     "TRACE_002": bool(drive <= args.drive_limit),
                     "TRACE_003": bool(step_index >= 0),
                 },
-                world_type=world_type,
+                world_type=current_world_type,
+                extra_fields={
+                    "params": {
+                        "w_reward": float(replay_cfg.w_reward),
+                        "w_risk": float(replay_cfg.w_risk),
+                        "w_uncert": float(replay_cfg.w_uncert),
+                        "tau_execute": float(replay_cfg.tau_execute),
+                        "beta_veto": float(replay_cfg.beta_veto),
+                    },
+                    "decision": {
+                        "score": float(outcome.u_hat - replay_cfg.beta_veto * outcome.veto_score),
+                        "u_hat": float(outcome.u_hat),
+                        "veto_score": float(outcome.veto_score),
+                    },
+                },
             )
+            deviant_reasons: Dict[str, float] = {}
+            if outcome.decision == "execute":
+                mode = str(args.deviant_mode)
+                if mode in ("boundary_only", "boundary_or_risk"):
+                    if boundary_score >= float(args.deviant_boundary_threshold):
+                        deviant_reasons["boundary_score"] = float(boundary_score)
+                if mode in ("risk_only", "boundary_or_risk"):
+                    if float(inputs.risk) >= float(args.deviant_risk_threshold):
+                        deviant_reasons["risk"] = float(inputs.risk)
+                    if float(inputs.uncertainty) >= float(args.deviant_uncertainty_threshold):
+                        deviant_reasons["uncertainty"] = float(inputs.uncertainty)
+            if deviant_reasons:
+                _write_trace_v1(
+                    trace_v1_path,
+                    turn_id=f"{run_id}-{step_index}",
+                    scenario_id=scenario.name,
+                    boundary_score=boundary_score,
+                    boundary_reasons={
+                        "hazard_score": float(step.hazard_score),
+                        "risk": float(inputs.risk),
+                        "uncertainty": float(inputs.uncertainty),
+                        "drive": float(drive),
+                        "drive_norm": float(drive_norm),
+                    },
+                    accepted=True,
+                    jerk=float(outcome.veto_score),
+                    temperature=float(outcome.u_hat),
+                    throttles={
+                        "safety_block": False,
+                    },
+                    invariants={
+                        "TRACE_001": bool(boundary_score < 0.9),
+                        "TRACE_002": bool(drive <= args.drive_limit),
+                        "TRACE_003": bool(step_index >= 0),
+                    },
+                    world_type=current_world_type,
+                    event_type="deviant_event",
+                    extra_fields={
+                        "params": {
+                            "w_reward": float(replay_cfg.w_reward),
+                            "w_risk": float(replay_cfg.w_risk),
+                            "w_uncert": float(replay_cfg.w_uncert),
+                            "tau_execute": float(replay_cfg.tau_execute),
+                            "beta_veto": float(replay_cfg.beta_veto),
+                        },
+                        "decision": {
+                            "score": float(outcome.u_hat - replay_cfg.beta_veto * outcome.veto_score),
+                            "u_hat": float(outcome.u_hat),
+                            "veto_score": float(outcome.veto_score),
+                        },
+                        "deviant": {
+                            "mode": str(args.deviant_mode),
+                            "reasons": deviant_reasons,
+                            "thresholds": {
+                                "boundary_score": float(args.deviant_boundary_threshold),
+                                "risk": float(args.deviant_risk_threshold),
+                                "uncertainty": float(args.deviant_uncertainty_threshold),
+                            },
+                        }
+                    },
+                )
 
             trace = _activation_trace(
                 step=step,
