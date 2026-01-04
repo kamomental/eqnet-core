@@ -9,6 +9,7 @@ import json
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
+from collections import Counter
 
 import sys
 
@@ -437,6 +438,37 @@ def _decision_score_by_world(
             "veto_score_cancel_max": round(max(veto_cancel.get(world_type, [0.0])), 3),
         }
     return payload
+
+
+def _ru_v0_summary(trace_records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    gate_counts: Counter[str] = Counter()
+    policy_counts: Counter[str] = Counter()
+    missing_events = 0
+    ru_events = 0
+    for record in trace_records:
+        ru = record.get("ru_v0")
+        if not isinstance(ru, dict):
+            continue
+        ru_events += 1
+        gate_action = ru.get("gate_action")
+        if gate_action:
+            gate_counts[str(gate_action)] += 1
+        policy_version = ru.get("policy_version") or record.get("policy_version")
+        if policy_version:
+            policy_counts[str(policy_version)] += 1
+        missing = ru.get("missing_required_fields") or ru.get("missing")
+        if isinstance(missing, list):
+            if missing:
+                missing_events += 1
+        elif isinstance(missing, int):
+            if missing > 0:
+                missing_events += 1
+    return {
+        "gate_action_counts": dict(gate_counts),
+        "policy_version_counts": dict(policy_counts),
+        "missing_required_fields_events": missing_events,
+        "ru_v0_events": ru_events,
+    }
 
 
 def _summary_stats(values: List[float]) -> Dict[str, float]:
@@ -903,6 +935,21 @@ def _write_markdown(path: Path, payload: Dict[str, Any]) -> None:
     lines.append(f"- veto_score_executed_min: {decision_scores.get('veto_score_executed_min', 0.0)}")
     lines.append(f"- veto_score_cancel_max: {decision_scores.get('veto_score_cancel_max', 0.0)}")
     lines.append("")
+    gate_stats = payload.get("qualia_gate_stats", {})
+    if gate_stats:
+        term = gate_stats.get("boundary_term", {})
+        if term:
+            lines.append("## Qualia Gate (Boundary)")
+            lines.append(f"- boundary_term_mean: {term.get('mean', 0.0)}")
+            lines.append(f"- boundary_term_p95: {term.get('p95', 0.0)}")
+            lines.append(f"- boundary_term_max: {term.get('max', 0.0)}")
+        ignored = gate_stats.get("boundary_curve_ignored", {})
+        if ignored:
+            lines.append(f"- boundary_curve_ignored_ratio: {ignored.get('ratio', 0.0)}")
+        presence = gate_stats.get("presence", {})
+        if presence:
+            lines.append(f"- ack_silence_ratio: {presence.get('ack_silence_ratio', 0.0)}")
+        lines.append("")
     high_boundary = payload.get("high_boundary_cancel", {})
     lines.append("## High Boundary Cancels (decision_cycle)")
     lines.append(f"- threshold: {high_boundary.get('threshold', 0.55)}")
@@ -925,6 +972,16 @@ def _write_markdown(path: Path, payload: Dict[str, Any]) -> None:
     if cancel_examples:
         lines.append(f"- cancel_reason_examples: {cancel_examples}")
     lines.append("")
+    ru_v0 = payload.get("ru_v0_summary", {})
+    if ru_v0:
+        lines.append("## RU v0 Summary")
+        lines.append(f"- ru_v0_events: {ru_v0.get('ru_v0_events', 0)}")
+        lines.append(f"- gate_action_counts: {ru_v0.get('gate_action_counts', {})}")
+        lines.append(f"- policy_version_counts: {ru_v0.get('policy_version_counts', {})}")
+        lines.append(
+            f"- missing_required_fields_events: {ru_v0.get('missing_required_fields_events', 0)}"
+        )
+        lines.append("")
     world_breakdown = payload.get("world_breakdown", {})
     lines.append("## World Breakdown")
     if world_breakdown:
@@ -1047,6 +1104,7 @@ def _write_markdown(path: Path, payload: Dict[str, Any]) -> None:
         prospection = nightly.get("prospection", {})
         lines.append(f"- health_status: {health.get('status', 'unknown')}")
         lines.append(f"- boundary_span_max: {boundary.get('max_length', 0)}")
+        lines.append(f"- boundary_span_chain_max: {boundary.get('span_chain_max', 0)}")
         lines.append(f"- prospection_reject_rate: {prospection.get('reject_rate', 0.0)}")
     else:
         audit_error = payload.get("nightly_audit_error")
@@ -1171,6 +1229,7 @@ def main() -> None:
         "high_boundary_cancel_by_world": _high_boundary_cancel_by_world(decision_records),
         "cancel_summary": _cancel_reason_summary(decision_records),
         "cancel_by_world": _cancel_reason_by_world(decision_records),
+        "ru_v0_summary": _ru_v0_summary(trace_records),
         "segments": {},
         "recall_report": report.to_dict(),
     }

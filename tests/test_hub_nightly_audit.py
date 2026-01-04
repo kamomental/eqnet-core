@@ -21,6 +21,11 @@ def test_run_nightly_audit_writes_file(tmp_path):
         "prospection": {"accepted": True},
         "policy": {"throttles": {}},
         "invariants": {"TRACE_001": True},
+        "ru_v0": {
+            "gate_action": "EXECUTE",
+            "policy_version": "ru-v0.1",
+            "missing_required_fields": [],
+        },
     }
     (day_dir / "hub-1.jsonl").write_text(json.dumps(sample) + "\n", encoding="utf-8")
 
@@ -36,3 +41,16 @@ def test_run_nightly_audit_writes_file(tmp_path):
     hub._run_nightly_audit(date(2025, 12, 14))
     audit_path = tmp_path / "audit" / f"nightly_audit_{day}.json"
     assert audit_path.exists()
+    payload = json.loads(audit_path.read_text(encoding="utf-8"))
+    assert "ru_v0_summary" in payload
+    ru = payload["ru_v0_summary"]
+    assert isinstance(ru, dict)
+    assert "gate_action_counts" in ru
+    assert isinstance(ru["gate_action_counts"], dict)
+    assert "policy_version_counts" in ru
+    assert isinstance(ru["policy_version_counts"], dict)
+    assert "ru-v0.1" in ru["policy_version_counts"]
+    assert "missing_required_fields_events" in ru
+    assert isinstance(ru["missing_required_fields_events"], int)
+    assert "ru_v0_events" in ru
+    assert isinstance(ru["ru_v0_events"], int)

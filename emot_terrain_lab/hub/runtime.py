@@ -143,6 +143,7 @@ class ResetConfig:
     boundary_threshold: float = 0.75
     targets: List[str] = field(default_factory=lambda: ["scratchpad", "affective_echo"])
     preserve: List[str] = field(default_factory=list)
+    # NOTE: reset is intentionally not wired into runtime yet.
 
 
 @dataclass
@@ -185,6 +186,7 @@ class ConsciousnessConfig:
     force_matrix: Optional[Dict[str, Dict[str, float]]] = None
     boundary: BoundaryConfig = field(default_factory=BoundaryConfig)
     reset: ResetConfig = field(default_factory=ResetConfig)
+    qualia_gate: AccessGateConfig = field(default_factory=AccessGateConfig)
 
 
 def apply_mask_layer(
@@ -495,7 +497,7 @@ class EmotionalHubRuntime:
         self._prev_qualia_vec: Optional[np.ndarray] = None
         gate_env = (os.getenv("EQNET_QUALIA_GATE", "1") or "1").lower()
         self._qualia_gate_enabled = gate_env not in {"0", "false", "off"}
-        self._qualia_gate = AccessGate(AccessGateConfig())
+        self._qualia_gate = AccessGate(self._build_access_gate_config())
         self._qualia_meta = MetaMonitor()
         self._last_qualia_gate: Dict[str, Any] = {}
         self._last_gate_context: Dict[str, Any] = {}
@@ -540,6 +542,7 @@ class EmotionalHubRuntime:
                 self._runtime_cfg = load_runtime_cfg()
             except Exception:
                 self._runtime_cfg = None
+        self._apply_runtime_gate_overrides()
         self._model_cfg = (
             getattr(self._runtime_cfg, "model", None) if self._runtime_cfg else None
         )
@@ -608,6 +611,61 @@ class EmotionalHubRuntime:
         if isinstance(payload, Mapping):
             return copy.deepcopy(payload)
         return None
+
+    @staticmethod
+    def _merge_access_gate_config(
+        base: AccessGateConfig, overrides: Mapping[str, Any]
+    ) -> AccessGateConfig:
+        data = base.__dict__.copy()
+        for key, value in overrides.items():
+            if key not in data:
+                continue
+            current = data[key]
+            try:
+                if isinstance(current, bool):
+                    if isinstance(value, str):
+                        v = value.strip().lower()
+                        if v in {"true", "yes", "1", "on"}:
+                            data[key] = True
+                        elif v in {"false", "no", "0", "off"}:
+                            data[key] = False
+                        else:
+                            continue
+                    else:
+                        data[key] = bool(value)
+                elif isinstance(current, (int, float)):
+                    data[key] = float(value)
+                else:
+                    data[key] = value
+            except (TypeError, ValueError):
+                continue
+        return AccessGateConfig(**data)
+
+    def _build_access_gate_config(self) -> AccessGateConfig:
+        cfg = getattr(self.config.conscious, "qualia_gate", None)
+        if isinstance(cfg, AccessGateConfig):
+            base = AccessGateConfig(**cfg.__dict__)
+        elif isinstance(cfg, Mapping):
+            base = self._merge_access_gate_config(AccessGateConfig(), cfg)
+        else:
+            base = AccessGateConfig()
+        overrides = self._persona_conscious_value("qualia_gate")
+        if overrides:
+            base = self._merge_access_gate_config(base, overrides)
+        return base
+
+    def _apply_runtime_gate_overrides(self) -> None:
+        if self._runtime_cfg is None:
+            return
+        gate_cfg = getattr(self._runtime_cfg, "qualia_access_gate", None)
+        if gate_cfg is None:
+            return
+        overrides = gate_cfg.__dict__ if hasattr(gate_cfg, "__dict__") else gate_cfg
+        if not isinstance(overrides, Mapping):
+            return
+        updated = self._merge_access_gate_config(self._qualia_gate.config, overrides)
+        self._qualia_gate.config = updated
+        self._qualia_gate.reset()
 
     @staticmethod
     def _safe_float(value: Any, default: float) -> float:
@@ -1342,6 +1400,7 @@ class EmotionalHubRuntime:
             load_t=load_t,
             override=bool(gate_ctx.force_listen),
             reason="safety" if gate_ctx.force_listen else "normal",
+            boundary_score=boundary_score,
         )
         payload.update(gate_result)
         payload["m_kind"] = "cosine"

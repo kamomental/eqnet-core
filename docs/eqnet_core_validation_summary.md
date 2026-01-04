@@ -127,8 +127,8 @@ resonance（risk_only）
 - deviant (boundary_only): 「険しい道でも進んだ」という記録
 - resonance (risk_only): 「危険だと分かっていて進んだ」という記録
 
-観測からノブを選ぶ判断フロー
-観測	触るノブ	理由
+観測から調整項目を選ぶ判断フロー
+観測	調整項目	理由
 u_hat が負	w_reward	価値が足りない
 decision_score が負で veto 高	beta_veto	ペナルティ過多
 deviant が多すぎ	deviant_threshold	定義側で希少化
@@ -139,3 +139,28 @@ deviant が多すぎ	deviant_threshold	定義側で希少化
 - boundary_score を直接 execute 判定に使わない（設計思想）
 - deviant と resonance を再び混ぜない（調整不能）
 - w_risk を 0.24〜0.26 で延々刻む（スケール未校正）
+
+Design Decision: boundary is not promoted to decision
+
+Decision
+boundary は意思決定（decision）の主体に昇格させない。boundary は入力ゲートとして最上位に置き、Do/Don't を強制する。decision は “やるならどうするか” の最適化に限定する。
+
+Rationale
+- 境界条件を意思決定に混ぜると、説明性・監査性が劣化しやすい（境界が「都合の良い理由」に変質する）
+- 監査ループ（Nightly → 3日窓）が成立しているため、ゲート（不変）と decision（校正対象）を分離した方が回帰可能性が高い
+
+Allowed Exception Path
+例外は以下をすべて満たす場合のみ許可する:
+- TTL（期限）付きの一時的例外
+- 根拠の監査ログを強制記録
+- Nightly + 3日窓で必ず再評価し、巻き戻し可能であること
+
+Validation Target: risk/uncert separation and calibration
+
+Definition
+- uncert（不確実性）: 情報不足・曖昧さ・観測の弱さ
+- risk（リスク）: 失敗時の損失（安全/信頼/コスト）、可逆性・曝露を含む
+
+Requirement
+- risk と uncert は独立に 0〜1 に正規化し、ゲート判定と decision 最適化を分離する
+- 校正は監査ループで行い、境界ゲートは不変、decision 側のみ更新対象とする

@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Tuple
+from collections import Counter
 
 EVIDENCE_DEFAULT_LIMIT = 10
 DEFAULT_HEALTH_THRESHOLDS = {
@@ -92,6 +93,10 @@ def _collect_boundary_spans(
     start_ts = 0
     last_ts = 0
     length = 0
+    last_span_end_index: int | None = None
+    current_chain = 0
+    max_chain = 0
+    last_span_index: int | None = None
 
     ordered = sorted(records, key=lambda item: int(item.get("timestamp_ms", 0)))
     max_length = 0
@@ -109,7 +114,7 @@ def _collect_boundary_spans(
             "boundary_reasons": _short_reasons(boundary.get("reasons")),
         }
 
-    for record in ordered:
+    for idx, record in enumerate(ordered):
         ts = int(record.get("timestamp_ms", 0))
         score = float((record.get("boundary") or {}).get("score", 0.0) or 0.0)
         if score >= threshold:
@@ -119,21 +124,36 @@ def _collect_boundary_spans(
                 length = 0
             length += 1
             last_ts = ts
+            last_span_index = idx
         else:
             if in_span:
                 spans.append({"start_ts": start_ts, "end_ts": last_ts, "length": length})
                 max_length = max(max_length, length)
                 _bounded_append(evidence, _span_evidence(start_ts), limit)
+                end_index = last_span_index if last_span_index is not None else idx - 1
+                if last_span_end_index is None or end_index - last_span_end_index > 1:
+                    current_chain = 1
+                else:
+                    current_chain += 1
+                max_chain = max(max_chain, current_chain)
+                last_span_end_index = end_index
                 in_span = False
     if in_span:
         spans.append({"start_ts": start_ts, "end_ts": last_ts, "length": length})
         max_length = max(max_length, length)
         _bounded_append(evidence, _span_evidence(start_ts), limit)
+        end_index = last_span_index if last_span_index is not None else len(ordered) - 1
+        if last_span_end_index is None or end_index - last_span_end_index > 1:
+            current_chain = 1
+        else:
+            current_chain += 1
+        max_chain = max(max_chain, current_chain)
 
     summary = {
         "threshold": threshold,
         "span_count": len(spans),
         "max_length": max_length,
+        "span_chain_max": max_chain,
         "spans": spans[:50],
     }
     return summary, evidence
@@ -178,6 +198,98 @@ def _evaluate_health(
 
     return {"status": status, "reasons": reasons}
 
+
+def _ru_v0_summary(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    gate_counts: Counter[str] = Counter()
+    policy_counts: Counter[str] = Counter()
+    missing_events = 0
+    ru_events = 0
+    for record in records:
+        ru = record.get("ru_v0")
+        if not isinstance(ru, dict):
+            continue
+        ru_events += 1
+        gate_action = ru.get("gate_action")
+        if gate_action:
+            gate_counts[str(gate_action)] += 1
+        policy_version = ru.get("policy_version") or record.get("policy_version")
+        if policy_version:
+            policy_counts[str(policy_version)] += 1
+        missing = ru.get("missing_required_fields") or ru.get("missing")
+        if isinstance(missing, list):
+            if missing:
+                missing_events += 1
+        elif isinstance(missing, int):
+            if missing > 0:
+                missing_events += 1
+    return {
+        "gate_action_counts": dict(gate_counts),
+        "policy_version_counts": dict(policy_counts),
+        "missing_required_fields_events": missing_events,
+        "ru_v0_events": ru_events,
+    }
+
+
+def _qualia_gate_boundary_stats(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    terms: List[float] = []
+    ignored_count = 0
+    total = 0
+    for record in records:
+        payload = record.get("qualia_gate")
+        if not isinstance(payload, dict):
+            continue
+        total += 1
+        term = payload.get("boundary_term")
+        if isinstance(term, (int, float)):
+            terms.append(float(term))
+        if payload.get("boundary_curve_ignored") is True:
+            ignored_count += 1
+    if not terms and not ignored_count:
+        return {}
+    terms_sorted = sorted(terms)
+
+    def _p95(xs: List[float]) -> float:
+        if not xs:
+            return 0.0
+        idx = int((len(xs) - 1) * 0.95)
+        return float(xs[min(max(idx, 0), len(xs) - 1)])
+
+    summary: Dict[str, Any] = {}
+    if terms_sorted:
+        summary["boundary_term"] = {
+            "mean": float(sum(terms_sorted) / len(terms_sorted)),
+            "p95": _p95(terms_sorted),
+            "max": float(terms_sorted[-1]),
+            "count": int(len(terms_sorted)),
+        }
+    if ignored_count:
+        summary["boundary_curve_ignored"] = {
+            "count": int(ignored_count),
+            "ratio": float(ignored_count / total) if total else 0.0,
+        }
+    return summary
+
+
+def _qualia_gate_presence_stats(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    total = 0
+    suppress = 0
+    for record in records:
+        payload = record.get("qualia_gate")
+        if not isinstance(payload, dict):
+            continue
+        if "allow" not in payload:
+            continue
+        total += 1
+        allow = payload.get("allow")
+        if allow is False:
+            suppress += 1
+    if total == 0:
+        return {}
+    return {
+        "ack_silence_ratio": float(suppress / total),
+        "ack_silence_count": int(suppress),
+        "sample_count": int(total),
+    }
 
 def generate_audit(cfg: NightlyAuditConfig) -> Path:
     day_dir = cfg.trace_root / cfg.date_yyyy_mm_dd
@@ -334,6 +446,13 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
         thresholds,
     )
 
+    qualia_gate_stats = _qualia_gate_boundary_stats(records)
+    presence_stats = _qualia_gate_presence_stats(records)
+    if presence_stats:
+        if not qualia_gate_stats:
+            qualia_gate_stats = {}
+        qualia_gate_stats["presence"] = presence_stats
+
     audit = {
         "schema_version": "nightly_audit_v1",
         "date": cfg.date_yyyy_mm_dd,
@@ -358,6 +477,8 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
         },
         "evidence": evidence,
         "health": health,
+        "ru_v0_summary": _ru_v0_summary(records),
+        "qualia_gate_stats": qualia_gate_stats,
     }
 
     cfg.out_root.mkdir(parents=True, exist_ok=True)

@@ -13,10 +13,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional
 import time
+import os
 
 from terrain import llm as terrain_llm
 from emot_terrain_lab.tools.registry import SkillRegistry
 from emot_terrain_lab.hub.akorn import AkornGate, AkornConfig
+from emot_terrain_lab.rag.lazy_rag import LazyRAG, LazyRAGConfig
 
 
 @dataclass
@@ -49,6 +51,15 @@ class LLMHub:
         self.registry = SkillRegistry()
         # Allow environment-based tuning of AKOrN small gains
         self.akorn = AkornGate(AkornConfig.from_env())
+        self._lazy_rag: Optional[LazyRAG] = None
+
+    def _get_lazy_rag(self) -> Optional[LazyRAG]:
+        flag = (os.getenv("EQNET_LAZY_RAG", "0") or "0").lower()
+        if flag in {"0", "false", "off"}:
+            return None
+        if self._lazy_rag is None:
+            self._lazy_rag = LazyRAG(LazyRAGConfig.from_env())
+        return self._lazy_rag
 
     def generate(
         self,
@@ -87,6 +98,13 @@ class LLMHub:
                 system_prompt += " Use the provided context when helpful."
             if skill.context_sources and context:
                 context = context.strip()
+        if not context:
+            rag = self._get_lazy_rag()
+            if rag is not None:
+                try:
+                    context = rag.build_context(user_text)
+                except Exception:
+                    context = None
         prompt = user_text
         if context:
             prompt = context.strip() + "\n\n---\n\n" + user_text.strip()

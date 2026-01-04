@@ -59,6 +59,23 @@ class GuardsCfg:
 
 
 @dataclass
+class QualiaAccessGateCfg:
+    alpha: float = field(default=1.0)
+    beta: float = field(default=1.0)
+    gamma: float = field(default=1.0)
+    theta: float = field(default=1.0)
+    ema: float = field(default=0.9)
+    open_tau: float = field(default=0.6)
+    close_tau: float = field(default=0.4)
+    theta_lr: float = field(default=0.1)
+    target_access: float = field(default=0.2)
+    boundary_enabled: bool = field(default=False)
+    boundary_weight: float = field(default=0.0)
+    boundary_threshold: float = field(default=0.7)
+    boundary_curve: str = field(default="linear")
+
+
+@dataclass
 class EmotionCfg:
     valence_w_rho: float = field(default=1.0)
     valence_w_s: float = field(default=1.0)
@@ -218,6 +235,7 @@ class RuntimeCfg:
     replay: ReplayCfg = field(default_factory=ReplayCfg)
     policy: PolicyRuntimeCfg = field(default_factory=PolicyRuntimeCfg)
     guards: GuardsCfg = field(default_factory=GuardsCfg)
+    qualia_access_gate: QualiaAccessGateCfg = field(default_factory=QualiaAccessGateCfg)
     emotion: EmotionCfg = field(default_factory=EmotionCfg)
     culture: CultureCfg = field(default_factory=CultureCfg)
     alerts: AlertsCfg = field(default_factory=AlertsCfg)
@@ -250,6 +268,9 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
     replay = _merge_dataclass(ReplayCfg(), payload.get("replay", {}))
     policy_cfg = _merge_dataclass(PolicyRuntimeCfg(), payload.get("policy", {}))
     guards_cfg = _merge_dataclass(GuardsCfg(), payload.get("guards", {}))
+    qualia_access_gate = _merge_dataclass(
+        QualiaAccessGateCfg(), payload.get("qualia_access_gate", {})
+    )
     emotion = _merge_dataclass(EmotionCfg(), payload.get("emotion", {}))
     culture = _merge_dataclass(
         CultureCfg(),
@@ -279,6 +300,7 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
         replay=replay,
         policy=policy_cfg,
         guards=guards_cfg,
+        qualia_access_gate=qualia_access_gate,
         emotion=emotion,
         culture=culture,
         alerts=alerts,

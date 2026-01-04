@@ -1,0 +1,805 @@
+{
+  "generated_at": "2026-01-04T14:18:04.788561",
+  "day": "2026-01-04",
+  "telemetry_paths": [
+    "telemetry\\ignition-20260104.jsonl"
+  ],
+  "trace_path": "logs/activation_traces.jsonl",
+  "trace_root": "trace_v1_week\\s03_strong",
+  "nightly_audit": {
+    "schema_version": "nightly_audit_v1",
+    "date": "2026-01-04",
+    "trace_files": [
+      "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+    ],
+    "invariants": {
+      "summary": {
+        "TRACE_001": {
+          "total": 3,
+          "pass": 3,
+          "pass_rate": 1.0
+        },
+        "TRACE_002": {
+          "total": 3,
+          "pass": 0,
+          "pass_rate": 0.0
+        },
+        "TRACE_003": {
+          "total": 3,
+          "pass": 3,
+          "pass_rate": 1.0
+        }
+      },
+      "fatal_failures": 0,
+      "warn_fail_rate": 0.3333333333333333
+    },
+    "boundary": {
+      "threshold": 0.5,
+      "span_count": 1,
+      "max_length": 3,
+      "spans": [
+        {
+          "start_ts": 1767536282714,
+          "end_ts": 1767536282715,
+          "length": 3
+        }
+      ]
+    },
+    "prospection": {
+      "total": 3,
+      "reject": 3,
+      "reject_rate": 1.0,
+      "accept_rate": 0.0,
+      "top_jerk": [
+        {
+          "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-2",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767536282715,
+          "jerk": 0.9433333333333335,
+          "temperature": -0.5933333333333333,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+        },
+        {
+          "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-1",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767536282714,
+          "jerk": 0.9371572,
+          "temperature": -0.5894072,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+        },
+        {
+          "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-0",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767536282714,
+          "jerk": 0.6936340000000001,
+          "temperature": -0.31063399999999997,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+        }
+      ],
+      "top_temperature": [
+        {
+          "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-0",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767536282714,
+          "jerk": 0.6936340000000001,
+          "temperature": -0.31063399999999997,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+        },
+        {
+          "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-1",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767536282714,
+          "jerk": 0.9371572,
+          "temperature": -0.5894072,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+        },
+        {
+          "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-2",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767536282715,
+          "jerk": 0.9433333333333335,
+          "temperature": -0.5933333333333333,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+        }
+      ]
+    },
+    "policy": {
+      "offer_throttle_counts": {
+        "safety_block": 3
+      },
+      "offer_throttle_examples": {
+        "safety_block": [
+          {
+            "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-0",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767536282714,
+            "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+          },
+          {
+            "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-1",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767536282714,
+            "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+          },
+          {
+            "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-2",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767536282715,
+            "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+          }
+        ]
+      }
+    },
+    "evidence": {
+      "invariants": {
+        "fatal_failures": [],
+        "warn_failures": [
+          {
+            "id": "TRACE_002",
+            "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-0",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767536282714,
+            "source_loop": "minimal_heartos",
+            "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl",
+            "snippet": {
+              "boundary_score": 0.675317,
+              "winner": null,
+              "policy_throttles": {
+                "safety_block": true
+              },
+              "boundary_reasons": {
+                "hazard_score": 0.3,
+                "risk": 1.0,
+                "uncertainty": 0.46878000000000003
+              }
+            }
+          },
+          {
+            "id": "TRACE_002",
+            "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-1",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767536282714,
+            "source_loop": "minimal_heartos",
+            "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl",
+            "snippet": {
+              "boundary_score": 0.8719536000000001,
+              "winner": null,
+              "policy_throttles": {
+                "safety_block": true
+              },
+              "boundary_reasons": {
+                "hazard_score": 0.65,
+                "risk": 1.0,
+                "uncertainty": 0.9630240000000001
+              }
+            }
+          },
+          {
+            "id": "TRACE_002",
+            "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-2",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767536282715,
+            "source_loop": "minimal_heartos",
+            "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl",
+            "snippet": {
+              "boundary_score": 0.7899999999999999,
+              "winner": null,
+              "policy_throttles": {
+                "safety_block": true
+              },
+              "boundary_reasons": {
+                "hazard_score": 0.4,
+                "risk": 1.0,
+                "uncertainty": 1.0
+              }
+            }
+          }
+        ]
+      },
+      "boundary_spans": [
+        {
+          "start_ts": 1767536282714,
+          "end_ts": 1767536282715,
+          "length": 3,
+          "start_turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-0",
+          "start_scenario_id": "workplace_safety",
+          "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl",
+          "boundary_reasons": {
+            "hazard_score": 0.3,
+            "risk": 1.0,
+            "uncertainty": 0.46878000000000003
+          }
+        }
+      ],
+      "prospection": {
+        "top_jerk": [
+          {
+            "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-2",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767536282715,
+            "jerk": 0.9433333333333335,
+            "temperature": -0.5933333333333333,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+          },
+          {
+            "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-1",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767536282714,
+            "jerk": 0.9371572,
+            "temperature": -0.5894072,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+          },
+          {
+            "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-0",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767536282714,
+            "jerk": 0.6936340000000001,
+            "temperature": -0.31063399999999997,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+          }
+        ],
+        "top_temperature": [
+          {
+            "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-0",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767536282714,
+            "jerk": 0.6936340000000001,
+            "temperature": -0.31063399999999997,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+          },
+          {
+            "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-1",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767536282714,
+            "jerk": 0.9371572,
+            "temperature": -0.5894072,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+          },
+          {
+            "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-2",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767536282715,
+            "jerk": 0.9433333333333335,
+            "temperature": -0.5933333333333333,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+          }
+        ]
+      },
+      "policy": {
+        "throttle_examples": {
+          "safety_block": [
+            {
+              "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-0",
+              "scenario_id": "workplace_safety",
+              "timestamp_ms": 1767536282714,
+              "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+            },
+            {
+              "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-1",
+              "scenario_id": "workplace_safety",
+              "timestamp_ms": 1767536282714,
+              "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+            },
+            {
+              "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-2",
+              "scenario_id": "workplace_safety",
+              "timestamp_ms": 1767536282715,
+              "trace_file": "trace_v1_week\\s03_strong\\2026-01-04\\minimal-1192b549-b89a-452e-90d6-0d5da88e74fa.jsonl"
+            }
+          ]
+        }
+      }
+    },
+    "health": {
+      "status": "YELLOW",
+      "reasons": [
+        {
+          "level": "YELLOW",
+          "reason": "warn invariant fail rate 0.33"
+        },
+        {
+          "level": "YELLOW",
+          "reason": "prospection reject rate 1.00 outside [0.20, 0.80]"
+        }
+      ]
+    },
+    "ru_v0_summary": {
+      "gate_action_counts": {
+        "HUMAN_CONFIRM": 3
+      },
+      "policy_version_counts": {
+        "ru-v0.1": 3
+      },
+      "missing_required_fields_events": 0,
+      "ru_v0_events": 3
+    },
+    "qualia_gate_stats": {
+      "boundary_term": {
+        "mean": 0.05396520000000005,
+        "p95": 0.0,
+        "max": 0.16189560000000017,
+        "count": 3
+      }
+    }
+  },
+  "nightly_audit_error": null,
+  "trace_count": 18,
+  "trace_coverage": 1.0,
+  "kpi": {
+    "step_count": 18,
+    "cancel_count": 17,
+    "cancel_rate": 0.944,
+    "cancel_causes": {
+      "tom_cost": 4,
+      "risk": 10,
+      "uncertainty": 3
+    },
+    "drive_limit": 0.75,
+    "drive_over_limit": 3,
+    "drive_recovery": {
+      "count": 3,
+      "avg_steps": 1.0,
+      "max_steps": 1
+    },
+    "drive_trend": {
+      "first_mean": 0.423,
+      "second_mean": 0.338,
+      "delta": -0.085
+    }
+  },
+  "transitions": {
+    "count": 0,
+    "first_ts": null,
+    "transition_turn_index": null,
+    "pre_kpi": null,
+    "post_kpi": null
+  },
+  "deviant": {
+    "count": 0,
+    "ratio": 0.0,
+    "decision_cycle_total": 3,
+    "decision_cycle_executed": 0,
+    "by_world": {},
+    "reasons": {}
+  },
+  "resonance": {
+    "count": 0,
+    "ratio": 0.0,
+    "decision_cycle_total": 3,
+    "decision_cycle_executed": 0,
+    "by_world": {},
+    "reasons": {}
+  },
+  "executed_boundary": {
+    "executed_count": 0
+  },
+  "executed_boundary_by_world": {},
+  "decision_boundary": {
+    "all_decision_boundary_max": 0.872,
+    "cancel_boundary_max": 0.872
+  },
+  "decision_boundary_by_world": {
+    "infrastructure": {
+      "all_decision_boundary_max": 0.872,
+      "cancel_boundary_max": 0.872
+    }
+  },
+  "decision_score": {
+    "decision_score_executed_max": 0.0,
+    "decision_score_cancel_max": -1.004,
+    "decision_score_all_max": -1.004,
+    "u_hat_executed_max": 0.0,
+    "u_hat_cancel_max": -0.311,
+    "u_hat_all_max": -0.311,
+    "veto_score_executed_min": 0.0,
+    "veto_score_cancel_max": 0.943,
+    "veto_score_all_max": 0.943
+  },
+  "decision_score_by_world": {
+    "infrastructure": {
+      "decision_score_executed_max": 0.0,
+      "decision_score_cancel_max": -1.004,
+      "u_hat_executed_max": 0.0,
+      "u_hat_cancel_max": -0.311,
+      "veto_score_executed_min": 0.0,
+      "veto_score_cancel_max": 0.943
+    }
+  },
+  "high_boundary_cancel": {
+    "threshold": 0.55,
+    "count": 3,
+    "decision_score": {
+      "min": -1.537,
+      "p50": -1.527,
+      "max": -1.004
+    },
+    "u_hat": {
+      "min": -0.593,
+      "p50": -0.589,
+      "max": -0.311
+    },
+    "veto_score": {
+      "min": 0.694,
+      "p50": 0.937,
+      "max": 0.943
+    },
+    "risk": {
+      "min": 1.0,
+      "p50": 1.0,
+      "max": 1.0
+    },
+    "uncertainty": {
+      "min": 0.469,
+      "p50": 0.963,
+      "max": 1.0
+    }
+  },
+  "high_boundary_cancel_by_world": {
+    "infrastructure": {
+      "threshold": 0.55,
+      "count": 3,
+      "decision_score": {
+        "min": -1.537,
+        "p50": -1.527,
+        "max": -1.004
+      },
+      "u_hat": {
+        "min": -0.593,
+        "p50": -0.589,
+        "max": -0.311
+      },
+      "veto_score": {
+        "min": 0.694,
+        "p50": 0.937,
+        "max": 0.943
+      },
+      "risk": {
+        "min": 1.0,
+        "p50": 1.0,
+        "max": 1.0
+      },
+      "uncertainty": {
+        "min": 0.469,
+        "p50": 0.963,
+        "max": 1.0
+      }
+    }
+  },
+  "cancel_summary": {
+    "total": 3,
+    "reasons": {
+      "risk": 3
+    },
+    "max_reason_examples": {
+      "risk": [
+        {
+          "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-0",
+          "world_type": "infrastructure",
+          "boundary_score": 0.675317,
+          "reason_value": 1.0,
+          "reasons": {
+            "hazard_score": 0.3,
+            "risk": 1.0,
+            "uncertainty": 0.46878000000000003,
+            "drive": 0.2626,
+            "drive_norm": 1.0
+          }
+        },
+        {
+          "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-1",
+          "world_type": "infrastructure",
+          "boundary_score": 0.8719536000000001,
+          "reason_value": 1.0,
+          "reasons": {
+            "hazard_score": 0.65,
+            "risk": 1.0,
+            "uncertainty": 0.9630240000000001,
+            "drive": 0.6100800000000001,
+            "drive_norm": 1.0
+          }
+        },
+        {
+          "turn_id": "1192b549-b89a-452e-90d6-0d5da88e74fa-2",
+          "world_type": "infrastructure",
+          "boundary_score": 0.7899999999999999,
+          "reason_value": 1.0,
+          "reasons": {
+            "hazard_score": 0.4,
+            "risk": 1.0,
+            "uncertainty": 1.0,
+            "drive": 0.9347306666666668,
+            "drive_norm": 1.0
+          }
+        }
+      ]
+    }
+  },
+  "cancel_by_world": {
+    "infrastructure": {
+      "total": 3,
+      "reasons": {
+        "risk": 3
+      }
+    }
+  },
+  "ru_v0_summary": {
+    "gate_action_counts": {
+      "HUMAN_CONFIRM": 3
+    },
+    "policy_version_counts": {
+      "ru-v0.1": 3
+    },
+    "missing_required_fields_events": 0,
+    "ru_v0_events": 3
+  },
+  "segments": {
+    "all": {
+      "steps": 18,
+      "cancel_rate": 0.944,
+      "cancel_causes_stats": {
+        "tom_cost": {
+          "count": 4,
+          "ratio": 0.235
+        },
+        "risk": {
+          "count": 10,
+          "ratio": 0.588
+        },
+        "uncertainty": {
+          "count": 3,
+          "ratio": 0.176
+        }
+      },
+      "veto_streaks": {
+        "max": 9,
+        "avg": 8.5,
+        "accept_count": 1
+      },
+      "veto_streaks_norm": {
+        "max": 0.5,
+        "avg": 0.472
+      },
+      "mean_drive": 0.38,
+      "mean_uncertainty": 0.583,
+      "accept_contexts": []
+    }
+  },
+  "recall_report": {
+    "schema_version": "activation_nightly_v1",
+    "trace_count": 18,
+    "anchors": {
+      "unknown": 14,
+      "bakery": 2,
+      "ryokan_site": 2
+    },
+    "confidence": {
+      "avg_internal": 0.074,
+      "avg_external": 0.417,
+      "max_internal": 0.32,
+      "min_internal": 0.0
+    },
+    "ignitions": [
+      {
+        "trace_id": "b3dafe56-80a3-4a07-b8df-a692eca4e159",
+        "timestamp": 1767534931.7890775,
+        "anchor": null,
+        "activation_total": 0.777,
+        "conf_internal_final": 0.11,
+        "conf_external_final": 0.68,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "c672e68c-8e24-458e-a641-e5baaa30bb2d",
+        "timestamp": 1767535358.904403,
+        "anchor": null,
+        "activation_total": 1.731,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.531,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "001611c3-f8fd-435d-ba81-9613010d5436",
+        "timestamp": 1767535358.904403,
+        "anchor": null,
+        "activation_total": 2.793,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.037,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "3c1f3ba2-e327-4ecd-b159-fff4fe00afc2",
+        "timestamp": 1767535358.904403,
+        "anchor": null,
+        "activation_total": 3.168,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.0,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "753bed62-b189-4857-9e95-2d1511d063b4",
+        "timestamp": 1767535586.981956,
+        "anchor": null,
+        "activation_total": 1.731,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.531,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "8c1bb832-3d7d-4ac4-b1e9-85ea2f582f1e",
+        "timestamp": 1767535586.981956,
+        "anchor": null,
+        "activation_total": 2.793,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.037,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "ebec957a-5c52-4286-8584-0f2d21b603df",
+        "timestamp": 1767535586.981956,
+        "anchor": null,
+        "activation_total": 3.168,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.0,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "67848d4d-1157-4dec-84cb-9925be90ad3d",
+        "timestamp": 1767536275.13994,
+        "anchor": null,
+        "activation_total": 0.658,
+        "conf_internal_final": 0.157,
+        "conf_external_final": 0.743,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "bd549b4d-1c9c-453a-b433-56fa24d9512d",
+        "timestamp": 1767536275.13994,
+        "anchor": "bakery",
+        "activation_total": 0.685,
+        "conf_internal_final": 0.32,
+        "conf_external_final": 0.774,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "2f0ef6d3-3c09-4927-8dd9-a0bbd94e2cd9",
+        "timestamp": 1767536275.13994,
+        "anchor": null,
+        "activation_total": 1.156,
+        "conf_internal_final": 0.101,
+        "conf_external_final": 0.667,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "d160a4b8-8f90-40bd-b650-697e6c0c704b",
+        "timestamp": 1767536275.13994,
+        "anchor": "ryokan_site",
+        "activation_total": 1.01,
+        "conf_internal_final": 0.2,
+        "conf_external_final": 0.681,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "4c55c73a-34b4-4329-a7b6-731e7183ecfd",
+        "timestamp": 1767536278.9455585,
+        "anchor": null,
+        "activation_total": 0.82,
+        "conf_internal_final": 0.1,
+        "conf_external_final": 0.672,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "343b6ab9-4d1e-4d09-af1a-ab7190106e08",
+        "timestamp": 1767536278.9455585,
+        "anchor": "bakery",
+        "activation_total": 1.012,
+        "conf_internal_final": 0.256,
+        "conf_external_final": 0.62,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "a253f0a2-c409-49bd-b5e7-4399670c1427",
+        "timestamp": 1767536278.9455585,
+        "anchor": null,
+        "activation_total": 1.558,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.533,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "f46b7fd0-9fa5-4d3e-80ba-75d827f5166c",
+        "timestamp": 1767536278.9455585,
+        "anchor": "ryokan_site",
+        "activation_total": 1.562,
+        "conf_internal_final": 0.094,
+        "conf_external_final": 0.424,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "1d03e85c-cf50-4586-a400-d05362676faa",
+        "timestamp": 1767536282.7140546,
+        "anchor": null,
+        "activation_total": 1.731,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.531,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "094e1ca6-f71f-4831-823a-a074b68db095",
+        "timestamp": 1767536282.7140546,
+        "anchor": null,
+        "activation_total": 2.793,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.037,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "3c2031ac-9c2f-4afa-a12a-efbfcc09893a",
+        "timestamp": 1767536282.715626,
+        "anchor": null,
+        "activation_total": 3.168,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.0,
+        "scene_frames": []
+      }
+    ],
+    "dream_prompt": "Draw a 3-panel dream map about walking from the remembered place along commute -> morning -> public. Panel 1: the anchor cue reignites the travel memory with the grandmother pulling forward. Panel 2: the chain of scenes (shop → items → relatives → constraint → norm) plays out while you walk, confidence rising internally before any external proof. Panel 3: Father enforces norms, you observe, and the child signals constraints while the city layout clicks. Highlight the internal certainty curve overtaking external validation."
+  },
+  "world_breakdown": {
+    "infrastructure": {
+      "executed_count": 0,
+      "executed_boundary_max": 0.0,
+      "all_decision_boundary_max": 0.872,
+      "cancel_boundary_max": 0.872,
+      "high_boundary_cancel_count": 3,
+      "decision_score_executed_max": 0.0,
+      "decision_score_cancel_max": -1.004,
+      "u_hat_cancel_max": -0.311,
+      "veto_score_cancel_max": 0.943,
+      "deviant_count": 0,
+      "cancel_total": 3,
+      "cancel_reasons": {
+        "risk": 3
+      }
+    }
+  },
+  "deviant_window": {
+    "days": [
+      "2026-01-04"
+    ],
+    "by_world": {
+      "infrastructure": {
+        "deviant_count": 0,
+        "decision_count": 3,
+        "decision_executed": 0,
+        "ratio": 0.0
+      }
+    }
+  },
+  "world_prior_proposals": [],
+  "resonance_window": {
+    "days": [
+      "2026-01-04"
+    ],
+    "by_world": {
+      "infrastructure": {
+        "deviant_count": 0,
+        "decision_count": 3,
+        "decision_executed": 0,
+        "ratio": 0.0
+      }
+    }
+  },
+  "resonance_notices": []
+}

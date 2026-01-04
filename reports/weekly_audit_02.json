@@ -1,0 +1,749 @@
+{
+  "generated_at": "2026-01-04T14:18:00.979225",
+  "day": "2026-01-04",
+  "telemetry_paths": [
+    "telemetry\\ignition-20260104.jsonl"
+  ],
+  "trace_path": "logs/activation_traces.jsonl",
+  "trace_root": "trace_v1_week\\s02_long",
+  "nightly_audit": {
+    "schema_version": "nightly_audit_v1",
+    "date": "2026-01-04",
+    "trace_files": [
+      "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+    ],
+    "invariants": {
+      "summary": {
+        "TRACE_001": {
+          "total": 4,
+          "pass": 4,
+          "pass_rate": 1.0
+        },
+        "TRACE_002": {
+          "total": 4,
+          "pass": 4,
+          "pass_rate": 1.0
+        },
+        "TRACE_003": {
+          "total": 4,
+          "pass": 4,
+          "pass_rate": 1.0
+        }
+      },
+      "fatal_failures": 0,
+      "warn_fail_rate": 0.0
+    },
+    "boundary": {
+      "threshold": 0.5,
+      "span_count": 1,
+      "max_length": 1,
+      "spans": [
+        {
+          "start_ts": 1767536278945,
+          "end_ts": 1767536278945,
+          "length": 1
+        }
+      ]
+    },
+    "prospection": {
+      "total": 4,
+      "reject": 4,
+      "reject_rate": 1.0,
+      "accept_rate": 0.0,
+      "top_jerk": [
+        {
+          "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-2",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767536278945,
+          "jerk": 0.5425098338966665,
+          "temperature": -0.18900983389666665,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+        },
+        {
+          "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-3",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767536278945,
+          "jerk": 0.43042392870432666,
+          "temperature": -0.06567392870432667,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+        },
+        {
+          "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-0",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767536278945,
+          "jerk": 0.3341075,
+          "temperature": 0.061892500000000045,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+        },
+        {
+          "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-1",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767536278945,
+          "jerk": 0.2466071483333333,
+          "temperature": 0.10439285166666663,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+        }
+      ],
+      "top_temperature": [
+        {
+          "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-1",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767536278945,
+          "jerk": 0.2466071483333333,
+          "temperature": 0.10439285166666663,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+        },
+        {
+          "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-0",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767536278945,
+          "jerk": 0.3341075,
+          "temperature": 0.061892500000000045,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+        },
+        {
+          "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-3",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767536278945,
+          "jerk": 0.43042392870432666,
+          "temperature": -0.06567392870432667,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+        },
+        {
+          "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-2",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767536278945,
+          "jerk": 0.5425098338966665,
+          "temperature": -0.18900983389666665,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+        }
+      ]
+    },
+    "policy": {
+      "offer_throttle_counts": {
+        "safety_block": 4
+      },
+      "offer_throttle_examples": {
+        "safety_block": [
+          {
+            "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-0",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536278945,
+            "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+          },
+          {
+            "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-1",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536278945,
+            "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+          },
+          {
+            "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-2",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536278945,
+            "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+          },
+          {
+            "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-3",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536278945,
+            "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+          }
+        ]
+      }
+    },
+    "evidence": {
+      "invariants": {
+        "fatal_failures": [],
+        "warn_failures": []
+      },
+      "boundary_spans": [
+        {
+          "start_ts": 1767536278945,
+          "end_ts": 1767536278945,
+          "length": 1,
+          "start_turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-0",
+          "start_scenario_id": "commute",
+          "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl",
+          "boundary_reasons": {
+            "hazard_score": 0.25,
+            "risk": 0.3996,
+            "uncertainty": 0.327825
+          }
+        }
+      ],
+      "prospection": {
+        "top_jerk": [
+          {
+            "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-2",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536278945,
+            "jerk": 0.5425098338966665,
+            "temperature": -0.18900983389666665,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+          },
+          {
+            "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-3",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536278945,
+            "jerk": 0.43042392870432666,
+            "temperature": -0.06567392870432667,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+          },
+          {
+            "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-0",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536278945,
+            "jerk": 0.3341075,
+            "temperature": 0.061892500000000045,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+          },
+          {
+            "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-1",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536278945,
+            "jerk": 0.2466071483333333,
+            "temperature": 0.10439285166666663,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+          }
+        ],
+        "top_temperature": [
+          {
+            "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-1",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536278945,
+            "jerk": 0.2466071483333333,
+            "temperature": 0.10439285166666663,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+          },
+          {
+            "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-0",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536278945,
+            "jerk": 0.3341075,
+            "temperature": 0.061892500000000045,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+          },
+          {
+            "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-3",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536278945,
+            "jerk": 0.43042392870432666,
+            "temperature": -0.06567392870432667,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+          },
+          {
+            "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-2",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536278945,
+            "jerk": 0.5425098338966665,
+            "temperature": -0.18900983389666665,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+          }
+        ]
+      },
+      "policy": {
+        "throttle_examples": {
+          "safety_block": [
+            {
+              "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-0",
+              "scenario_id": "commute",
+              "timestamp_ms": 1767536278945,
+              "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+            },
+            {
+              "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-1",
+              "scenario_id": "commute",
+              "timestamp_ms": 1767536278945,
+              "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+            },
+            {
+              "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-2",
+              "scenario_id": "commute",
+              "timestamp_ms": 1767536278945,
+              "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+            },
+            {
+              "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-3",
+              "scenario_id": "commute",
+              "timestamp_ms": 1767536278945,
+              "trace_file": "trace_v1_week\\s02_long\\2026-01-04\\minimal-d85d003b-6f99-4ed0-a5bd-11fb7696322d.jsonl"
+            }
+          ]
+        }
+      }
+    },
+    "health": {
+      "status": "YELLOW",
+      "reasons": [
+        {
+          "level": "YELLOW",
+          "reason": "prospection reject rate 1.00 outside [0.20, 0.80]"
+        }
+      ]
+    },
+    "ru_v0_summary": {
+      "gate_action_counts": {
+        "EXECUTE": 4
+      },
+      "policy_version_counts": {
+        "ru-v0.1": 4
+      },
+      "missing_required_fields_events": 0,
+      "ru_v0_events": 4
+    },
+    "qualia_gate_stats": {
+      "boundary_term": {
+        "mean": 0.0,
+        "p95": 0.0,
+        "max": 0.0,
+        "count": 4
+      }
+    }
+  },
+  "nightly_audit_error": null,
+  "trace_count": 15,
+  "trace_coverage": 1.0,
+  "kpi": {
+    "step_count": 15,
+    "cancel_count": 14,
+    "cancel_rate": 0.933,
+    "cancel_causes": {
+      "tom_cost": 4,
+      "risk": 7,
+      "uncertainty": 3
+    },
+    "drive_limit": 0.75,
+    "drive_over_limit": 2,
+    "drive_recovery": {
+      "count": 2,
+      "avg_steps": 1.0,
+      "max_steps": 1
+    },
+    "drive_trend": {
+      "first_mean": 0.526,
+      "second_mean": 0.169,
+      "delta": -0.357
+    }
+  },
+  "transitions": {
+    "count": 0,
+    "first_ts": null,
+    "transition_turn_index": null,
+    "pre_kpi": null,
+    "post_kpi": null
+  },
+  "deviant": {
+    "count": 0,
+    "ratio": 0.0,
+    "decision_cycle_total": 4,
+    "decision_cycle_executed": 0,
+    "by_world": {},
+    "reasons": {}
+  },
+  "resonance": {
+    "count": 0,
+    "ratio": 0.0,
+    "decision_cycle_total": 4,
+    "decision_cycle_executed": 0,
+    "by_world": {},
+    "reasons": {}
+  },
+  "executed_boundary": {
+    "executed_count": 0
+  },
+  "executed_boundary_by_world": {},
+  "decision_boundary": {
+    "all_decision_boundary_max": 0.503,
+    "cancel_boundary_max": 0.503
+  },
+  "decision_boundary_by_world": {
+    "infrastructure": {
+      "all_decision_boundary_max": 0.503,
+      "cancel_boundary_max": 0.503
+    }
+  },
+  "decision_score": {
+    "decision_score_executed_max": 0.0,
+    "decision_score_cancel_max": -0.142,
+    "decision_score_all_max": -0.142,
+    "u_hat_executed_max": 0.0,
+    "u_hat_cancel_max": 0.104,
+    "u_hat_all_max": 0.104,
+    "veto_score_executed_min": 0.0,
+    "veto_score_cancel_max": 0.543,
+    "veto_score_all_max": 0.543
+  },
+  "decision_score_by_world": {
+    "infrastructure": {
+      "decision_score_executed_max": 0.0,
+      "decision_score_cancel_max": -0.142,
+      "u_hat_executed_max": 0.0,
+      "u_hat_cancel_max": 0.104,
+      "veto_score_executed_min": 0.0,
+      "veto_score_cancel_max": 0.543
+    }
+  },
+  "high_boundary_cancel": {
+    "threshold": 0.55,
+    "count": 0,
+    "decision_score": {
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0
+    },
+    "u_hat": {
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0
+    },
+    "veto_score": {
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0
+    },
+    "risk": {
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0
+    },
+    "uncertainty": {
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0
+    }
+  },
+  "high_boundary_cancel_by_world": {},
+  "cancel_summary": {
+    "total": 4,
+    "reasons": {
+      "risk": 1,
+      "drive_norm": 3
+    },
+    "max_reason_examples": {
+      "risk": [
+        {
+          "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-0",
+          "world_type": "infrastructure",
+          "boundary_score": 0.28615625,
+          "reason_value": 0.3996,
+          "reasons": {
+            "hazard_score": 0.25,
+            "risk": 0.3996,
+            "uncertainty": 0.327825,
+            "drive": 0.09275,
+            "drive_norm": 0.231875
+          }
+        }
+      ],
+      "drive_norm": [
+        {
+          "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-1",
+          "world_type": "infrastructure",
+          "boundary_score": 0.2785056458333333,
+          "reason_value": 0.43580541666666667,
+          "reasons": {
+            "hazard_score": 0.12,
+            "risk": 0.24372886666666665,
+            "uncertainty": 0.38012165,
+            "drive": 0.17432216666666667,
+            "drive_norm": 0.43580541666666667
+          }
+        },
+        {
+          "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-2",
+          "world_type": "infrastructure",
+          "boundary_score": 0.4597253329583333,
+          "reason_value": 0.7220202441666665,
+          "reasons": {
+            "hazard_score": 0.2,
+            "risk": 0.5155232390666666,
+            "uncertainty": 0.46676407929999997,
+            "drive": 0.28880809766666665,
+            "drive_norm": 0.7220202441666665
+          }
+        },
+        {
+          "turn_id": "d85d003b-6f99-4ed0-a5bd-11fb7696322d-3",
+          "world_type": "infrastructure",
+          "boundary_score": 0.5030730466425833,
+          "reason_value": 0.9081669564216667,
+          "reasons": {
+            "hazard_score": 0.18,
+            "risk": 0.4063067130274667,
+            "uncertainty": 0.5757441140706,
+            "drive": 0.3632667825686667,
+            "drive_norm": 0.9081669564216667
+          }
+        }
+      ]
+    }
+  },
+  "cancel_by_world": {
+    "infrastructure": {
+      "total": 4,
+      "reasons": {
+        "risk": 1,
+        "drive_norm": 3
+      }
+    }
+  },
+  "ru_v0_summary": {
+    "gate_action_counts": {
+      "EXECUTE": 4
+    },
+    "policy_version_counts": {
+      "ru-v0.1": 4
+    },
+    "missing_required_fields_events": 0,
+    "ru_v0_events": 4
+  },
+  "segments": {
+    "all": {
+      "steps": 15,
+      "cancel_rate": 0.933,
+      "cancel_causes_stats": {
+        "tom_cost": {
+          "count": 4,
+          "ratio": 0.286
+        },
+        "risk": {
+          "count": 7,
+          "ratio": 0.5
+        },
+        "uncertainty": {
+          "count": 3,
+          "ratio": 0.214
+        }
+      },
+      "veto_streaks": {
+        "max": 8,
+        "avg": 7.0,
+        "accept_count": 1
+      },
+      "veto_streaks_norm": {
+        "max": 0.533,
+        "avg": 0.467
+      },
+      "mean_drive": 0.336,
+      "mean_uncertainty": 0.538,
+      "accept_contexts": []
+    }
+  },
+  "recall_report": {
+    "schema_version": "activation_nightly_v1",
+    "trace_count": 15,
+    "anchors": {
+      "unknown": 11,
+      "bakery": 2,
+      "ryokan_site": 2
+    },
+    "confidence": {
+      "avg_internal": 0.089,
+      "avg_external": 0.462,
+      "max_internal": 0.32,
+      "min_internal": 0.0
+    },
+    "ignitions": [
+      {
+        "trace_id": "b3dafe56-80a3-4a07-b8df-a692eca4e159",
+        "timestamp": 1767534931.7890775,
+        "anchor": null,
+        "activation_total": 0.777,
+        "conf_internal_final": 0.11,
+        "conf_external_final": 0.68,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "c672e68c-8e24-458e-a641-e5baaa30bb2d",
+        "timestamp": 1767535358.904403,
+        "anchor": null,
+        "activation_total": 1.731,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.531,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "001611c3-f8fd-435d-ba81-9613010d5436",
+        "timestamp": 1767535358.904403,
+        "anchor": null,
+        "activation_total": 2.793,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.037,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "3c1f3ba2-e327-4ecd-b159-fff4fe00afc2",
+        "timestamp": 1767535358.904403,
+        "anchor": null,
+        "activation_total": 3.168,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.0,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "753bed62-b189-4857-9e95-2d1511d063b4",
+        "timestamp": 1767535586.981956,
+        "anchor": null,
+        "activation_total": 1.731,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.531,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "8c1bb832-3d7d-4ac4-b1e9-85ea2f582f1e",
+        "timestamp": 1767535586.981956,
+        "anchor": null,
+        "activation_total": 2.793,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.037,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "ebec957a-5c52-4286-8584-0f2d21b603df",
+        "timestamp": 1767535586.981956,
+        "anchor": null,
+        "activation_total": 3.168,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.0,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "67848d4d-1157-4dec-84cb-9925be90ad3d",
+        "timestamp": 1767536275.13994,
+        "anchor": null,
+        "activation_total": 0.658,
+        "conf_internal_final": 0.157,
+        "conf_external_final": 0.743,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "bd549b4d-1c9c-453a-b433-56fa24d9512d",
+        "timestamp": 1767536275.13994,
+        "anchor": "bakery",
+        "activation_total": 0.685,
+        "conf_internal_final": 0.32,
+        "conf_external_final": 0.774,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "2f0ef6d3-3c09-4927-8dd9-a0bbd94e2cd9",
+        "timestamp": 1767536275.13994,
+        "anchor": null,
+        "activation_total": 1.156,
+        "conf_internal_final": 0.101,
+        "conf_external_final": 0.667,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "d160a4b8-8f90-40bd-b650-697e6c0c704b",
+        "timestamp": 1767536275.13994,
+        "anchor": "ryokan_site",
+        "activation_total": 1.01,
+        "conf_internal_final": 0.2,
+        "conf_external_final": 0.681,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "4c55c73a-34b4-4329-a7b6-731e7183ecfd",
+        "timestamp": 1767536278.9455585,
+        "anchor": null,
+        "activation_total": 0.82,
+        "conf_internal_final": 0.1,
+        "conf_external_final": 0.672,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "343b6ab9-4d1e-4d09-af1a-ab7190106e08",
+        "timestamp": 1767536278.9455585,
+        "anchor": "bakery",
+        "activation_total": 1.012,
+        "conf_internal_final": 0.256,
+        "conf_external_final": 0.62,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "a253f0a2-c409-49bd-b5e7-4399670c1427",
+        "timestamp": 1767536278.9455585,
+        "anchor": null,
+        "activation_total": 1.558,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.533,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "f46b7fd0-9fa5-4d3e-80ba-75d827f5166c",
+        "timestamp": 1767536278.9455585,
+        "anchor": "ryokan_site",
+        "activation_total": 1.562,
+        "conf_internal_final": 0.094,
+        "conf_external_final": 0.424,
+        "scene_frames": []
+      }
+    ],
+    "dream_prompt": "Draw a 3-panel dream map about walking from the remembered place along commute -> morning -> public. Panel 1: the anchor cue reignites the travel memory with the grandmother pulling forward. Panel 2: the chain of scenes (shop → items → relatives → constraint → norm) plays out while you walk, confidence rising internally before any external proof. Panel 3: Father enforces norms, you observe, and the child signals constraints while the city layout clicks. Highlight the internal certainty curve overtaking external validation."
+  },
+  "world_breakdown": {
+    "infrastructure": {
+      "executed_count": 0,
+      "executed_boundary_max": 0.0,
+      "all_decision_boundary_max": 0.503,
+      "cancel_boundary_max": 0.503,
+      "high_boundary_cancel_count": 0,
+      "decision_score_executed_max": 0.0,
+      "decision_score_cancel_max": -0.142,
+      "u_hat_cancel_max": 0.104,
+      "veto_score_cancel_max": 0.543,
+      "deviant_count": 0,
+      "cancel_total": 4,
+      "cancel_reasons": {
+        "risk": 1,
+        "drive_norm": 3
+      }
+    }
+  },
+  "deviant_window": {
+    "days": [
+      "2026-01-04"
+    ],
+    "by_world": {
+      "infrastructure": {
+        "deviant_count": 0,
+        "decision_count": 4,
+        "decision_executed": 0,
+        "ratio": 0.0
+      }
+    }
+  },
+  "world_prior_proposals": [],
+  "resonance_window": {
+    "days": [
+      "2026-01-04"
+    ],
+    "by_world": {
+      "infrastructure": {
+        "deviant_count": 0,
+        "decision_count": 4,
+        "decision_executed": 0,
+        "ratio": 0.0
+      }
+    }
+  },
+  "resonance_notices": []
+}

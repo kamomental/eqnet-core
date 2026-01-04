@@ -1,0 +1,891 @@
+{
+  "generated_at": "2026-01-04T14:22:12.912979",
+  "day": "2026-01-04",
+  "telemetry_paths": [
+    "telemetry\\ignition-20260104.jsonl"
+  ],
+  "trace_path": "logs/activation_traces.jsonl",
+  "trace_root": "trace_v1_week\\s07_light",
+  "nightly_audit": {
+    "schema_version": "nightly_audit_v1",
+    "date": "2026-01-04",
+    "trace_files": [
+      "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+    ],
+    "invariants": {
+      "summary": {
+        "TRACE_001": {
+          "total": 4,
+          "pass": 4,
+          "pass_rate": 1.0
+        },
+        "TRACE_002": {
+          "total": 4,
+          "pass": 4,
+          "pass_rate": 1.0
+        },
+        "TRACE_003": {
+          "total": 4,
+          "pass": 4,
+          "pass_rate": 1.0
+        }
+      },
+      "fatal_failures": 0,
+      "warn_fail_rate": 0.0
+    },
+    "boundary": {
+      "threshold": 0.5,
+      "span_count": 0,
+      "max_length": 0,
+      "spans": []
+    },
+    "prospection": {
+      "total": 4,
+      "reject": 4,
+      "reject_rate": 1.0,
+      "accept_rate": 0.0,
+      "top_jerk": [
+        {
+          "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-2",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767536530754,
+          "jerk": 0.6563885766109867,
+          "temperature": -0.3028885766109868,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+        },
+        {
+          "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-3",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767536530755,
+          "jerk": 0.5376712598394048,
+          "temperature": -0.17292125983940482,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+        },
+        {
+          "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-0",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767536530752,
+          "jerk": 0.45549200000000006,
+          "temperature": -0.059492,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+        },
+        {
+          "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-1",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767536530753,
+          "jerk": 0.31294512213333336,
+          "temperature": 0.038054877866666656,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+        }
+      ],
+      "top_temperature": [
+        {
+          "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-1",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767536530753,
+          "jerk": 0.31294512213333336,
+          "temperature": 0.038054877866666656,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+        },
+        {
+          "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-0",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767536530752,
+          "jerk": 0.45549200000000006,
+          "temperature": -0.059492,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+        },
+        {
+          "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-3",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767536530755,
+          "jerk": 0.5376712598394048,
+          "temperature": -0.17292125983940482,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+        },
+        {
+          "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-2",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767536530754,
+          "jerk": 0.6563885766109867,
+          "temperature": -0.3028885766109868,
+          "accepted": false,
+          "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+        }
+      ]
+    },
+    "policy": {
+      "offer_throttle_counts": {
+        "safety_block": 4
+      },
+      "offer_throttle_examples": {
+        "safety_block": [
+          {
+            "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-0",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536530752,
+            "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+          },
+          {
+            "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-1",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536530753,
+            "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+          },
+          {
+            "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-2",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536530754,
+            "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+          },
+          {
+            "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-3",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536530755,
+            "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+          }
+        ]
+      }
+    },
+    "evidence": {
+      "invariants": {
+        "fatal_failures": [],
+        "warn_failures": []
+      },
+      "boundary_spans": [],
+      "prospection": {
+        "top_jerk": [
+          {
+            "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-2",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536530754,
+            "jerk": 0.6563885766109867,
+            "temperature": -0.3028885766109868,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+          },
+          {
+            "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-3",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536530755,
+            "jerk": 0.5376712598394048,
+            "temperature": -0.17292125983940482,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+          },
+          {
+            "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-0",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536530752,
+            "jerk": 0.45549200000000006,
+            "temperature": -0.059492,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+          },
+          {
+            "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-1",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536530753,
+            "jerk": 0.31294512213333336,
+            "temperature": 0.038054877866666656,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+          }
+        ],
+        "top_temperature": [
+          {
+            "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-1",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536530753,
+            "jerk": 0.31294512213333336,
+            "temperature": 0.038054877866666656,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+          },
+          {
+            "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-0",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536530752,
+            "jerk": 0.45549200000000006,
+            "temperature": -0.059492,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+          },
+          {
+            "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-3",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536530755,
+            "jerk": 0.5376712598394048,
+            "temperature": -0.17292125983940482,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+          },
+          {
+            "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-2",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767536530754,
+            "jerk": 0.6563885766109867,
+            "temperature": -0.3028885766109868,
+            "accepted": false,
+            "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+          }
+        ]
+      },
+      "policy": {
+        "throttle_examples": {
+          "safety_block": [
+            {
+              "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-0",
+              "scenario_id": "commute",
+              "timestamp_ms": 1767536530752,
+              "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+            },
+            {
+              "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-1",
+              "scenario_id": "commute",
+              "timestamp_ms": 1767536530753,
+              "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+            },
+            {
+              "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-2",
+              "scenario_id": "commute",
+              "timestamp_ms": 1767536530754,
+              "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+            },
+            {
+              "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-3",
+              "scenario_id": "commute",
+              "timestamp_ms": 1767536530755,
+              "trace_file": "trace_v1_week\\s07_light\\2026-01-04\\minimal-afebe00b-a760-4ef9-9686-6b7080470c88.jsonl"
+            }
+          ]
+        }
+      }
+    },
+    "health": {
+      "status": "YELLOW",
+      "reasons": [
+        {
+          "level": "YELLOW",
+          "reason": "prospection reject rate 1.00 outside [0.20, 0.80]"
+        }
+      ]
+    },
+    "ru_v0_summary": {
+      "gate_action_counts": {
+        "EXECUTE": 4
+      },
+      "policy_version_counts": {
+        "ru-v0.1": 4
+      },
+      "missing_required_fields_events": 0,
+      "ru_v0_events": 4
+    },
+    "qualia_gate_stats": {
+      "boundary_term": {
+        "mean": 0.0,
+        "p95": 0.0,
+        "max": 0.0,
+        "count": 4
+      }
+    }
+  },
+  "nightly_audit_error": null,
+  "trace_count": 33,
+  "trace_coverage": 1.0,
+  "kpi": {
+    "step_count": 33,
+    "cancel_count": 28,
+    "cancel_rate": 0.848,
+    "cancel_causes": {
+      "tom_cost": 4,
+      "risk": 16,
+      "uncertainty": 8
+    },
+    "drive_limit": 0.75,
+    "drive_over_limit": 3,
+    "drive_recovery": {
+      "count": 3,
+      "avg_steps": 1.0,
+      "max_steps": 1
+    },
+    "drive_trend": {
+      "first_mean": 0.331,
+      "second_mean": 0.221,
+      "delta": -0.11
+    }
+  },
+  "transitions": {
+    "count": 0,
+    "first_ts": null,
+    "transition_turn_index": null,
+    "pre_kpi": null,
+    "post_kpi": null
+  },
+  "deviant": {
+    "count": 0,
+    "ratio": 0.0,
+    "decision_cycle_total": 4,
+    "decision_cycle_executed": 0,
+    "by_world": {},
+    "reasons": {}
+  },
+  "resonance": {
+    "count": 0,
+    "ratio": 0.0,
+    "decision_cycle_total": 4,
+    "decision_cycle_executed": 0,
+    "by_world": {},
+    "reasons": {}
+  },
+  "executed_boundary": {
+    "executed_count": 0
+  },
+  "executed_boundary_by_world": {},
+  "decision_boundary": {
+    "all_decision_boundary_max": 0.397,
+    "cancel_boundary_max": 0.397
+  },
+  "decision_boundary_by_world": {
+    "infrastructure": {
+      "all_decision_boundary_max": 0.397,
+      "cancel_boundary_max": 0.397
+    }
+  },
+  "decision_score": {
+    "decision_score_executed_max": 0.0,
+    "decision_score_cancel_max": -0.275,
+    "decision_score_all_max": -0.275,
+    "u_hat_executed_max": 0.0,
+    "u_hat_cancel_max": 0.038,
+    "u_hat_all_max": 0.038,
+    "veto_score_executed_min": 0.0,
+    "veto_score_cancel_max": 0.656,
+    "veto_score_all_max": 0.656
+  },
+  "decision_score_by_world": {
+    "infrastructure": {
+      "decision_score_executed_max": 0.0,
+      "decision_score_cancel_max": -0.275,
+      "u_hat_executed_max": 0.0,
+      "u_hat_cancel_max": 0.038,
+      "veto_score_executed_min": 0.0,
+      "veto_score_cancel_max": 0.656
+    }
+  },
+  "high_boundary_cancel": {
+    "threshold": 0.55,
+    "count": 0,
+    "decision_score": {
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0
+    },
+    "u_hat": {
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0
+    },
+    "veto_score": {
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0
+    },
+    "risk": {
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0
+    },
+    "uncertainty": {
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0
+    }
+  },
+  "high_boundary_cancel_by_world": {},
+  "cancel_summary": {
+    "total": 4,
+    "reasons": {
+      "risk": 2,
+      "uncertainty": 2
+    },
+    "max_reason_examples": {
+      "risk": [
+        {
+          "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-0",
+          "world_type": "infrastructure",
+          "boundary_score": 0.29551,
+          "reason_value": 0.58696,
+          "reasons": {
+            "hazard_score": 0.25,
+            "risk": 0.58696,
+            "uncertainty": 0.35772000000000004,
+            "drive": 0.09240000000000001,
+            "drive_norm": 0.12320000000000002
+          }
+        },
+        {
+          "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-2",
+          "world_type": "infrastructure",
+          "boundary_score": 0.38466036584960006,
+          "reason_value": 0.6600549009749335,
+          "reasons": {
+            "hazard_score": 0.2,
+            "risk": 0.6600549009749335,
+            "uncertainty": 0.5572965645312001,
+            "drive": 0.2476372524373334,
+            "drive_norm": 0.33018300324977784
+          }
+        }
+      ],
+      "uncertainty": [
+        {
+          "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-1",
+          "world_type": "infrastructure",
+          "boundary_score": 0.23363046399999998,
+          "reason_value": 0.4390958080000001,
+          "reasons": {
+            "hazard_score": 0.12,
+            "risk": 0.32480507733333336,
+            "uncertainty": 0.4390958080000001,
+            "drive": 0.15201269333333337,
+            "drive_norm": 0.20268359111111114
+          }
+        },
+        {
+          "turn_id": "afebe00b-a760-4ef9-9686-6b7080470c88-3",
+          "world_type": "infrastructure",
+          "boundary_score": 0.3968191804526695,
+          "reason_value": 0.7059777908729039,
+          "reasons": {
+            "hazard_score": 0.18,
+            "risk": 0.5199354265181116,
+            "uncertainty": 0.7059777908729039,
+            "drive": 0.309838566295279,
+            "drive_norm": 0.41311808839370534
+          }
+        }
+      ]
+    }
+  },
+  "cancel_by_world": {
+    "infrastructure": {
+      "total": 4,
+      "reasons": {
+        "risk": 2,
+        "uncertainty": 2
+      }
+    }
+  },
+  "ru_v0_summary": {
+    "gate_action_counts": {
+      "EXECUTE": 4
+    },
+    "policy_version_counts": {
+      "ru-v0.1": 4
+    },
+    "missing_required_fields_events": 0,
+    "ru_v0_events": 4
+  },
+  "segments": {
+    "all": {
+      "steps": 33,
+      "cancel_rate": 0.848,
+      "cancel_causes_stats": {
+        "tom_cost": {
+          "count": 4,
+          "ratio": 0.143
+        },
+        "risk": {
+          "count": 16,
+          "ratio": 0.571
+        },
+        "uncertainty": {
+          "count": 8,
+          "ratio": 0.286
+        }
+      },
+      "veto_streaks": {
+        "max": 9,
+        "avg": 5.6,
+        "accept_count": 5
+      },
+      "veto_streaks_norm": {
+        "max": 0.273,
+        "avg": 0.17
+      },
+      "mean_drive": 0.274,
+      "mean_uncertainty": 0.499,
+      "accept_contexts": []
+    }
+  },
+  "recall_report": {
+    "schema_version": "activation_nightly_v1",
+    "trace_count": 33,
+    "anchors": {
+      "unknown": 26,
+      "bakery": 4,
+      "ryokan_site": 3
+    },
+    "confidence": {
+      "avg_internal": 0.108,
+      "avg_external": 0.501,
+      "max_internal": 0.386,
+      "min_internal": 0.0
+    },
+    "ignitions": [
+      {
+        "trace_id": "b3dafe56-80a3-4a07-b8df-a692eca4e159",
+        "timestamp": 1767534931.7890775,
+        "anchor": null,
+        "activation_total": 0.777,
+        "conf_internal_final": 0.11,
+        "conf_external_final": 0.68,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "c672e68c-8e24-458e-a641-e5baaa30bb2d",
+        "timestamp": 1767535358.904403,
+        "anchor": null,
+        "activation_total": 1.731,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.531,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "001611c3-f8fd-435d-ba81-9613010d5436",
+        "timestamp": 1767535358.904403,
+        "anchor": null,
+        "activation_total": 2.793,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.037,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "3c1f3ba2-e327-4ecd-b159-fff4fe00afc2",
+        "timestamp": 1767535358.904403,
+        "anchor": null,
+        "activation_total": 3.168,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.0,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "753bed62-b189-4857-9e95-2d1511d063b4",
+        "timestamp": 1767535586.981956,
+        "anchor": null,
+        "activation_total": 1.731,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.531,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "8c1bb832-3d7d-4ac4-b1e9-85ea2f582f1e",
+        "timestamp": 1767535586.981956,
+        "anchor": null,
+        "activation_total": 2.793,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.037,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "ebec957a-5c52-4286-8584-0f2d21b603df",
+        "timestamp": 1767535586.981956,
+        "anchor": null,
+        "activation_total": 3.168,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.0,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "67848d4d-1157-4dec-84cb-9925be90ad3d",
+        "timestamp": 1767536275.13994,
+        "anchor": null,
+        "activation_total": 0.658,
+        "conf_internal_final": 0.157,
+        "conf_external_final": 0.743,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "bd549b4d-1c9c-453a-b433-56fa24d9512d",
+        "timestamp": 1767536275.13994,
+        "anchor": "bakery",
+        "activation_total": 0.685,
+        "conf_internal_final": 0.32,
+        "conf_external_final": 0.774,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "2f0ef6d3-3c09-4927-8dd9-a0bbd94e2cd9",
+        "timestamp": 1767536275.13994,
+        "anchor": null,
+        "activation_total": 1.156,
+        "conf_internal_final": 0.101,
+        "conf_external_final": 0.667,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "d160a4b8-8f90-40bd-b650-697e6c0c704b",
+        "timestamp": 1767536275.13994,
+        "anchor": "ryokan_site",
+        "activation_total": 1.01,
+        "conf_internal_final": 0.2,
+        "conf_external_final": 0.681,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "4c55c73a-34b4-4329-a7b6-731e7183ecfd",
+        "timestamp": 1767536278.9455585,
+        "anchor": null,
+        "activation_total": 0.82,
+        "conf_internal_final": 0.1,
+        "conf_external_final": 0.672,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "343b6ab9-4d1e-4d09-af1a-ab7190106e08",
+        "timestamp": 1767536278.9455585,
+        "anchor": "bakery",
+        "activation_total": 1.012,
+        "conf_internal_final": 0.256,
+        "conf_external_final": 0.62,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "a253f0a2-c409-49bd-b5e7-4399670c1427",
+        "timestamp": 1767536278.9455585,
+        "anchor": null,
+        "activation_total": 1.558,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.533,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "f46b7fd0-9fa5-4d3e-80ba-75d827f5166c",
+        "timestamp": 1767536278.9455585,
+        "anchor": "ryokan_site",
+        "activation_total": 1.562,
+        "conf_internal_final": 0.094,
+        "conf_external_final": 0.424,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "1d03e85c-cf50-4586-a400-d05362676faa",
+        "timestamp": 1767536282.7140546,
+        "anchor": null,
+        "activation_total": 1.731,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.531,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "094e1ca6-f71f-4831-823a-a074b68db095",
+        "timestamp": 1767536282.7140546,
+        "anchor": null,
+        "activation_total": 2.793,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.037,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "3c2031ac-9c2f-4afa-a12a-efbfcc09893a",
+        "timestamp": 1767536282.715626,
+        "anchor": null,
+        "activation_total": 3.168,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.0,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "cc653bc1-a99e-4a13-85a2-6e01b5b41e75",
+        "timestamp": 1767536286.7401173,
+        "anchor": null,
+        "activation_total": 0.318,
+        "conf_internal_final": 0.334,
+        "conf_external_final": 0.849,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "d13f89ee-5c0f-47cf-af88-5c9d7cd6cbbe",
+        "timestamp": 1767536286.7411082,
+        "anchor": null,
+        "activation_total": 1.182,
+        "conf_internal_final": 0.067,
+        "conf_external_final": 0.65,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "8c4ae3a7-37a8-4f46-a0a7-a18e6f8266ac",
+        "timestamp": 1767536286.742108,
+        "anchor": null,
+        "activation_total": 1.191,
+        "conf_internal_final": 0.288,
+        "conf_external_final": 0.581,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "6fea6d18-42bf-4a4b-8eca-e472b17ac603",
+        "timestamp": 1767536515.866461,
+        "anchor": null,
+        "activation_total": 0.318,
+        "conf_internal_final": 0.334,
+        "conf_external_final": 0.849,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "f30e47f0-9c64-4979-881b-2a4e2736f1f2",
+        "timestamp": 1767536515.8677049,
+        "anchor": null,
+        "activation_total": 1.182,
+        "conf_internal_final": 0.067,
+        "conf_external_final": 0.65,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "2cf86839-a449-4a12-a32c-4a432c8bc91e",
+        "timestamp": 1767536515.8677049,
+        "anchor": null,
+        "activation_total": 1.191,
+        "conf_internal_final": 0.288,
+        "conf_external_final": 0.581,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "728a7c27-c0dc-477d-9238-47aa2e1cc37c",
+        "timestamp": 1767536520.7409976,
+        "anchor": null,
+        "activation_total": 0.424,
+        "conf_internal_final": 0.27,
+        "conf_external_final": 0.817,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "217686df-a1a4-4881-9b20-3cddf3401467",
+        "timestamp": 1767536520.7409976,
+        "anchor": "bakery",
+        "activation_total": 0.458,
+        "conf_internal_final": 0.386,
+        "conf_external_final": 0.885,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "42ea3e42-cf5f-4f28-9b34-065378983796",
+        "timestamp": 1767536525.7518518,
+        "anchor": null,
+        "activation_total": 0.925,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.675,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "86f2684b-9065-4187-b7b2-ff2e4cc04168",
+        "timestamp": 1767536525.7528517,
+        "anchor": null,
+        "activation_total": 2.13,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.328,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "7252e4bf-b8d6-449c-a193-c3ef6c280251",
+        "timestamp": 1767536525.7528517,
+        "anchor": null,
+        "activation_total": 2.023,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.23,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "dfb0e959-6bbf-487a-a507-ec18c180db60",
+        "timestamp": 1767536530.7538228,
+        "anchor": null,
+        "activation_total": 1.037,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.642,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "92302174-897a-4d9c-95d0-e6d1869fc1e5",
+        "timestamp": 1767536530.7548287,
+        "anchor": "bakery",
+        "activation_total": 1.129,
+        "conf_internal_final": 0.175,
+        "conf_external_final": 0.561,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "b4fa3a79-096f-4aa5-94d6-70b47bd510f6",
+        "timestamp": 1767536530.7548287,
+        "anchor": null,
+        "activation_total": 1.752,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.443,
+        "scene_frames": []
+      },
+      {
+        "trace_id": "9c420736-bc1d-4013-8880-8f7eaedfd9dd",
+        "timestamp": 1767536530.7558284,
+        "anchor": "ryokan_site",
+        "activation_total": 1.752,
+        "conf_internal_final": 0.0,
+        "conf_external_final": 0.294,
+        "scene_frames": []
+      }
+    ],
+    "dream_prompt": "Draw a 3-panel dream map about walking from the remembered place along commute -> morning -> public. Panel 1: the anchor cue reignites the travel memory with the grandmother pulling forward. Panel 2: the chain of scenes (shop → items → relatives → constraint → norm) plays out while you walk, confidence rising internally before any external proof. Panel 3: Father enforces norms, you observe, and the child signals constraints while the city layout clicks. Highlight the internal certainty curve overtaking external validation."
+  },
+  "world_breakdown": {
+    "infrastructure": {
+      "executed_count": 0,
+      "executed_boundary_max": 0.0,
+      "all_decision_boundary_max": 0.397,
+      "cancel_boundary_max": 0.397,
+      "high_boundary_cancel_count": 0,
+      "decision_score_executed_max": 0.0,
+      "decision_score_cancel_max": -0.275,
+      "u_hat_cancel_max": 0.038,
+      "veto_score_cancel_max": 0.656,
+      "deviant_count": 0,
+      "cancel_total": 4,
+      "cancel_reasons": {
+        "risk": 2,
+        "uncertainty": 2
+      }
+    }
+  },
+  "deviant_window": {
+    "days": [
+      "2026-01-04"
+    ],
+    "by_world": {
+      "infrastructure": {
+        "deviant_count": 0,
+        "decision_count": 4,
+        "decision_executed": 0,
+        "ratio": 0.0
+      }
+    }
+  },
+  "world_prior_proposals": [],
+  "resonance_window": {
+    "days": [
+      "2026-01-04"
+    ],
+    "by_world": {
+      "infrastructure": {
+        "deviant_count": 0,
+        "decision_count": 4,
+        "decision_executed": 0,
+        "ratio": 0.0
+      }
+    }
+  },
+  "resonance_notices": []
+}

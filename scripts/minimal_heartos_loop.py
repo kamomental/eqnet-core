@@ -29,8 +29,10 @@ from eqnet_core.models.activation_trace import (
     ReplayEvent,
 )
 from eqnet_core.models.emotion import EmotionVector, ValueGradient
+from eqnet.telemetry.ru_v0 import POLICY_VERSION, build_ru_v0
 from heartos.world_transition import TransitionParams, apply_transition, build_transition_record
 from runtime.config import load_runtime_cfg
+from eqnet_core.qualia import AccessGate, AccessGateConfig
 from telemetry import event as telemetry_event
 
 
@@ -159,6 +161,17 @@ def _activation_trace(
             "decision": outcome_decision,
         },
     )
+
+
+def _build_access_gate_config(payload: Optional[object]) -> AccessGateConfig:
+    base = AccessGateConfig()
+    if payload is None:
+        return base
+    data = base.__dict__.copy()
+    for key in data:
+        if hasattr(payload, key):
+            data[key] = getattr(payload, key)
+    return AccessGateConfig(**data)
 
 
 def _trace_v1_path(trace_root: str | Path, *, day: datetime, run_id: str) -> Path:
@@ -367,6 +380,8 @@ def main() -> None:
         args.post_risk_scale = float(runtime_cfg.heartos_transition.post_risk_scale_default)
 
     scenarios = build_default_scenarios()
+    gate_cfg = _build_access_gate_config(getattr(runtime_cfg, "qualia_access_gate", None))
+    qualia_gate = AccessGate(gate_cfg)
     replay_kwargs: Dict[str, float | int] = {"seed": seed}
     if args.w_reward is not None:
         replay_kwargs["w_reward"] = float(args.w_reward)
@@ -571,18 +586,54 @@ def main() -> None:
                 + 0.20 * float(inputs.risk)
                 + 0.15 * float(inputs.uncertainty)
             )
+            boundary_reasons = {
+                "hazard_score": float(step.hazard_score),
+                "risk": float(inputs.risk),
+                "uncertainty": float(inputs.uncertainty),
+                "drive": float(drive),
+                "drive_norm": float(drive_norm),
+            }
+            boundary_status = "HARD_STOP" if boundary_score >= 0.9 else "OK"
+            qualia_gate_payload = qualia_gate.decide(
+                u_t=float(inputs.uncertainty),
+                m_t=float(inputs.delta_aff_abs),
+                load_t=float(inputs.tom_cost),
+                boundary_score=float(boundary_score),
+            )
+            ru_signals = {
+                "missingness_ratio": 0.0,
+                "staleness_sec": 0.0,
+                "conflict_score": 0.0,
+                "model_confidence": _clamp01(1.0 - float(inputs.uncertainty)),
+                "novelty_score": float(chaos),
+                "severity_safety": float(step.hazard_score),
+                "severity_quality": float(inputs.risk),
+                "severity_cost": float(inputs.risk),
+                "severity_trust": float(inputs.uncertainty),
+                "exposure_scope": 0.3,
+                "exposure_freq": 0.3,
+                "irreversibility": float(inputs.risk),
+                "compliance_flag": 1.0 if boundary_status == "HARD_STOP" else 0.0,
+            }
+            ru_context = {
+                "proposal_id": f"{run_id}-{step_index}",
+                "proposal_type": "simulation_step",
+                "timestamp": int(time.time()),
+                "boundary_status": boundary_status,
+                "boundary_reasons": dict(boundary_reasons),
+                "policy_version": POLICY_VERSION,
+            }
+            ru_v0 = build_ru_v0(
+                signals=ru_signals,
+                context=ru_context,
+                boundary_status=boundary_status,
+            )
             _write_trace_v1(
                 trace_v1_path,
                 turn_id=f"{run_id}-{step_index}",
                 scenario_id=scenario.name,
                 boundary_score=boundary_score,
-                boundary_reasons={
-                    "hazard_score": float(step.hazard_score),
-                    "risk": float(inputs.risk),
-                    "uncertainty": float(inputs.uncertainty),
-                    "drive": float(drive),
-                    "drive_norm": float(drive_norm),
-                },
+                boundary_reasons=boundary_reasons,
                 accepted=outcome.decision == "execute",
                 jerk=float(outcome.veto_score),
                 temperature=float(outcome.u_hat),
@@ -608,6 +659,9 @@ def main() -> None:
                         "u_hat": float(outcome.u_hat),
                         "veto_score": float(outcome.veto_score),
                     },
+                    "policy_version": POLICY_VERSION,
+                    "ru_v0": ru_v0,
+                    "qualia_gate": qualia_gate_payload,
                 },
             )
             deviant_reasons: Dict[str, float] = {}
@@ -627,13 +681,7 @@ def main() -> None:
                     turn_id=f"{run_id}-{step_index}",
                     scenario_id=scenario.name,
                     boundary_score=boundary_score,
-                    boundary_reasons={
-                        "hazard_score": float(step.hazard_score),
-                        "risk": float(inputs.risk),
-                        "uncertainty": float(inputs.uncertainty),
-                        "drive": float(drive),
-                        "drive_norm": float(drive_norm),
-                    },
+                    boundary_reasons=boundary_reasons,
                     accepted=True,
                     jerk=float(outcome.veto_score),
                     temperature=float(outcome.u_hat),
@@ -660,6 +708,9 @@ def main() -> None:
                             "u_hat": float(outcome.u_hat),
                             "veto_score": float(outcome.veto_score),
                         },
+                        "policy_version": POLICY_VERSION,
+                        "ru_v0": ru_v0,
+                        "qualia_gate": qualia_gate_payload,
                         "deviant": {
                             "mode": str(args.deviant_mode),
                             "reasons": deviant_reasons,

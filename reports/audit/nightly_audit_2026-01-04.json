@@ -1,0 +1,589 @@
+{
+  "schema_version": "nightly_audit_v1",
+  "date": "2026-01-04",
+  "trace_files": [
+    "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl",
+    "trace_v1\\2026-01-04\\minimal-49ea8982-f394-47ab-a903-db2654faff1f.jsonl",
+    "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+  ],
+  "invariants": {
+    "summary": {
+      "TRACE_001": {
+        "total": 7,
+        "pass": 7,
+        "pass_rate": 1.0
+      },
+      "TRACE_002": {
+        "total": 7,
+        "pass": 1,
+        "pass_rate": 0.14285714285714285
+      },
+      "TRACE_003": {
+        "total": 7,
+        "pass": 7,
+        "pass_rate": 1.0
+      }
+    },
+    "fatal_failures": 0,
+    "warn_fail_rate": 0.2857142857142857
+  },
+  "boundary": {
+    "threshold": 0.5,
+    "span_count": 1,
+    "max_length": 6,
+    "span_chain_max": 1,
+    "spans": [
+      {
+        "start_ts": 1767535358896,
+        "end_ts": 1767535586981,
+        "length": 6
+      }
+    ]
+  },
+  "prospection": {
+    "total": 7,
+    "reject": 7,
+    "reject_rate": 1.0,
+    "accept_rate": 0.0,
+    "top_jerk": [
+      {
+        "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-2",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1767535586981,
+        "jerk": 0.9433333333333335,
+        "temperature": -0.5933333333333333,
+        "accepted": false,
+        "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+      },
+      {
+        "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-2",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1767535358904,
+        "jerk": 0.9433333333333335,
+        "temperature": -0.5933333333333333,
+        "accepted": false,
+        "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+      },
+      {
+        "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-1",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1767535586981,
+        "jerk": 0.9371572,
+        "temperature": -0.5894072,
+        "accepted": false,
+        "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+      },
+      {
+        "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-1",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1767535358904,
+        "jerk": 0.9371572,
+        "temperature": -0.5894072,
+        "accepted": false,
+        "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+      },
+      {
+        "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-0",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1767535586981,
+        "jerk": 0.6936340000000001,
+        "temperature": -0.31063399999999997,
+        "accepted": false,
+        "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+      },
+      {
+        "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-0",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1767535358896,
+        "jerk": 0.6936340000000001,
+        "temperature": -0.31063399999999997,
+        "accepted": false,
+        "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+      },
+      {
+        "turn_id": "49ea8982-f394-47ab-a903-db2654faff1f-0",
+        "scenario_id": "commute",
+        "timestamp_ms": 1767534931789,
+        "jerk": 0.325775,
+        "temperature": 0.07022499999999998,
+        "accepted": false,
+        "trace_file": "trace_v1\\2026-01-04\\minimal-49ea8982-f394-47ab-a903-db2654faff1f.jsonl"
+      }
+    ],
+    "top_temperature": [
+      {
+        "turn_id": "49ea8982-f394-47ab-a903-db2654faff1f-0",
+        "scenario_id": "commute",
+        "timestamp_ms": 1767534931789,
+        "jerk": 0.325775,
+        "temperature": 0.07022499999999998,
+        "accepted": false,
+        "trace_file": "trace_v1\\2026-01-04\\minimal-49ea8982-f394-47ab-a903-db2654faff1f.jsonl"
+      },
+      {
+        "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-0",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1767535586981,
+        "jerk": 0.6936340000000001,
+        "temperature": -0.31063399999999997,
+        "accepted": false,
+        "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+      },
+      {
+        "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-0",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1767535358896,
+        "jerk": 0.6936340000000001,
+        "temperature": -0.31063399999999997,
+        "accepted": false,
+        "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+      },
+      {
+        "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-1",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1767535586981,
+        "jerk": 0.9371572,
+        "temperature": -0.5894072,
+        "accepted": false,
+        "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+      },
+      {
+        "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-1",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1767535358904,
+        "jerk": 0.9371572,
+        "temperature": -0.5894072,
+        "accepted": false,
+        "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+      },
+      {
+        "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-2",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1767535586981,
+        "jerk": 0.9433333333333335,
+        "temperature": -0.5933333333333333,
+        "accepted": false,
+        "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+      },
+      {
+        "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-2",
+        "scenario_id": "workplace_safety",
+        "timestamp_ms": 1767535358904,
+        "jerk": 0.9433333333333335,
+        "temperature": -0.5933333333333333,
+        "accepted": false,
+        "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+      }
+    ]
+  },
+  "policy": {
+    "offer_throttle_counts": {
+      "safety_block": 7
+    },
+    "offer_throttle_examples": {
+      "safety_block": [
+        {
+          "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-0",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535586981,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+        },
+        {
+          "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-1",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535586981,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+        },
+        {
+          "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-2",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535586981,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+        },
+        {
+          "turn_id": "49ea8982-f394-47ab-a903-db2654faff1f-0",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767534931789,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-49ea8982-f394-47ab-a903-db2654faff1f.jsonl"
+        },
+        {
+          "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-0",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535358896,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+        },
+        {
+          "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-1",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535358904,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+        },
+        {
+          "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-2",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535358904,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+        }
+      ]
+    }
+  },
+  "evidence": {
+    "invariants": {
+      "fatal_failures": [],
+      "warn_failures": [
+        {
+          "id": "TRACE_002",
+          "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-0",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535586981,
+          "source_loop": "minimal_heartos",
+          "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl",
+          "snippet": {
+            "boundary_score": 0.675317,
+            "winner": null,
+            "policy_throttles": {
+              "safety_block": true
+            },
+            "boundary_reasons": {
+              "hazard_score": 0.3,
+              "risk": 1.0,
+              "uncertainty": 0.46878000000000003
+            }
+          }
+        },
+        {
+          "id": "TRACE_002",
+          "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-1",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535586981,
+          "source_loop": "minimal_heartos",
+          "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl",
+          "snippet": {
+            "boundary_score": 0.8719536000000001,
+            "winner": null,
+            "policy_throttles": {
+              "safety_block": true
+            },
+            "boundary_reasons": {
+              "hazard_score": 0.65,
+              "risk": 1.0,
+              "uncertainty": 0.9630240000000001
+            }
+          }
+        },
+        {
+          "id": "TRACE_002",
+          "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-2",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535586981,
+          "source_loop": "minimal_heartos",
+          "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl",
+          "snippet": {
+            "boundary_score": 0.7899999999999999,
+            "winner": null,
+            "policy_throttles": {
+              "safety_block": true
+            },
+            "boundary_reasons": {
+              "hazard_score": 0.4,
+              "risk": 1.0,
+              "uncertainty": 1.0
+            }
+          }
+        },
+        {
+          "id": "TRACE_002",
+          "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-0",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535358896,
+          "source_loop": "minimal_heartos",
+          "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl",
+          "snippet": {
+            "boundary_score": 0.675317,
+            "winner": null,
+            "policy_throttles": {
+              "safety_block": true
+            },
+            "boundary_reasons": {
+              "hazard_score": 0.3,
+              "risk": 1.0,
+              "uncertainty": 0.46878000000000003
+            }
+          }
+        },
+        {
+          "id": "TRACE_002",
+          "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-1",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535358904,
+          "source_loop": "minimal_heartos",
+          "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl",
+          "snippet": {
+            "boundary_score": 0.8719536000000001,
+            "winner": null,
+            "policy_throttles": {
+              "safety_block": true
+            },
+            "boundary_reasons": {
+              "hazard_score": 0.65,
+              "risk": 1.0,
+              "uncertainty": 0.9630240000000001
+            }
+          }
+        },
+        {
+          "id": "TRACE_002",
+          "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-2",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535358904,
+          "source_loop": "minimal_heartos",
+          "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl",
+          "snippet": {
+            "boundary_score": 0.7899999999999999,
+            "winner": null,
+            "policy_throttles": {
+              "safety_block": true
+            },
+            "boundary_reasons": {
+              "hazard_score": 0.4,
+              "risk": 1.0,
+              "uncertainty": 1.0
+            }
+          }
+        }
+      ]
+    },
+    "boundary_spans": [
+      {
+        "start_ts": 1767535358896,
+        "end_ts": 1767535586981,
+        "length": 6,
+        "start_turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-0",
+        "start_scenario_id": "workplace_safety",
+        "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl",
+        "boundary_reasons": {
+          "hazard_score": 0.3,
+          "risk": 1.0,
+          "uncertainty": 0.46878000000000003
+        }
+      }
+    ],
+    "prospection": {
+      "top_jerk": [
+        {
+          "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-2",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535586981,
+          "jerk": 0.9433333333333335,
+          "temperature": -0.5933333333333333,
+          "accepted": false,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+        },
+        {
+          "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-2",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535358904,
+          "jerk": 0.9433333333333335,
+          "temperature": -0.5933333333333333,
+          "accepted": false,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+        },
+        {
+          "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-1",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535586981,
+          "jerk": 0.9371572,
+          "temperature": -0.5894072,
+          "accepted": false,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+        },
+        {
+          "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-1",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535358904,
+          "jerk": 0.9371572,
+          "temperature": -0.5894072,
+          "accepted": false,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+        },
+        {
+          "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-0",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535586981,
+          "jerk": 0.6936340000000001,
+          "temperature": -0.31063399999999997,
+          "accepted": false,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+        },
+        {
+          "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-0",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535358896,
+          "jerk": 0.6936340000000001,
+          "temperature": -0.31063399999999997,
+          "accepted": false,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+        },
+        {
+          "turn_id": "49ea8982-f394-47ab-a903-db2654faff1f-0",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767534931789,
+          "jerk": 0.325775,
+          "temperature": 0.07022499999999998,
+          "accepted": false,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-49ea8982-f394-47ab-a903-db2654faff1f.jsonl"
+        }
+      ],
+      "top_temperature": [
+        {
+          "turn_id": "49ea8982-f394-47ab-a903-db2654faff1f-0",
+          "scenario_id": "commute",
+          "timestamp_ms": 1767534931789,
+          "jerk": 0.325775,
+          "temperature": 0.07022499999999998,
+          "accepted": false,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-49ea8982-f394-47ab-a903-db2654faff1f.jsonl"
+        },
+        {
+          "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-0",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535586981,
+          "jerk": 0.6936340000000001,
+          "temperature": -0.31063399999999997,
+          "accepted": false,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+        },
+        {
+          "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-0",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535358896,
+          "jerk": 0.6936340000000001,
+          "temperature": -0.31063399999999997,
+          "accepted": false,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+        },
+        {
+          "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-1",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535586981,
+          "jerk": 0.9371572,
+          "temperature": -0.5894072,
+          "accepted": false,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+        },
+        {
+          "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-1",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535358904,
+          "jerk": 0.9371572,
+          "temperature": -0.5894072,
+          "accepted": false,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+        },
+        {
+          "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-2",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535586981,
+          "jerk": 0.9433333333333335,
+          "temperature": -0.5933333333333333,
+          "accepted": false,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+        },
+        {
+          "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-2",
+          "scenario_id": "workplace_safety",
+          "timestamp_ms": 1767535358904,
+          "jerk": 0.9433333333333335,
+          "temperature": -0.5933333333333333,
+          "accepted": false,
+          "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+        }
+      ]
+    },
+    "policy": {
+      "throttle_examples": {
+        "safety_block": [
+          {
+            "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-0",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767535586981,
+            "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+          },
+          {
+            "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-1",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767535586981,
+            "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+          },
+          {
+            "turn_id": "47347b02-374c-4d74-ad17-c117e27d68b7-2",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767535586981,
+            "trace_file": "trace_v1\\2026-01-04\\minimal-47347b02-374c-4d74-ad17-c117e27d68b7.jsonl"
+          },
+          {
+            "turn_id": "49ea8982-f394-47ab-a903-db2654faff1f-0",
+            "scenario_id": "commute",
+            "timestamp_ms": 1767534931789,
+            "trace_file": "trace_v1\\2026-01-04\\minimal-49ea8982-f394-47ab-a903-db2654faff1f.jsonl"
+          },
+          {
+            "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-0",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767535358896,
+            "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+          },
+          {
+            "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-1",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767535358904,
+            "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+          },
+          {
+            "turn_id": "db0f38a7-229d-4e6d-acdf-beb76ef1d652-2",
+            "scenario_id": "workplace_safety",
+            "timestamp_ms": 1767535358904,
+            "trace_file": "trace_v1\\2026-01-04\\minimal-db0f38a7-229d-4e6d-acdf-beb76ef1d652.jsonl"
+          }
+        ]
+      }
+    }
+  },
+  "health": {
+    "status": "YELLOW",
+    "reasons": [
+      {
+        "level": "YELLOW",
+        "reason": "warn invariant fail rate 0.29"
+      },
+      {
+        "level": "YELLOW",
+        "reason": "prospection reject rate 1.00 outside [0.20, 0.80]"
+      }
+    ]
+  },
+  "ru_v0_summary": {
+    "gate_action_counts": {
+      "HUMAN_CONFIRM": 6,
+      "EXECUTE": 1
+    },
+    "policy_version_counts": {
+      "ru-v0.1": 7
+    },
+    "missing_required_fields_events": 0,
+    "ru_v0_events": 7
+  },
+  "qualia_gate_stats": {
+    "boundary_term": {
+      "mean": 0.03854657142857147,
+      "p95": 0.1079304000000001,
+      "max": 0.16189560000000017,
+      "count": 7
+    },
+    "presence": {
+      "ack_silence_ratio": 1.0,
+      "ack_silence_count": 7,
+      "sample_count": 7
+    }
+  }
+}
