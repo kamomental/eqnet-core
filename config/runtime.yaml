@@ -68,6 +68,20 @@ emotion:
   valence_w_s: 1.0
   resonance_k: 0.05
   affective_log_path: "memory/affective_log.jsonl"
+moment_log_path: "logs/moment_log.jsonl"
+nightly:
+  forgetfulness_metrics:
+    enable: true
+    mode: "observe"
+    epsilon: 0.0
+    sign_balance_mode: "ratio"
+    thresholds:
+      delta_abs_max: null
+      delta_nonzero_count_min: null
+      delta_sign_balance_abs: null
+      floors_applied_max: null
+      consent_overrides_max: null
+      monument_locks_max: null
 culture:
   tag: "default"
   politeness: 0.5
@@ -180,6 +194,66 @@ pain_loop:
     budgets:
       l1: 0.8
       l_inf: 0.3
+forgetting:
+  enable: true
+  affect_day_mode: "latest_available"
+  affect_fields:
+    - "qualia_vec:2"
+    - "metrics.body_stress_index"
+    - "metrics.stress"
+    - "metrics.arousal"
+    - "mood.arousal"
+  affect_agg: "max_abs"
+  monument_floor_test: false
+  monument_floor_top_k: 5
+  recall_window_days: 7
+  recall_k: 0.25
+  recall_weight: 0.1
+  affect_weight: 0.2
+  interference_weight: 0.2
+  interference_k: 1.0
+  reconsolidation_rate: 0.3
+  base_delta: 0.0
+  max_delta_w: 0.08
+  min_w: 0.05
+  max_w: 1.0
+  monument_w_lock: true
+  monument_connection_floor: 0.06
+  consent_floor: 0.02
+  consent_override_tags:
+    - "consent_override"
+  input_sources:
+    - "hub"
+    - "heart_os_session"
+  source_weights:
+    hub: 1.0
+    heart_os_session: 1.0
+  source_paths:
+    heart_os_session: "logs/moment_log.jsonl"
+  memory_dir: "eqnet_data/memory"
+  audit:
+    enable_item_log: true
+    item_log_path: "reports/forgetting/forgetting_items.jsonl"
+    enable_summary: true
+defrag:
+  enable: true
+  mode: "observe"
+  cluster_similarity_threshold: 0.82
+  conflict_isolation_strength: 0.4
+  rollup_trigger_budget: 64
+  observe:
+    duplicate_similarity_threshold: 0.82
+    conflict_interference_threshold: 0.4
+    cooccur_min: 2
+    top_k: 5
+    max_pairs: 1000
+    rollup_trigger_budget: 64
+    id_privacy: "mask"
+    similarity_bands:
+      - 0.5
+      - 0.7
+      - 0.85
+      - 0.95
 ui:
   community_update_ms: 400
 heartos_transition:

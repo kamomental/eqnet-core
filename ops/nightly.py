@@ -10,6 +10,7 @@ import json
 import time
 import math
 import os
+import hashlib
 from bisect import bisect_left
 from collections import defaultdict
 from pathlib import Path
@@ -54,6 +55,9 @@ MEMORY_REF_LOG_PATH = Path("logs/memory_ref.jsonl")
 from emot_terrain_lab.ops.care_canary import select_canary_ids
 from emot_terrain_lab.ops.monthly_highlights import generate_value_influence_highlights
 from emot_terrain_lab.ops.pain_loop import VALUE_INFLUENCE_LOG, evaluate_and_forgive, policy_update_from_forgiveness
+from eqnet.logs.moment_log import iter_moment_entries_for_day
+from eqnet.logs.moment_log import iter_moment_entries
+from eqnet.memory.store import MemoryStore
 
 def _dump_events_if_requested(events):
     out_path = os.getenv("EQNET_DUMP_REPLAY_EVENTS_JSONL", "").strip()
@@ -68,6 +72,637 @@ def _dump_events_if_requested(events):
 
 def _ensure_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return float(max(low, min(high, value)))
+
+def _safe_float(value: Any, default: Optional[float] = None) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+def _softmax_probs(weights: List[float]) -> List[float]:
+    if not weights:
+        return []
+    max_w = max(weights)
+    exps = [math.exp(w - max_w) for w in weights]
+    total = sum(exps)
+    if total <= 0:
+        return [1.0 / len(weights)] * len(weights)
+    return [val / total for val in exps]
+
+def _evaluate_monument_floor_test(
+    events: List[Dict[str, Any]],
+    cfg: Mapping[str, Any],
+) -> Optional[Dict[str, Any]]:
+    floor = _safe_float(cfg.get("monument_connection_floor"), None)
+    if floor is None or floor <= 0:
+        return {"status": "skipped", "reason": "floor_disabled"}
+    memory_dir = cfg.get("memory_dir") if isinstance(cfg, dict) else None
+    monument_episode_ids, monument_err = _load_monument_episode_ids(memory_dir)
+    if monument_err:
+        return {"status": "skipped", "reason": "monument_load_error", "error": monument_err}
+    if not monument_episode_ids:
+        return {"status": "skipped", "reason": "no_monuments"}
+    weights: List[float] = []
+    is_monument: List[bool] = []
+    for event in events:
+        episode_id = str(event.get("episode_id", ""))
+        is_monument.append(bool(episode_id and episode_id in monument_episode_ids))
+        w = _safe_float(event.get("weight"), 1.0)
+        if w is None:
+            w = 1.0
+        weights.append(float(w))
+    if not weights:
+        return {"status": "skipped", "reason": "no_events"}
+    base_probs = _softmax_probs(weights)
+    n_m = sum(1 for flag in is_monument if flag)
+    if n_m == 0:
+        return {"status": "skipped", "reason": "no_monument_events"}
+    floor_total = float(floor) * n_m
+    if floor_total >= 1.0:
+        return {"status": "skipped", "reason": "floor_too_high", "floor_total": floor_total}
+    base_total = sum(base_probs)
+    if base_total <= 0:
+        return {"status": "skipped", "reason": "invalid_base_probs"}
+    remaining = 1.0 - floor_total
+    after_probs: List[float] = []
+    for prob, flag in zip(base_probs, is_monument):
+        if flag:
+            after_probs.append(float(floor) + remaining * (prob / base_total))
+        else:
+            after_probs.append(remaining * (prob / base_total))
+    base_mon = [p for p, flag in zip(base_probs, is_monument) if flag]
+    base_non = [p for p, flag in zip(base_probs, is_monument) if not flag]
+    after_mon = [p for p, flag in zip(after_probs, is_monument) if flag]
+    after_non = [p for p, flag in zip(after_probs, is_monument) if not flag]
+    diff_mon: List[float] = []
+    top_candidates: List[Tuple[float, str]] = []
+    for event, base_p, after_p, flag in zip(events, base_probs, after_probs, is_monument):
+        if not flag:
+            continue
+        diff = float(after_p - base_p)
+        diff_mon.append(diff)
+        identifier = str(event.get("episode_id") or event.get("trace_id") or "")
+        top_candidates.append((diff, identifier))
+    top_k = int(cfg.get("monument_floor_top_k", 5)) if isinstance(cfg, Mapping) else 5
+    top_candidates.sort(key=lambda item: item[0], reverse=True)
+    top_diff = [
+        {"id": item[1], "delta_p": float(item[0])}
+        for item in top_candidates[: max(0, top_k)]
+        if item[1]
+    ]
+    diff_stats = _basic_stats(diff_mon)
+    diff_min = min(diff_mon) if diff_mon else 0.0
+    diff_max = max(diff_mon) if diff_mon else 0.0
+    return {
+        "status": "applied",
+        "floor": float(floor),
+        "monument_events": float(n_m),
+        "base_monument_mean": _basic_stats(base_mon).get("mean", 0.0),
+        "base_non_monument_mean": _basic_stats(base_non).get("mean", 0.0),
+        "after_monument_mean": _basic_stats(after_mon).get("mean", 0.0),
+        "after_non_monument_mean": _basic_stats(after_non).get("mean", 0.0),
+        "delta_p_min": float(diff_min),
+        "delta_p_mean": float(diff_stats.get("mean", 0.0)),
+        "delta_p_max": float(diff_max),
+        "delta_p_top": top_diff,
+    }
+
+def _basic_stats(values: List[float]) -> Dict[str, float]:
+    if not values:
+        return {"count": 0.0, "mean": 0.0, "p95": 0.0, "max": 0.0}
+    ordered = sorted(values)
+    idx = int((len(ordered) - 1) * 0.95)
+    return {
+        "count": float(len(ordered)),
+        "mean": float(sum(ordered) / len(ordered)),
+        "p95": float(ordered[idx]),
+        "max": float(ordered[-1]),
+    }
+
+def _extract_seed_ids(event: Mapping[str, Any]) -> List[str]:
+    meta = event.get("meta") or {}
+    seeds: List[str] = []
+    for container in (meta, meta.get("receipt") or {}):
+        replay_unified = container.get("replay_unified") or {}
+        for seed in replay_unified.get("seeds") or []:
+            if isinstance(seed, dict):
+                trace_id = seed.get("trace_id")
+                if trace_id:
+                    seeds.append(str(trace_id))
+    return seeds
+
+def _collect_recall_counts(events: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for event in events:
+        for trace_id in _extract_seed_ids(event):
+            counts[trace_id] = counts.get(trace_id, 0) + 1
+    return counts
+
+def _load_monument_episode_ids(memory_dir: Optional[str]) -> Tuple[set[str], Optional[str]]:
+    if not memory_dir:
+        return set(), None
+    try:
+        store = MemoryStore(Path(memory_dir))
+        episodes, monuments = store.load_all()
+        episode_ids = {ep_id for mon in monuments for ep_id in mon.episodes}
+        return episode_ids, None
+    except Exception as exc:
+        return set(), str(exc)
+
+def _extract_affect_value(entry: object, field_specs: Sequence[str], agg_mode: str) -> Optional[float]:
+    values: List[float] = []
+    for spec in field_specs:
+        if not spec:
+            continue
+        if spec.startswith("qualia_vec:"):
+            try:
+                idx = int(spec.split(":", 1)[1])
+            except (TypeError, ValueError):
+                continue
+            qualia = getattr(entry, "qualia_vec", None)
+            if not qualia or idx < 0 or idx >= len(qualia):
+                continue
+            val = _safe_float(qualia[idx])
+            if val is not None:
+                values.append(float(val))
+            continue
+        if "." in spec:
+            head, tail = spec.split(".", 1)
+            container = getattr(entry, head, None)
+            if isinstance(container, dict):
+                val = _safe_float(container.get(tail))
+                if val is not None:
+                    values.append(float(val))
+            continue
+        val = _safe_float(getattr(entry, spec, None))
+        if val is not None:
+            values.append(float(val))
+    if not values:
+        return None
+    if agg_mode == "first_nonzero":
+        for val in values:
+            if abs(val) > 0.0:
+                return val
+        return values[0]
+    if agg_mode == "mean_abs":
+        return sum(abs(v) for v in values) / len(values)
+    return max(abs(v) for v in values)
+
+def _compute_affect_load(moment_log_path: Optional[str], day: dt.date, affect_fields: Sequence[str], agg_mode: str) -> Tuple[float, int]:
+    if not moment_log_path:
+        return 0.0, 0
+    values: List[float] = []
+    for entry in iter_moment_entries_for_day(moment_log_path, day):
+        stress = _extract_affect_value(entry, affect_fields, agg_mode)
+        if stress is None:
+            continue
+        values.append(abs(float(stress)))
+    if not values:
+        return 0.0, 0
+    return float(sum(values) / len(values)), len(values)
+
+
+def _find_latest_moment_day(moment_log_path: Optional[str]) -> Optional[dt.date]:
+    if not moment_log_path:
+        return None
+    latest: Optional[dt.date] = None
+    for entry in iter_moment_entries(moment_log_path):
+        try:
+            stamp = dt.datetime.fromtimestamp(entry.ts, tz=dt.timezone.utc).date()
+        except (OverflowError, OSError, ValueError):
+            continue
+        if latest is None or stamp > latest:
+            latest = stamp
+    return latest
+
+def _resolve_affect_day(
+    *,
+    mode: str,
+    moment_log_path: Optional[str],
+    now_ts: float,
+) -> dt.date:
+    if mode == "latest_available":
+        latest = _find_latest_moment_day(moment_log_path)
+        if latest is not None:
+            return latest
+    return dt.datetime.utcfromtimestamp(now_ts).date()
+def _apply_nightly_forgetting(
+    events: List[Dict[str, Any]],
+    cfg: Mapping[str, Any],
+    *,
+    moment_log_path: Optional[str],
+    memory_dir: Optional[str],
+    now_ts: float,
+    forgetfulness_cfg: Optional[Mapping[str, Any]] = None,
+) -> Tuple[Optional[List[Dict[str, Any]]], Dict[str, Any]]:
+    enabled = bool(cfg.get("enable", False))
+    if not enabled:
+        return None, {"status": "disabled"}
+
+    recall_window_days = _safe_float(cfg.get("recall_window_days"), None)
+    recall_k = _safe_float(cfg.get("recall_k"), 0.0) or 0.0
+    recall_weight = _safe_float(cfg.get("recall_weight"), 0.0) or 0.0
+    affect_weight = _safe_float(cfg.get("affect_weight"), 0.0) or 0.0
+    interference_weight = _safe_float(cfg.get("interference_weight"), 0.0) or 0.0
+    interference_k = _safe_float(cfg.get("interference_k"), 0.0) or 0.0
+    reconsolidation_rate = _safe_float(cfg.get("reconsolidation_rate"), 0.0) or 0.0
+    base_delta = _safe_float(cfg.get("base_delta"), 0.0) or 0.0
+    max_delta_w = _safe_float(cfg.get("max_delta_w"), 0.0) or 0.0
+    min_w = _safe_float(cfg.get("min_w"), 0.0) or 0.0
+    max_w = _safe_float(cfg.get("max_w"), 1.0) or 1.0
+    monument_w_lock = bool(cfg.get("monument_w_lock", True))
+    monument_floor = _safe_float(cfg.get("monument_connection_floor"), None)
+    consent_floor = _safe_float(cfg.get("consent_floor"), min_w)
+    consent_tags = [str(tag) for tag in (cfg.get("consent_override_tags") or [])]
+
+    input_sources = [str(src) for src in (cfg.get("input_sources") or [])]
+    source_weights = cfg.get("source_weights") or {}
+    source_paths = cfg.get("source_paths") or {}
+    sources_used: List[str] = []
+    if "hub" in input_sources:
+        sources_used.append("hub")
+
+    recall_counts = _collect_recall_counts(events)
+    day_mode = str(cfg.get("affect_day_mode", "today"))
+    day = _resolve_affect_day(mode=day_mode, moment_log_path=moment_log_path, now_ts=now_ts)
+    affect_load = 0.0
+    affect_samples = 0
+    affect_day_used: Optional[str] = None
+    affect_fields = cfg.get("affect_fields") or []
+    affect_agg = str(cfg.get("affect_agg", "max_abs"))
+    if "heart_os_session" in input_sources:
+        path = source_paths.get("heart_os_session") or moment_log_path
+        affect_load, affect_samples = _compute_affect_load(path, day, affect_fields, affect_agg)
+        if affect_samples == 0 and day_mode == "latest_available":
+            day = _resolve_affect_day(mode="latest_available", moment_log_path=path, now_ts=now_ts)
+            affect_load, affect_samples = _compute_affect_load(path, day, affect_fields, affect_agg)
+        if affect_samples:
+            sources_used.append("heart_os_session")
+            affect_day_used = day.isoformat()
+
+    monument_episode_ids, monument_err = _load_monument_episode_ids(memory_dir)
+
+    item_log_cfg = cfg.get("audit", {}) or {}
+    item_log_enabled = bool(item_log_cfg.get("enable_item_log", False))
+    item_log_path = item_log_cfg.get("item_log_path")
+    item_handle = None
+    if item_log_enabled and item_log_path:
+        item_path = Path(str(item_log_path))
+        item_path.parent.mkdir(parents=True, exist_ok=True)
+        item_handle = item_path.open("a", encoding="utf-8")
+
+    deltas: List[float] = []
+    abs_deltas: List[float] = []
+    delta_pos = 0
+    delta_neg = 0
+    delta_nonzero_count = 0
+    evidence_nonzero_counts = {"recall": 0, "affect": 0, "interference": 0}
+    floors_applied = 0
+    consent_applied = 0
+    locked_applied = 0
+
+    metrics_enabled = False
+    metrics_mode = "observe"
+    metrics_epsilon = 0.0
+    sign_balance_mode = "ratio"
+    thresholds = {}
+    if isinstance(forgetfulness_cfg, dict):
+        metrics_enabled = bool(forgetfulness_cfg.get("enable", False))
+        metrics_mode = str(forgetfulness_cfg.get("mode", "observe"))
+        metrics_epsilon = _safe_float(forgetfulness_cfg.get("epsilon"), 0.0) or 0.0
+        sign_balance_mode = str(forgetfulness_cfg.get("sign_balance_mode", "ratio"))
+        threshold_candidate = forgetfulness_cfg.get("thresholds")
+        if isinstance(threshold_candidate, dict):
+            thresholds = threshold_candidate
+
+    updated: List[Dict[str, Any]] = []
+    for event in events:
+        trace_id = str(event.get("trace_id", ""))
+        episode_id = str(event.get("episode_id", ""))
+        memory_kind = str(event.get("memory_kind", ""))
+        w_before = _safe_float(event.get("weight"), 1.0) or 1.0
+
+        tags = event.get("tags") or []
+        if not isinstance(tags, list):
+            tags = [str(tags)]
+        consent_override = any(tag in consent_tags for tag in tags)
+        is_monument = memory_kind.lower() == "monument"
+        lock_weight = monument_w_lock and is_monument
+
+        factors = {"recall": 0.0, "affect": 0.0, "interference": 0.0}
+        guard = {"consent_override": consent_override, "monument_lock": lock_weight}
+        w_after = w_before
+        delta = 0.0
+
+        if consent_override:
+            w_after = min(w_before, float(consent_floor))
+            consent_applied += 1
+        elif lock_weight:
+            locked_applied += 1
+        else:
+            recall_count = recall_counts.get(trace_id, 0)
+            recall_score = 0.0
+            if recall_k > 0:
+                recall_score = min(1.0, recall_k * recall_count)
+            if recall_window_days is not None:
+                age_days = (now_ts - float(event.get("timestamp", now_ts))) / 86400.0
+                if age_days > float(recall_window_days):
+                    recall_score = 0.0
+            factors["recall"] = recall_score
+
+            emotion_mod = _safe_float(event.get("emotion_modulation"), 0.0) or 0.0
+            affect_score = abs(emotion_mod)
+            if affect_load and "heart_os_session" in sources_used:
+                affect_score += float(affect_load)
+            factors["affect"] = min(1.0, affect_score)
+
+            interference_score = 0.0
+            meta = event.get("meta") or {}
+            interference = meta.get("interference") if isinstance(meta, dict) else None
+            if isinstance(interference, dict):
+                interference_score = _safe_float(interference.get("similarity"), 0.0) or 0.0
+            factors["interference"] = min(1.0, interference_k * interference_score)
+
+            delta = base_delta
+            delta += recall_weight * factors["recall"]
+            delta -= affect_weight * factors["affect"] * reconsolidation_rate
+            delta -= interference_weight * factors["interference"]
+            if max_delta_w > 0:
+                delta = _clamp(delta, -max_delta_w, max_delta_w)
+            w_after = _clamp(w_before + delta, min_w, max_w)
+
+        if monument_floor is not None and episode_id and episode_id in monument_episode_ids:
+            if w_after < float(monument_floor):
+                w_after = float(monument_floor)
+                floors_applied += 1
+                guard["monument_floor"] = True
+
+        delta = w_after - w_before
+        deltas.append(float(delta))
+        abs_delta = abs(delta)
+        abs_deltas.append(float(abs_delta))
+        if abs_delta > metrics_epsilon:
+            delta_nonzero_count += 1
+        if delta > metrics_epsilon:
+            delta_pos += 1
+        elif delta < -metrics_epsilon:
+            delta_neg += 1
+
+        if factors["recall"] > metrics_epsilon:
+            evidence_nonzero_counts["recall"] += 1
+        if factors["affect"] > metrics_epsilon:
+            evidence_nonzero_counts["affect"] += 1
+        if factors["interference"] > metrics_epsilon:
+            evidence_nonzero_counts["interference"] += 1
+        event["weight"] = float(w_after)
+
+        if item_handle is not None:
+            item = {
+                "trace_id": trace_id,
+                "episode_id": episode_id,
+                "memory_kind": memory_kind,
+                "w_before": float(w_before),
+                "w_after": float(w_after),
+                "delta": float(delta),
+                "factors": factors,
+                "guard": guard,
+                "sources": sources_used or ["hub"],
+            }
+            item_handle.write(json.dumps(item, ensure_ascii=False) + "\n")
+
+        updated.append(event)
+
+    if item_handle is not None:
+        item_handle.close()
+
+    source_counts: Dict[str, int] = {}
+    if "hub" in sources_used:
+        source_counts["hub"] = int(len(events))
+    if "heart_os_session" in sources_used:
+        source_counts["heart_os_session"] = int(affect_samples)
+
+    summary = {
+        "status": "applied",
+        "sources_used": sources_used or ["hub"],
+        "source_weights": dict(source_weights),
+        "source_counts": source_counts,
+        "affect_load": float(affect_load),
+        "affect_samples": int(affect_samples),
+        "affect_day_mode": day_mode,
+        "affect_day_used": affect_day_used,
+        "monument_episode_count": float(len(monument_episode_ids)),
+        "monument_load_error": monument_err,
+        "delta_stats": _basic_stats(deltas),
+        "floors_applied": float(floors_applied),
+        "consent_overrides": float(consent_applied),
+        "monument_locks": float(locked_applied),
+        "item_log_path": str(item_log_path) if item_log_enabled and item_log_path else None,
+    }
+    if metrics_enabled:
+        abs_sum = float(sum(abs_deltas))
+        abs_count = len(abs_deltas)
+        abs_max = float(max(abs_deltas)) if abs_deltas else 0.0
+        sign_total = delta_pos + delta_neg
+        if sign_total > 0:
+            if sign_balance_mode == "signed":
+                sign_balance = (delta_pos - delta_neg) / float(sign_total)
+            else:
+                sign_balance = delta_pos / float(sign_total)
+        else:
+            sign_balance = 0.0
+
+        reasons: List[str] = []
+        if metrics_mode == "alert":
+            max_threshold = _safe_float(thresholds.get("delta_abs_max"), None)
+            nonzero_min = _safe_float(thresholds.get("delta_nonzero_count_min"), None)
+            sign_abs = _safe_float(thresholds.get("delta_sign_balance_abs"), None)
+            floors_max = _safe_float(thresholds.get("floors_applied_max"), None)
+            consent_max = _safe_float(thresholds.get("consent_overrides_max"), None)
+            locks_max = _safe_float(thresholds.get("monument_locks_max"), None)
+
+            if max_threshold is not None and abs_max > max_threshold:
+                reasons.append("drift_spike")
+            if nonzero_min is not None and delta_nonzero_count < nonzero_min:
+                reasons.append("input_drop")
+            if sign_abs is not None and abs(sign_balance) > sign_abs:
+                reasons.append("suppression_bias")
+            if floors_max is not None and floors_applied > floors_max:
+                reasons.append("guard_overactive")
+            if consent_max is not None and consent_applied > consent_max:
+                reasons.append("guard_overactive")
+            if locks_max is not None and locked_applied > locks_max:
+                reasons.append("guard_overactive")
+
+        summary["forgetfulness_health"] = {
+            "mode": metrics_mode,
+            "delta_abs_max": abs_max,
+            "delta_abs_mean": _safe_mean(abs_sum, abs_count),
+            "delta_nonzero_count": int(delta_nonzero_count),
+            "delta_sign_balance": float(sign_balance),
+            "delta_sign_balance_mode": sign_balance_mode,
+            "evidence_nonzero_counts": evidence_nonzero_counts,
+            "guard_counts": {
+                "floors_applied": float(floors_applied),
+                "consent_overrides": float(consent_applied),
+                "monument_locks": float(locked_applied),
+            },
+            "reasons": reasons,
+        }
+    return updated, summary
+
+
+def _defrag_private_id(value: str, mode: str) -> str:
+    if mode == "raw":
+        return value
+    if mode == "hash":
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
+    return "***"
+
+
+def _defrag_observe(events: List[Dict[str, Any]], cfg: Mapping[str, Any]) -> Dict[str, Any]:
+    observe_cfg = cfg.get("observe") if isinstance(cfg, dict) else None
+    if not isinstance(observe_cfg, dict):
+        observe_cfg = {}
+
+    duplicate_threshold = observe_cfg.get("duplicate_similarity_threshold")
+    if duplicate_threshold is None:
+        duplicate_threshold = cfg.get("cluster_similarity_threshold") if isinstance(cfg, dict) else None
+    duplicate_threshold = _safe_float(duplicate_threshold, None)
+
+    conflict_threshold = observe_cfg.get("conflict_interference_threshold")
+    if conflict_threshold is None:
+        conflict_threshold = cfg.get("conflict_isolation_strength") if isinstance(cfg, dict) else None
+    conflict_threshold = _safe_float(conflict_threshold, None)
+
+    cooccur_min = observe_cfg.get("cooccur_min")
+    if cooccur_min is not None:
+        cooccur_min = int(cooccur_min)
+    top_k = observe_cfg.get("top_k")
+    if top_k is not None:
+        top_k = int(top_k)
+    max_pairs = observe_cfg.get("max_pairs")
+    if max_pairs is not None:
+        max_pairs = int(max_pairs)
+    rollup_budget = observe_cfg.get("rollup_trigger_budget")
+    if rollup_budget is None:
+        rollup_budget = cfg.get("rollup_trigger_budget") if isinstance(cfg, dict) else None
+    if rollup_budget is not None:
+        rollup_budget = int(rollup_budget)
+
+    id_privacy = str(observe_cfg.get("id_privacy", "mask"))
+    similarity_bands = observe_cfg.get("similarity_bands")
+    if similarity_bands is not None and not isinstance(similarity_bands, list):
+        similarity_bands = None
+
+    duplicate_ids: set[str] = set()
+    conflict_ids: set[str] = set()
+    similarity_values: List[float] = []
+    similarity_rows: List[Tuple[str, float]] = []
+
+    tags_index: Dict[str, set[str]] = defaultdict(set)
+    l1_l2_count = 0
+
+    for event in events:
+        episode_id = str(event.get("episode_id", ""))
+        memory_kind = str(event.get("memory_kind", "")).lower()
+        if "l1" in memory_kind or "l2" in memory_kind:
+            l1_l2_count += 1
+
+        tags = event.get("tags") or []
+        if not isinstance(tags, list):
+            tags = [str(tags)]
+        for tag in tags:
+            if tag:
+                tags_index[str(tag)].add(episode_id)
+
+        meta = event.get("meta") or {}
+        if not isinstance(meta, dict):
+            continue
+        interference = meta.get("interference")
+        if not isinstance(interference, dict):
+            continue
+        action = str(interference.get("action", "")).lower()
+        sim = _safe_float(interference.get("similarity"), None)
+        if sim is not None:
+            similarity_values.append(float(sim))
+            similarity_rows.append((episode_id, float(sim)))
+            if duplicate_threshold is not None and sim >= float(duplicate_threshold) and action != "mask":
+                duplicate_ids.add(episode_id)
+            if conflict_threshold is not None and sim >= float(conflict_threshold):
+                conflict_ids.add(episode_id)
+        if action == "mask":
+            conflict_ids.add(episode_id)
+
+    reference_candidate_count = 0
+    if cooccur_min is not None and cooccur_min > 1 and max_pairs is not None and max_pairs > 0:
+        pairs: set[Tuple[str, str]] = set()
+        for _, ids in tags_index.items():
+            if len(ids) < cooccur_min:
+                continue
+            id_list = list(ids)
+            for i in range(len(id_list)):
+                for j in range(i + 1, len(id_list)):
+                    a = id_list[i]
+                    b = id_list[j]
+                    if a == b:
+                        continue
+                    pair = (a, b) if a < b else (b, a)
+                    pairs.add(pair)
+                    if len(pairs) >= max_pairs:
+                        break
+                if len(pairs) >= max_pairs:
+                    break
+            if len(pairs) >= max_pairs:
+                break
+        reference_candidate_count = len(pairs)
+
+    rollup_candidate_count = 0
+    if rollup_budget is not None and rollup_budget >= 0:
+        rollup_candidate_count = max(0, l1_l2_count - rollup_budget)
+
+    top_pairs: List[Dict[str, Any]] = []
+    if top_k is not None and top_k > 0 and similarity_rows:
+        for episode_id, sim in sorted(similarity_rows, key=lambda x: x[1], reverse=True)[:top_k]:
+            top_pairs.append(
+                {"id": _defrag_private_id(episode_id, id_privacy), "similarity": float(sim)}
+            )
+
+    clusters_by_band: Dict[str, int] = {}
+    if similarity_bands:
+        bands = sorted(float(b) for b in similarity_bands)
+        if len(bands) >= 2:
+            for idx in range(len(bands) - 1):
+                clusters_by_band[f"{bands[idx]}-{bands[idx+1]}"] = 0
+            clusters_by_band[f">={bands[-1]}"] = 0
+            for sim in similarity_values:
+                placed = False
+                for idx in range(len(bands) - 1):
+                    if bands[idx] <= sim < bands[idx + 1]:
+                        clusters_by_band[f"{bands[idx]}-{bands[idx+1]}"] += 1
+                        placed = True
+                        break
+                if not placed and sim >= bands[-1]:
+                    clusters_by_band[f">={bands[-1]}"] += 1
+
+    observe_report: Dict[str, Any] = {
+        "duplicate_cluster_count": len(duplicate_ids),
+        "conflict_cluster_count": len(conflict_ids),
+        "reference_candidate_count": int(reference_candidate_count),
+        "rollup_candidate_count": int(rollup_candidate_count),
+        "id_privacy": id_privacy,
+        "top_pairs": top_pairs,
+    }
+    if clusters_by_band:
+        observe_report["clusters_by_band"] = clusters_by_band
+
+    return {
+        "status": "observed",
+        "mode": "observe",
+        "observe": observe_report,
+    }
 
 
 def _dump_report(report: Dict[str, Any], *, report_dir: Path) -> Path:
@@ -133,8 +768,48 @@ def run(hub, cfg: Dict[str, Any] | None = None) -> Dict[str, Any]:
                     report["nightly_metrics"] = go_report["nightly_metrics"]
             kept, stats = hub.memory_ttl.gc(events)
             if kept is not None:
-                hub.replay_memory.rewrite(kept)
+                events = kept
             report["memory_gc"] = stats
+
+            forgetting_cfg = cfg.get("forgetting") if isinstance(cfg, dict) else None
+            updated_events: Optional[List[Dict[str, Any]]] = None
+            if isinstance(forgetting_cfg, dict):
+                forgetfulness_cfg = None
+                if isinstance(nightly_cfg, dict):
+                    forgetfulness_cfg = nightly_cfg.get("forgetfulness_metrics")
+                moment_log_path = None
+                moment_candidate = cfg.get("moment_log_path") if isinstance(cfg, dict) else None
+                if isinstance(moment_candidate, str) and moment_candidate.strip():
+                    moment_log_path = moment_candidate
+                updated_events, forget_report = _apply_nightly_forgetting(
+                    events,
+                    forgetting_cfg,
+                    moment_log_path=moment_log_path,
+                    memory_dir=forgetting_cfg.get("memory_dir") if isinstance(forgetting_cfg, dict) else None,
+                    now_ts=time.time(),
+                    forgetfulness_cfg=forgetfulness_cfg,
+                )
+                report["forgetting"] = forget_report
+
+            defrag_cfg = cfg.get("defrag") if isinstance(cfg, dict) else None
+            if isinstance(defrag_cfg, dict):
+                if defrag_cfg.get("enable", False):
+                    defrag_mode = str(defrag_cfg.get("mode", "observe"))
+                    if defrag_mode == "observe":
+                        report["defrag"] = _defrag_observe(events, defrag_cfg)
+                    else:
+                        report["defrag"] = {"status": "no_op", "mode": defrag_mode, "reason": "placeholder"}
+                else:
+                    report["defrag"] = {"status": "disabled"}
+
+            if isinstance(forgetting_cfg, dict) and forgetting_cfg.get("monument_floor_test", False):
+                report["monument_floor_test"] = _evaluate_monument_floor_test(events, forgetting_cfg)
+
+            if updated_events is not None:
+                events = updated_events
+                hub.replay_memory.rewrite(events)
+            elif kept is not None:
+                hub.replay_memory.rewrite(events)
         except Exception as exc:
             report["memory_gc"] = {"error": str(exc)}
 
@@ -545,6 +1220,47 @@ def _summarize_fastpath_metrics(events: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def _summarize_inner_replay_metrics(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    total = 0
+    execute = 0
+    cancel = 0
+    veto_sum = 0.0
+    uhat_sum = 0.0
+    smax_sum = 0.0
+    tprep_sum = 0.0
+    cfg_counts: Dict[str, int] = {}
+    for event in events:
+        receipt = (event.get("meta") or {}).get("receipt") or {}
+        ir = receipt.get("inner_replay")
+        if not ir:
+            continue
+        total += 1
+        veto = float((ir.get("veto") or {}).get("score", 0.0))
+        decision = (ir.get("veto") or {}).get("decision", "execute")
+        if decision == "execute":
+            execute += 1
+        else:
+            cancel += 1
+        uhat_sum += float(ir.get("u_hat", 0.0))
+        prep = ir.get("prep") or {}
+        smax_sum += float(prep.get("s_max", 0.0))
+        tprep_sum += float(prep.get("t_prep", 0.0))
+        veto_sum += veto
+        meta = ir.get("meta") or {}
+        cfg_b2 = str(meta.get("cfg_b2", "na"))
+        cfg_counts[cfg_b2] = cfg_counts.get(cfg_b2, 0) + 1
+    if total == 0:
+        return {"count": 0}
+    cfg_top = sorted(cfg_counts.items(), key=lambda kv: kv[1], reverse=True)[:3]
+    return {
+        "count": total,
+        "execute_rate": _safe_mean(execute, total),
+        "cancel_rate": _safe_mean(cancel, total),
+        "veto_mean": _safe_mean(veto_sum, total),
+        "u_hat_mean": _safe_mean(uhat_sum, total),
+        "s_max_mean": _safe_mean(smax_sum, total),
+        "t_prep_mean": _safe_mean(tprep_sum, total),
+        "cfg_top": cfg_top,
+    }
 
 
 def _summarize_qualia_metrics(events: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -586,47 +1302,6 @@ def _summarize_qualia_metrics(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         "load_mean": _safe_mean(load_sum, total),
         "gate_open_rate": _safe_mean(gate_open_sum, gate_samples) if gate_samples else None,
         "unconscious_success_rate": _safe_mean(unconscious, total),
-    }
-    total = 0
-    execute = 0
-    cancel = 0
-    veto_sum = 0.0
-    uhat_sum = 0.0
-    smax_sum = 0.0
-    tprep_sum = 0.0
-    cfg_counts: Dict[str, int] = {}
-    for event in events:
-        receipt = (event.get("meta") or {}).get("receipt") or {}
-        ir = receipt.get("inner_replay")
-        if not ir:
-            continue
-        total += 1
-        veto = float((ir.get("veto") or {}).get("score", 0.0))
-        decision = (ir.get("veto") or {}).get("decision", "execute")
-        if decision == "execute":
-            execute += 1
-        else:
-            cancel += 1
-        uhat_sum += float(ir.get("u_hat", 0.0))
-        prep = ir.get("prep") or {}
-        smax_sum += float(prep.get("s_max", 0.0))
-        tprep_sum += float(prep.get("t_prep", 0.0))
-        veto_sum += veto
-        meta = ir.get("meta") or {}
-        cfg_b2 = str(meta.get("cfg_b2", "na"))
-        cfg_counts[cfg_b2] = cfg_counts.get(cfg_b2, 0) + 1
-    if total == 0:
-        return {"count": 0}
-    cfg_top = sorted(cfg_counts.items(), key=lambda kv: kv[1], reverse=True)[:3]
-    return {
-        "count": total,
-        "execute_rate": _safe_mean(execute, total),
-        "cancel_rate": _safe_mean(cancel, total),
-        "veto_mean": _safe_mean(veto_sum, total),
-        "u_hat_mean": _safe_mean(uhat_sum, total),
-        "s_max_mean": _safe_mean(smax_sum, total),
-        "t_prep_mean": _safe_mean(tprep_sum, total),
-        "cfg_top": cfg_top,
     }
 
 
@@ -705,14 +1380,14 @@ def _describe_scatter(xs: List[float], ys: List[float], cs: List[int]) -> Dict[s
     br_ratio = br / total
     tl_ratio = tl / total
     if br_ratio >= 0.5:
-        verdict = "‰E‰º‚É“_‚ª‘½‚¢F‚æ‚¢ó‘Ô (execute ‚ª‘f’¼)B"
-        action = "‚¢‚Ü‚ÌÝ’è‚ðˆÛŽ‚µ‚Â‚ÂŽU•z}‚ðŠÄŽ‹B"
+        verdict = "ï¿½Eï¿½ï¿½ï¿½É“_ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Fï¿½æ‚¢ï¿½ï¿½ï¿½ (execute ï¿½ï¿½ï¿½fï¿½ï¿½)ï¿½B"
+        action = "ï¿½ï¿½ï¿½Ü‚ÌÝ’ï¿½ï¿½ï¿½ÛŽï¿½ï¿½ï¿½ï¿½Â‚ÂŽUï¿½zï¿½}ï¿½ï¿½ï¿½ÄŽï¿½ï¿½B"
     elif tl_ratio >= 0.4:
-        verdict = "¶ã‚É“_‚ª‘½‚¢FƒuƒŒ[ƒL‚ª‹­‚ßB"
-        action = "ƒÀ ‚â ƒÑ ‚ð­‚µ‰º‚°‚éˆÄ‚ðŒŸ“¢B"
+        verdict = "ï¿½ï¿½ï¿½ï¿½É“_ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Fï¿½uï¿½ï¿½ï¿½[ï¿½Lï¿½ï¿½ï¿½ï¿½ï¿½ßB"
+        action = "ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä‚ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½B"
     else:
-        verdict = "’†‰›‚É“_‚ªŽU‚ç‚Î‚è–À‚¢‹C–¡B"
-        action = "ƒqƒXƒeƒŠƒVƒX•‚ðL‚°‚é‚©’ñˆÄ ƒÀ?ƒÑ ‚ð¬‹K–Í A/BB"
+        verdict = "ï¿½ï¿½ï¿½ï¿½ï¿½É“_ï¿½ï¿½ï¿½Uï¿½ï¿½Î‚ï¿½ï¿½ï¿½ï¿½ï¿½Cï¿½ï¿½ï¿½B"
+        action = "ï¿½qï¿½Xï¿½eï¿½ï¿½ï¿½Vï¿½Xï¿½ï¿½ï¿½ï¿½ï¿½Lï¿½ï¿½ï¿½é‚©ï¿½ï¿½ï¿½ ï¿½ï¿½?ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Kï¿½ï¿½ A/Bï¿½B"
     return {
         "verdict": verdict,
         "action": action,
@@ -923,7 +1598,7 @@ def _render_assoc_plots(
         ax.plot(delta_clean, label="delta_m", color="#1f77b4", linewidth=1.2)
         if jerk_clean.size:
             ax.plot(jerk_clean, label="jerk", color="#ff7f0e", linewidth=1.0, alpha=0.9)
-        ax.set_title("ƒ¢m / jerk (recent)")
+        ax.set_title("ï¿½ï¿½m / jerk (recent)")
         ax.set_xlabel("step")
         ax.set_ylabel("value")
         ax.grid(alpha=0.2)
@@ -2282,8 +2957,8 @@ def _render_culture_narrative(
     candidates.sort(reverse=True)
     lines = ["", "**Culture quick notes**"]
     for _, tag, valence_f, rho_f, count_f in candidates[: max(1, top_k)]:
-        tendency = "ƒ|ƒWŠñ‚è" if valence_f >= 0 else "ƒlƒKŠñ‚è"
-        lines.append(f"- {tag}: {tendency} (valence {valence_f:+.2f}), ƒÏ={rho_f:.2f}, n={count_f}")
+        tendency = "ï¿½|ï¿½Wï¿½ï¿½ï¿½" if valence_f >= 0 else "ï¿½lï¿½Kï¿½ï¿½ï¿½"
+        lines.append(f"- {tag}: {tendency} (valence {valence_f:+.2f}), ï¿½ï¿½={rho_f:.2f}, n={count_f}")
     lines.append("")
     return lines
 
@@ -2484,7 +3159,7 @@ def _write_markdown_summary(
                 top_unforgiven.append((kind, delta))
         if top_unforgiven:
             top_unforgiven.sort(key=lambda x: x[1], reverse=True)
-            summary = ", ".join(f"{kind}~{count}" for kind, count in top_unforgiven[:2])
+            summary = ", ".join(f"{kind}ï¿½~{count}" for kind, count in top_unforgiven[:2])
             lines.append(f"- Unforgiven top: {summary}")
     affective_stats = report.get("affective_stats")
     if isinstance(affective_stats, dict):
@@ -2712,6 +3387,12 @@ def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Pat
         payload["policy_feedback"] = report["policy_feedback"]
     if report.get("policy_feedback_history_path"):
         payload["policy_feedback_history_path"] = report["policy_feedback_history_path"]
+    if report.get("forgetting"):
+        payload["forgetting"] = report["forgetting"]
+    if report.get("defrag"):
+        payload["defrag"] = report["defrag"]
+    if report.get("monument_floor_test") is not None:
+        payload["monument_floor_test"] = report["monument_floor_test"]
     if report.get("pain_loop"):
         payload["pain_loop"] = report["pain_loop"]
     if report.get("resonance_bayes_trace_path"):

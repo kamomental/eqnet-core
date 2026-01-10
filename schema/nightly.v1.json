@@ -176,6 +176,9 @@
           "pair": { "type": "array" }
         }
       }
-    }
+    },
+    "forgetting": { "type": "object" },
+    "defrag": { "type": "object" },
+    "monument_floor_test": { "type": "object" }
   }
 }

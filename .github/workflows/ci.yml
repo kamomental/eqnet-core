@@ -66,6 +66,37 @@ jobs:
           print("[CI] nightly.json schema OK")
           PY
 
+      - name: Monument floor regression
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import yaml
+          from ops import nightly
+          from emot_terrain_lab.hub.hub import Hub
+
+          cfg = yaml.safe_load(Path("config/runtime.yaml").read_text(encoding="utf-8")) or {}
+          forgetting = cfg.get("forgetting") or {}
+          forgetting["monument_floor_test"] = True
+          cfg["forgetting"] = forgetting
+          hub = Hub(cfg)
+          report = nightly.run(hub, cfg)
+          payload = json.loads(Path("reports/nightly.json").read_text(encoding="utf-8"))
+          forgetting = payload.get("forgetting") or {}
+          if forgetting.get("status") != "applied":
+              raise SystemExit(f"[CI] forgetting not applied: {forgetting}")
+          source_counts = forgetting.get("source_counts") or {}
+          if source_counts.get("hub", 0) <= 0 or source_counts.get("heart_os_session", 0) <= 0:
+              raise SystemExit(f"[CI] invalid source_counts: {source_counts}")
+          test = payload.get("monument_floor_test") or report.get("monument_floor_test") or {}
+          if test.get("status") != "applied":
+              raise SystemExit(f"[CI] monument_floor_test not applied: {test}")
+          for key in ("delta_p_min", "delta_p_mean", "delta_p_max"):
+              if key not in test:
+                  raise SystemExit(f"[CI] missing {key} in monument_floor_test")
+          print("[CI] monument_floor_test OK")
+          PY
+
       - name: Check nightly plot links
         run: |
           python - <<'PY'

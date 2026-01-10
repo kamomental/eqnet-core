@@ -1,3 +1,4 @@
 {"id": "f61551d4ec4b42c19a5d731f5bec4417", "place_id": "studio", "partner_ids": [], "culture_tag": "safety", "core_emotion": "fear", "importance": 0.5625, "summary": "studio での出来事: 昼のリハ、大丈夫だった？少し息が上がってたよ。", "episodes": []}
 {"id": "e692f0da40aa43c89d73f1ce8e913596", "place_id": "dorm", "partner_ids": [], "culture_tag": "music", "core_emotion": "joy", "importance": 0.44999999999999996, "summary": "dorm での出来事: 一日終わったね。ことねと一緒に振り返る？", "episodes": []}
 {"id": "7f1f8813108248878909d3ef591b181c", "place_id": "atelier", "partner_ids": [], "culture_tag": "family", "core_emotion": "joy", "importance": 0.3, "summary": "atelier での出来事: おはよう、なずな。昨日のお母さんとのこと、まだ胸が温かい？", "episodes": []}
+{"id": "monument_test_floor_dummy", "place_id": "test_fixture", "partner_ids": [], "culture_tag": "test_fixture", "core_emotion": "neutral", "importance": 0.01, "summary": "[TEST ONLY] monument floor connectivity test", "episodes": ["episode_test_floor_link"]}
