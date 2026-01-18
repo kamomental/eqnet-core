@@ -38,6 +38,16 @@ and becomes a presence that people can *trust and feel at ease with*.
 
 
 
+## Docs | Entry Points
+
+- Core (minimal loop, audits, forgetting): `docs/core/README.md`
+- Ops (runbooks, validation): `docs/ops/README.md`
+- Research notes (hypotheses, long-form): `docs/research/README.md`
+- Posters / overview: `docs/poster/README.md`
+- All entry points in one page: `docs/index.md`
+
+---
+
 ## 2 | Concept — From Text-Driven to Emotion-Driven AI
 
 
