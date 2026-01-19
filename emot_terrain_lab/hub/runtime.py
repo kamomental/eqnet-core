@@ -41,6 +41,7 @@ from eqnet.culture_model import (
 from eqnet.logs.moment_log import MomentLogEntry, MomentLogWriter
 from eqnet.hub.streaming_sensor import StreamingSensorState
 from eqnet.hub.runtime_sensors import RuntimeSensors
+from emot_terrain_lab.i18n.locale import lookup_text, truncate_text
 from eqnet.qualia_model import (
     FutureReplayConfig,
     blend_emotion_axes,
@@ -48,6 +49,8 @@ from eqnet.qualia_model import (
     compute_future_hopefulness,
     sensor_to_emotion_axes,
 )
+from eqnet.telemetry.trace_paths import TracePathConfig, trace_output_path
+from eqnet.telemetry.trace_writer import append_trace_event
 from eqnet.runtime.state import QualiaState
 from eqnet.modules.prospective_drive_core import PDCConfig, ProspectiveDriveCore
 from emot_terrain_lab.terrain.emotion import AXES
@@ -79,6 +82,7 @@ from .robot_bridge import RobotBridgeConfig, ROS2Bridge
 from datetime import datetime
 from emot_terrain_lab.terrain.system import EmotionalMemorySystem
 from emot_terrain_lab.memory.reference_helper import handle_memory_reference
+from emot_terrain_lab.memory.memory_hint import render_memory_hint
 from emot_terrain_lab.perception.text_affect import quick_text_affect_v2
 
 try:
@@ -354,14 +358,6 @@ class ArousalTracker:
         self.last_arousal: float = 0.0
 
 
-_ACK_TEMPLATES: Dict[TalkMode, str] = {
-    TalkMode.WATCH: "I'm right here listening quietly; just wave if you need me.",
-    TalkMode.SOOTHE: "Let's take a slow breath together. I'm here and you're safe.",
-    TalkMode.ASK: "Something feels different; want to tell me what's on your mind?",
-    TalkMode.TALK: "Okay, let's pick up the thread. Where should we start?",
-}
-
-
 def _softmax(logits: np.ndarray) -> np.ndarray:
     shifted = logits - float(np.max(logits))
     exp_values = np.exp(shifted)
@@ -542,6 +538,15 @@ class EmotionalHubRuntime:
                 self._runtime_cfg = load_runtime_cfg()
             except Exception:
                 self._runtime_cfg = None
+        self._presence_cfg = (
+            getattr(self._runtime_cfg, "presence", None) if self._runtime_cfg else None
+        )
+        self._ack_cfg = (
+            getattr(self._runtime_cfg, "ack", None) if self._runtime_cfg else None
+        )
+        self._memory_hint_cfg = (
+            getattr(self._runtime_cfg, "memory_hint_policy", None) if self._runtime_cfg else None
+        )
         self._apply_runtime_gate_overrides()
         self._model_cfg = (
             getattr(self._runtime_cfg, "model", None) if self._runtime_cfg else None
@@ -571,6 +576,12 @@ class EmotionalHubRuntime:
         self._arousal_tracker = ArousalTracker()
         self._last_persona_meta: Dict[str, Any] = {}
         self._last_fast_ack_sample: Optional[Dict[str, Any]] = None
+        self._last_presence_ack_ts = 0.0
+        self._last_memory_hint_meta: Optional[Dict[str, Any]] = None
+        self._last_speaker: Optional[str] = None
+        self._memory_hint_pressure: float = 0.0
+        self._memory_hint_pressure_ts: float = time.time()
+        self._memory_hint_prev_blocked: bool = False
         self._heart_rate = 0.85
         self._heart_phase = 0.0
         self._heart_last_ts = time.time()
@@ -947,6 +958,7 @@ class EmotionalHubRuntime:
         text_input = bool(user_text and user_text.strip())
         if text_input:
             self._last_user_ts = now_ts
+            self._last_speaker = "user"
         since_last_user_ms = float("inf")
         if self._last_user_ts > 0.0:
             since_last_user_ms = max((now_ts - self._last_user_ts) * 1000.0, 0.0)
@@ -977,6 +989,9 @@ class EmotionalHubRuntime:
             force_listen=self._force_listen,
         )
         self._talk_mode = _decide_talk_mode(gate_ctx)
+        last_gate_allow: Optional[bool] = None
+        if isinstance(self._last_qualia_gate, dict) and "allow" in self._last_qualia_gate:
+            last_gate_allow = bool(self._last_qualia_gate.get("allow"))
         self._last_gate_context = {
             "engaged": engaged,
             "face_motion": face_motion,
@@ -1024,6 +1039,10 @@ class EmotionalHubRuntime:
         if updated_mode is not self._talk_mode:
             self._talk_mode = updated_mode
             self._last_gate_context["mode"] = self._talk_mode.name.lower()
+        if self._should_presence(gate_ctx, shadow_uncertainty, last_gate_allow, now_ts):
+            self._talk_mode = TalkMode.PRESENCE
+            self._last_gate_context["mode"] = self._talk_mode.name.lower()
+            self._last_gate_context["presence"] = True
 
         qualia_vec = self._build_emotion_vector(metrics, affect)
         if not self.config.use_eqnet_core:
@@ -1055,7 +1074,7 @@ class EmotionalHubRuntime:
                 np.clip(controls.pause_ms + 120, *self.policy.config.pause_bounds)
             )
             controls.prosody_energy = float(max(controls.prosody_energy, 0.05))
-        elif self._talk_mode == TalkMode.WATCH:
+        elif self._talk_mode in (TalkMode.WATCH, TalkMode.PRESENCE):
             controls.gesture_amplitude = float(min(controls.gesture_amplitude, 0.25))
         if shadow_estimate is not None:
             self._apply_shadow_controls(controls, shadow_estimate)
@@ -1068,9 +1087,11 @@ class EmotionalHubRuntime:
 
         ack_text: Optional[str] = None
         if self._talk_mode in (TalkMode.SOOTHE, TalkMode.ASK):
-            ack_text = _ACK_TEMPLATES.get(self._talk_mode)
+            ack_text = self._render_ack_for_mode(self._talk_mode, gate_ctx)
+        elif self._talk_mode == TalkMode.PRESENCE:
+            ack_text = self._render_presence_ack(gate_ctx)
         elif text_input and self._talk_mode == TalkMode.WATCH:
-            ack_text = _ACK_TEMPLATES.get(TalkMode.WATCH)
+            ack_text = self._render_ack_for_mode(TalkMode.WATCH, gate_ctx)
 
         route_response: Optional[str] = None
         if route == ResponseRoute.REFLEX:
@@ -1086,6 +1107,8 @@ class EmotionalHubRuntime:
             ack_payload = ack_for_fast or route_response or ack_text
             if ack_payload:
                 response = self._wrap_ack_response(ack_payload, self._talk_mode)
+            if response and response.text:
+                self._last_speaker = "ai"
             eqframe = self._record_eqframe(None, persona_meta)
             metrics = dict(metrics)
             metrics["phi_norm"] = float(
@@ -1123,6 +1146,13 @@ class EmotionalHubRuntime:
             and route == ResponseRoute.CONSCIOUS
             and not route_response
         )
+        if (
+            not should_call_llm
+            and user_text
+            and self._memory_hint_cfg
+            and getattr(self._memory_hint_cfg, "enable", False)
+        ):
+            _ = self._maybe_memory_reference(user_text)
         if should_call_llm:
             memory_reference = self._maybe_memory_reference(user_text or "")
             if (
@@ -1134,7 +1164,10 @@ class EmotionalHubRuntime:
                     >= float(getattr(self._memory_ref_cfg, "fidelity_low", 0.0))
                 )
             ):
-                response = self._wrap_memory_response(memory_reference["reply"])
+                response = self._wrap_memory_response(
+                    memory_reference["reply"],
+                    controls_used=memory_reference.get("controls_used"),
+                )
             else:
                 llm_controls = {
                     "temperature": controls.temperature,
@@ -1405,12 +1438,20 @@ class EmotionalHubRuntime:
         payload.update(gate_result)
         payload["m_kind"] = "cosine"
         allow = bool(gate_result.get("allow", True))
+        if self._talk_mode == TalkMode.PRESENCE:
+            allow = False
+            payload["allow"] = False
+            payload["presence_override"] = True
         metrics["qualia/u_t"] = u_t
         metrics["qualia/m_t"] = m_t
         metrics["qualia/load"] = load_t
         metrics["qualia/gate_allow"] = 1.0 if allow else 0.0
         if not allow:
-            minimal = ack_text or ack_for_fast or _ACK_TEMPLATES.get(TalkMode.WATCH, "...")
+            minimal = ack_text or ack_for_fast
+            if not minimal and self._talk_mode == TalkMode.PRESENCE:
+                minimal = self._render_presence_ack(gate_ctx)
+            if not minimal:
+                minimal = self._render_ack_for_mode(TalkMode.WATCH, gate_ctx)
             if minimal:
                 response = self._wrap_ack_response(minimal, self._talk_mode)
             narrative_text = None
@@ -2168,8 +2209,15 @@ class EmotionalHubRuntime:
                 "directness": float(behavior_mod.directness),
                 "joke_ratio": float(behavior_mod.joke_ratio),
             }
+        if response and response.text:
+            self._last_speaker = "ai"
         emotion_tag = self._infer_emotion_tag(affect)
         qualia_vec = self._qualia_vec_snapshot()
+        trace_observations: Dict[str, Any] = {}
+        if self._last_memory_hint_meta:
+            trace_observations.setdefault("policy", {})["memory_hint"] = dict(
+                self._last_memory_hint_meta
+            )
         entry = MomentLogEntry(
             ts=time.time(),
             turn_id=self._turn_id,
@@ -2195,6 +2243,7 @@ class EmotionalHubRuntime:
             user_text=user_text if user_text else None,
             llm_text=response.text if response else None,
             response_meta=self._serialize_response_meta(response),
+            trace_observations=trace_observations or None,
             behavior_mod=behavior_payload,
             emotion_tag=emotion_tag,
             shadow=self._last_shadow_estimate,
@@ -2209,9 +2258,39 @@ class EmotionalHubRuntime:
         self._feed_culture_models(entry, culture_ctx, user_text)
         try:
             self._moment_log_writer.write(entry)
+            self._emit_trace_v1_observations(entry, trace_observations)
             self._turn_id += 1
         except Exception:
             pass
+
+    def _emit_trace_v1_observations(
+        self, entry: MomentLogEntry, trace_observations: Dict[str, Any]
+    ) -> None:
+        if not trace_observations:
+            return
+        flag = (os.getenv("EQNET_TRACE_V1") or "").strip().lower()
+        if flag not in {"1", "true", "yes", "on"}:
+            return
+        trace_root = os.getenv("EQNET_TRACE_V1_DIR")
+        if not trace_root:
+            return
+        try:
+            timestamp_ms = int(entry.ts * 1000)
+        except Exception:
+            timestamp_ms = int(time.time() * 1000)
+        record = {
+            "schema_version": "trace_v1",
+            "source_loop": "runtime",
+            "timestamp_ms": timestamp_ms,
+            "turn_id": str(entry.turn_id),
+            "scenario_id": entry.session_id or "runtime",
+            "trace_observations": trace_observations,
+        }
+        target = trace_output_path(
+            TracePathConfig(base_dir=Path(trace_root), source_loop="runtime"),
+            timestamp_ms=timestamp_ms,
+        )
+        append_trace_event(target, record)
 
     # ------------------------------------------------------------------ #
     # Memory reference helpers
@@ -2236,8 +2315,92 @@ class EmotionalHubRuntime:
         if choice == "silence":
             return None
         if choice == "breath":
-            return "..."
-        return _ACK_TEMPLATES.get(self._talk_mode, _ACK_TEMPLATES[TalkMode.WATCH])
+            return self._render_fast_ack("breath")
+        fast_ack = self._render_fast_ack("ack")
+        if fast_ack:
+            return fast_ack
+        if self._talk_mode == TalkMode.PRESENCE:
+            presence_ack = self._render_presence_ack(gate_ctx)
+            if presence_ack:
+                return presence_ack
+        return self._render_ack_for_mode(self._talk_mode, gate_ctx)
+
+    def _should_presence(
+        self,
+        gate_ctx: GateContext,
+        shadow_uncertainty: Optional[float],
+        last_gate_allow: Optional[bool],
+        now_ts: float,
+    ) -> bool:
+        cfg = self._presence_cfg
+        if not cfg or not getattr(cfg, "enable", False):
+            return False
+        if gate_ctx.force_listen or gate_ctx.text_input:
+            return False
+        if gate_ctx.since_last_user_ms < float(getattr(cfg, "min_silence_ms", 0)):
+            return False
+        if (now_ts - self._last_presence_ack_ts) < float(
+            getattr(cfg, "max_ack_interval_s", 0.0)
+        ):
+            return False
+        if last_gate_allow is False:
+            return True
+        if shadow_uncertainty is None:
+            return False
+        return shadow_uncertainty >= float(getattr(cfg, "shadow_threshold", 1.0))
+
+    def _render_presence_ack(self, gate_ctx: GateContext) -> Optional[str]:
+        cfg = self._presence_cfg
+        if not cfg or not getattr(cfg, "enable", False):
+            return None
+        locale = "ja-JP"
+        if self._runtime_cfg and hasattr(self._runtime_cfg, "backchannel"):
+            locale = getattr(self._runtime_cfg.backchannel, "culture", locale)
+        key = cfg.ack_key_minimal
+        if gate_ctx.since_last_user_ms >= float(
+            getattr(cfg, "short_after_silence_ms", 0.0)
+        ):
+            key = cfg.ack_key_short
+        text = lookup_text(locale, str(key))
+        if not text:
+            return None
+        return truncate_text(text, int(getattr(cfg, "ack_max_chars", 0)) or None)
+
+    def _render_ack_for_mode(
+        self, mode: TalkMode, gate_ctx: GateContext
+    ) -> Optional[str]:
+        cfg = self._ack_cfg
+        if not cfg:
+            return None
+        locale = "ja-JP"
+        if self._runtime_cfg and hasattr(self._runtime_cfg, "backchannel"):
+            locale = getattr(self._runtime_cfg.backchannel, "culture", locale)
+        key_map = {
+            TalkMode.WATCH: cfg.watch_key,
+            TalkMode.SOOTHE: cfg.soothe_key,
+            TalkMode.ASK: cfg.ask_key,
+            TalkMode.TALK: cfg.talk_key,
+        }
+        key = key_map.get(mode)
+        if not key:
+            return None
+        text = lookup_text(locale, str(key))
+        if not text:
+            return None
+        return truncate_text(text, int(getattr(cfg, "max_chars", 0)) or None)
+
+    def _render_fast_ack(self, key: str) -> Optional[str]:
+        cfg = self._ack_cfg
+        if not cfg:
+            return None
+        locale = "ja-JP"
+        if self._runtime_cfg and hasattr(self._runtime_cfg, "backchannel"):
+            locale = getattr(self._runtime_cfg.backchannel, "culture", locale)
+        lookup_key = cfg.fast_ack_key if key == "ack" else cfg.fast_breath_key
+        text = lookup_text(locale, str(lookup_key))
+        if not text:
+            return None
+        return truncate_text(text, int(getattr(cfg, "max_chars", 0)) or None)
 
     def _estimate_interpersonal_distance(self, gate_ctx: GateContext) -> float:
         distance = 0.7
@@ -2251,14 +2414,12 @@ class EmotionalHubRuntime:
 
     def _maybe_memory_reference(self, user_text: str) -> Optional[Dict[str, Any]]:
         cfg = self._memory_ref_cfg
-        if (
-            cfg is None
-            or not getattr(cfg, "enabled", True)
-            or self.eqnet_system is None
-            or not user_text.strip()
-            or time.time() < self._memory_ref_cooldown_until
-        ):
+        hint_cfg = self._memory_hint_cfg
+        if not user_text.strip() or time.time() < self._memory_ref_cooldown_until:
             return None
+        allow_reference = bool(
+            cfg is not None and getattr(cfg, "enabled", True) and self.eqnet_system is not None
+        )
         culture_tag = (
             getattr(self._runtime_cfg.culture, "tag", "ja-JP")
             if self._runtime_cfg
@@ -2271,21 +2432,90 @@ class EmotionalHubRuntime:
         max_reply_chars = int(
             overrides.get("max_reply_chars", getattr(cfg, "max_reply_chars", 140))
         )
-        result = handle_memory_reference(
-            self.eqnet_system,
-            user_text,
-            tone="support",
-            culture=culture_tag,
-            k=int(getattr(cfg, "k", 3)),
-            max_reply_chars=max_reply_chars,
-        )
-        cooldown = float(overrides.get("cooldown_s", getattr(cfg, "cooldown_s", 0.0)))
-        if cooldown > 0.0:
-            self._memory_ref_cooldown_until = time.time() + cooldown
-        self._log_memory_reference(result, user_text)
-        return result
+        result = None
+        if allow_reference:
+            result = handle_memory_reference(
+                self.eqnet_system,
+                user_text,
+                tone="support",
+                culture=culture_tag,
+                k=int(getattr(cfg, "k", 3)),
+                max_reply_chars=max_reply_chars,
+            )
+        self._last_memory_hint_meta = None
+        hint_payload: Dict[str, Any] = result or {"reply": None, "fidelity": 0.0}
+        if hint_cfg and getattr(hint_cfg, "enable", False):
+            gate_ctx = {
+                "since_last_user_ms": float(
+                    self._last_gate_context.get("since_last_user_ms", 0.0) or 0.0
+                ),
+                "text_input": bool(self._last_gate_context.get("text_input", False)),
+            }
+            shadow_uncertainty = None
+            if self._last_shadow_estimate:
+                shadow_uncertainty = self._last_shadow_estimate.get("mood_uncertainty")
+            now_ts = time.time()
+            dt_s = max(0.0, now_ts - self._memory_hint_pressure_ts)
+            hint = render_memory_hint(
+                hint_payload.get("label"),
+                float(hint_payload.get("fidelity", 0.0) or 0.0),
+                locale=culture_tag,
+                cfg=hint_cfg,
+                gate_ctx=gate_ctx,
+                shadow_uncertainty=shadow_uncertainty,
+                last_speaker=self._last_speaker,
+                prev_pressure=self._memory_hint_pressure,
+                dt_s=dt_s,
+                prev_blocked=self._memory_hint_prev_blocked,
+            )
+            controls: Dict[str, Any] = {"memory_hint": None}
+            if hint:
+                controls["memory_hint"] = {
+                    "enabled": bool(hint.get("enabled", True)),
+                    "shown": bool(hint.get("shown", False)),
+                    "blocked": bool(hint.get("blocked", False)),
+                    "reason": hint.get("reason"),
+                    "key": hint.get("key"),
+                    "style": hint.get("style"),
+                    "interrupt_cost": hint.get("interrupt_cost"),
+                    "confidence": hint.get("confidence"),
+                    "social_mode": getattr(hint_cfg, "social_mode", None),
+                    "pressure": hint.get("pressure"),
+                    "pressure_delta": hint.get("pressure_delta"),
+                }
+                self._last_memory_hint_meta = dict(controls["memory_hint"])
+                self._memory_hint_pressure = float(
+                    hint.get("pressure", self._memory_hint_pressure)
+                )
+                self._memory_hint_pressure_ts = now_ts
+                self._memory_hint_prev_blocked = bool(hint.get("blocked", False))
+                if hint.get("shown"):
+                    if not getattr(hint_cfg, "allow_verbatim", False):
+                        hint_payload["reply"] = hint.get("text")
+                elif hint.get("blocked") and not getattr(hint_cfg, "allow_verbatim", False):
+                    hint_payload["reply"] = None
+                hint_payload["memory_hint"] = hint
+            hint_payload["controls_used"] = controls
+        elif hint_cfg:
+            now_ts = time.time()
+            dt_s = max(0.0, now_ts - self._memory_hint_pressure_ts)
+            decay = float(getattr(hint_cfg, "pressure_decay_per_s", 1.0) or 1.0)
+            decay = max(0.0, min(1.0, decay))
+            self._memory_hint_pressure *= decay**dt_s
+            self._memory_hint_pressure_ts = now_ts
+        if allow_reference and result is not None:
+            cooldown = float(
+                overrides.get("cooldown_s", getattr(cfg, "cooldown_s", 0.0))
+            )
+            if cooldown > 0.0:
+                self._memory_ref_cooldown_until = time.time() + cooldown
+            self._log_memory_reference(result, user_text)
+            return result
+        return None
 
     def _wrap_ack_response(self, text: str, mode: TalkMode) -> HubResponse:
+        if mode == TalkMode.PRESENCE:
+            self._last_presence_ack_ts = time.time()
         return HubResponse(
             text=text,
             model=None,
@@ -2295,13 +2525,18 @@ class EmotionalHubRuntime:
             safety={"rating": "G", "ack": "true"},
         )
 
-    def _wrap_memory_response(self, text: str) -> HubResponse:
+    def _wrap_memory_response(
+        self, text: str, *, controls_used: Optional[Dict[str, Any]] = None
+    ) -> HubResponse:
+        controls = {"mode": "memory_recall"}
+        if controls_used:
+            controls.update(controls_used)
         return HubResponse(
             text=text,
             model=None,
             trace_id=f"memory-{int(time.time() * 1000)}",
             latency_ms=0.0,
-            controls_used={"mode": "memory_recall"},
+            controls_used=controls,
             safety={"rating": "G", "memory_recall": "true"},
         )
 

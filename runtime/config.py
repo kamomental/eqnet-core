@@ -192,6 +192,52 @@ class BackchannelCfg:
 
 
 @dataclass
+class PresenceCfg:
+    enable: bool = field(default=True)
+    shadow_threshold: float = field(default=0.70)
+    max_ack_interval_s: float = field(default=180.0)
+    min_silence_ms: int = field(default=1200)
+    short_after_silence_ms: int = field(default=15000)
+    ack_key_short: str = field(default="presence_ack.short")
+    ack_key_minimal: str = field(default="presence_ack.minimal")
+    ack_max_chars: int = field(default=24)
+
+
+@dataclass
+class AckCfg:
+    watch_key: str = field(default="ack.watch")
+    soothe_key: str = field(default="ack.soothe")
+    ask_key: str = field(default="ack.ask")
+    talk_key: str = field(default="ack.talk")
+    fast_ack_key: str = field(default="ack.fast.ack")
+    fast_breath_key: str = field(default="ack.fast.breath")
+    max_chars: int = field(default=64)
+
+
+@dataclass
+class MemoryHintPolicyCfg:
+    enable: bool = field(default=False)
+    allow_verbatim: bool = field(default=False)
+    hint_style: str = field(default="temperature")
+    max_label_chars: int = field(default=32)
+    max_reply_chars: int = field(default=80)
+    hint_key_prefix: str = field(default="memory_hint.")
+    ban_patterns: list[str] = field(default_factory=list)
+    social_mode: str = field(default="solo")
+    turn_taking_mode: str = field(default="none")
+    style_when_suppressed: str = field(default="none")
+    min_silence_ms_for_hint: int = field(default=2000)
+    pressure_threshold: float = field(default=0.55)
+    pressure_margin: float = field(default=0.10)
+    pressure_decay_per_s: float = field(default=0.985)
+    pressure_floor: float = field(default=0.0)
+    pressure_ceiling: float = field(default=1.0)
+    pressure_w_interrupt: float = field(default=0.70)
+    pressure_w_social: float = field(default=0.40)
+    pressure_w_lowconf: float = field(default=0.60)
+
+
+@dataclass
 class MemoryReferenceCfg:
     enabled: bool = field(default=True)
     k: int = field(default=3)
@@ -242,6 +288,9 @@ class RuntimeCfg:
     resonance: ResonanceCfg = field(default_factory=ResonanceCfg)
     pain_loop: PainLoopCfg = field(default_factory=PainLoopCfg)
     backchannel: BackchannelCfg = field(default_factory=BackchannelCfg)
+    presence: PresenceCfg = field(default_factory=PresenceCfg)
+    ack: AckCfg = field(default_factory=AckCfg)
+    memory_hint_policy: MemoryHintPolicyCfg = field(default_factory=MemoryHintPolicyCfg)
     memory_reference: MemoryReferenceCfg = field(default_factory=MemoryReferenceCfg)
     observer: ObserverDisclaimerCfg = field(default_factory=ObserverDisclaimerCfg)
     ui: UiCfg = field(default_factory=UiCfg)
@@ -285,6 +334,11 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
         extra_factories={"care_mode": (CareModeCfg, {"budgets": CareModeBudgetsCfg})},
     )
     backchannel = _merge_dataclass(BackchannelCfg(), payload.get("backchannel", {}))
+    presence = _merge_dataclass(PresenceCfg(), payload.get("presence", {}))
+    ack_cfg = _merge_dataclass(AckCfg(), payload.get("ack", {}))
+    memory_hint_policy = _merge_dataclass(
+        MemoryHintPolicyCfg(), payload.get("memory_hint_policy", {})
+    )
     memory_reference = _merge_dataclass(MemoryReferenceCfg(), payload.get("memory_reference", {}))
     observer_cfg = _merge_dataclass(ObserverDisclaimerCfg(), payload.get("observer", {}))
     ui_cfg = _merge_dataclass(UiCfg(), payload.get("ui", {}))
@@ -307,6 +361,9 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
         resonance=resonance,
         pain_loop=pain_loop,
         backchannel=backchannel,
+        presence=presence,
+        ack=ack_cfg,
+        memory_hint_policy=memory_hint_policy,
         memory_reference=memory_reference,
         observer=observer_cfg,
         ui=ui_cfg,
@@ -362,6 +419,9 @@ __all__ = [
     "CareModeCfg",
     "CareModeBudgetsCfg",
     "BackchannelCfg",
+    "PresenceCfg",
+    "AckCfg",
+    "MemoryHintPolicyCfg",
     "MemoryReferenceCfg",
     "ObserverDisclaimerCfg",
     "PolicyRuntimeCfg",

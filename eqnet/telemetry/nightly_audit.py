@@ -273,6 +273,8 @@ def _qualia_gate_boundary_stats(records: List[Dict[str, Any]]) -> Dict[str, Any]
 def _qualia_gate_presence_stats(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     total = 0
     suppress = 0
+    mode_total = 0
+    presence_mode = 0
     for record in records:
         payload = record.get("qualia_gate")
         if not isinstance(payload, dict):
@@ -283,13 +285,119 @@ def _qualia_gate_presence_stats(records: List[Dict[str, Any]]) -> Dict[str, Any]
         allow = payload.get("allow")
         if allow is False:
             suppress += 1
+        mode = record.get("talk_mode")
+        if isinstance(mode, str):
+            mode_total += 1
+            if mode.lower() == "presence":
+                presence_mode += 1
     if total == 0:
         return {}
-    return {
+    stats = {
         "ack_silence_ratio": float(suppress / total),
         "ack_silence_count": int(suppress),
         "sample_count": int(total),
     }
+    if mode_total > 0:
+        stats["presence_mode_ratio"] = float(presence_mode / mode_total)
+        stats["presence_mode_count"] = int(presence_mode)
+        stats["talk_mode_samples"] = int(mode_total)
+    return stats
+
+
+def _memory_hint_stats(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    total = 0
+    hint_events = 0
+    shown = 0
+    blocked = 0
+    verbatim_blocked = 0
+    key_counts: Counter[str] = Counter()
+    blocked_reason_counts: Counter[str] = Counter()
+    interrupt_cost_blocked: List[float] = []
+    pressure_values: List[float] = []
+    pressure_delta_values: List[float] = []
+    pressure_blocked: List[float] = []
+    community_turn_violations = 0
+    category_blocked_reason: Dict[str, Counter[str]] = {}
+    for record in records:
+        total += 1
+        trace_obs = record.get("trace_observations") or {}
+        policy = trace_obs.get("policy") if isinstance(trace_obs, dict) else {}
+        hint = policy.get("memory_hint") if isinstance(policy, dict) else None
+        if not isinstance(hint, dict):
+            continue
+        if hint.get("enabled") is not True:
+            continue
+        hint_events += 1
+        if hint.get("shown"):
+            shown += 1
+            key = hint.get("key")
+            if isinstance(key, str) and key:
+                key_counts[key] += 1
+        pressure = hint.get("pressure")
+        if isinstance(pressure, (int, float)):
+            pressure_values.append(float(pressure))
+            if hint.get("blocked"):
+                pressure_blocked.append(float(pressure))
+        delta = hint.get("pressure_delta")
+        if isinstance(delta, (int, float)):
+            pressure_delta_values.append(float(delta))
+        if hint.get("blocked"):
+            blocked += 1
+            reason = hint.get("reason")
+            if isinstance(reason, str) and reason:
+                blocked_reason_counts[reason] += 1
+                key = hint.get("key")
+                category = _extract_memory_hint_category(key) if isinstance(key, str) else "unknown"
+                bucket = category_blocked_reason.setdefault(category, Counter())
+                bucket[reason] += 1
+            if reason == "ban_pattern":
+                verbatim_blocked += 1
+            if hint.get("reason") == "turn_taking" and hint.get("social_mode") == "community":
+                community_turn_violations += 1
+            cost = hint.get("interrupt_cost")
+            if isinstance(cost, (int, float)):
+                interrupt_cost_blocked.append(float(cost))
+    if total == 0:
+        return {}
+    category_counts: Counter[str] = Counter()
+    for key, count in key_counts.items():
+        category_counts[_extract_memory_hint_category(key)] += count
+    category_blocked_reason_payload = {
+        category: dict(counter)
+        for category, counter in sorted(
+            category_blocked_reason.items(), key=lambda item: item[0]
+        )
+    }
+    stats = {
+        "memory_hint_rate": float(shown / total),
+        "memory_hint_blocked_rate": float(blocked / max(1, hint_events)),
+        "memory_hint_total": int(hint_events),
+        "memory_hint_shown": int(shown),
+        "memory_hint_blocked": int(blocked),
+        "memory_hint_verbatim_block_count": int(verbatim_blocked),
+        "memory_hint_key_topk": key_counts.most_common(5),
+        "memory_hint_category_topk": category_counts.most_common(5),
+        "memory_hint_category_blocked_reason": category_blocked_reason_payload,
+        "memory_hint_blocked_reason_topk": blocked_reason_counts.most_common(5),
+        "avg_interrupt_cost_when_blocked": float(sum(interrupt_cost_blocked) / max(1, len(interrupt_cost_blocked))),
+        "community_turn_violation_count": int(community_turn_violations),
+        "memory_hint_pressure_mean": float(sum(pressure_values) / max(1, len(pressure_values))),
+        "memory_hint_pressure_p95": float(sorted(pressure_values)[int(0.95 * (len(pressure_values) - 1))]) if pressure_values else 0.0,
+        "memory_hint_pressure_delta_mean": float(sum(pressure_delta_values) / max(1, len(pressure_delta_values))),
+        "memory_hint_blocked_pressure_mean": float(sum(pressure_blocked) / max(1, len(pressure_blocked))),
+    }
+    return stats
+
+
+def _extract_memory_hint_category(key: str) -> str:
+    if not key:
+        return "unknown"
+    parts = key.split(".")
+    if len(parts) >= 3 and parts[0] == "memory_hint":
+        return parts[1] or "unknown"
+    if len(parts) == 2 and parts[0] == "memory_hint":
+        return "legacy"
+    return "unknown"
 
 def generate_audit(cfg: NightlyAuditConfig) -> Path:
     day_dir = cfg.trace_root / cfg.date_yyyy_mm_dd
@@ -452,6 +560,11 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
         if not qualia_gate_stats:
             qualia_gate_stats = {}
         qualia_gate_stats["presence"] = presence_stats
+    memory_hint_stats = _memory_hint_stats(records)
+    if memory_hint_stats:
+        if not qualia_gate_stats:
+            qualia_gate_stats = {}
+        qualia_gate_stats["memory_hint"] = memory_hint_stats
 
     audit = {
         "schema_version": "nightly_audit_v1",

@@ -21,6 +21,8 @@
               <th>Fatal</th>
               <th>Warn rate</th>
               <th>Top reasons</th>
+              <th>Hint categories</th>
+              <th>Blocked by category</th>
             </tr>
           </thead>
           <tbody>
@@ -34,6 +36,36 @@
                   {% for reason in audit.summary.top_reasons %}
                     <div>{{ reason.get("reason") or reason.get("message") }}</div>
                   {% endfor %}
+                </td>
+                <td>
+                  {% set categories = audit.summary.memory_hint.category_topk %}
+                  {% set no_data = audit.summary.memory_hint.no_data_label or '-' %}
+                  {% if categories %}
+                    {% for pair in categories %}
+                      <div>{{ pair[0] }} ({{ pair[1] }})</div>
+                    {% endfor %}
+                  {% else %}
+                    <div>{{ no_data }}</div>
+                  {% endif %}
+                </td>
+                <td>
+                  {% set blocked = audit.summary.memory_hint.category_blocked_reason %}
+                  {% if blocked %}
+                    {% for category, reasons in blocked|dictsort %}
+                      <div>
+                        {{ category }}:
+                        {% if reasons %}
+                          {% for reason, count in reasons|dictsort %}
+                            {{ reason }} ({{ count }}){% if not loop.last %}, {% endif %}
+                          {% endfor %}
+                        {% else %}
+                          {{ no_data }}
+                        {% endif %}
+                      </div>
+                    {% endfor %}
+                  {% else %}
+                    <div>{{ no_data }}</div>
+                  {% endif %}
                 </td>
               </tr>
             {% endfor %}

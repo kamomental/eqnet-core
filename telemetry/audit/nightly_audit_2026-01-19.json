@@ -1,0 +1,99 @@
+{
+  "schema_version": "nightly_audit_v1",
+  "date": "2026-01-19",
+  "trace_files": [
+    "trace_v1\\2026-01-19\\runtime-26792.jsonl",
+    "trace_v1\\2026-01-19\\runtime-27056.jsonl",
+    "trace_v1\\2026-01-19\\runtime-34372.jsonl"
+  ],
+  "invariants": {
+    "summary": {},
+    "fatal_failures": 0,
+    "warn_fail_rate": null
+  },
+  "boundary": {
+    "threshold": 0.5,
+    "span_count": 0,
+    "max_length": 0,
+    "span_chain_max": 0,
+    "spans": []
+  },
+  "prospection": {
+    "total": 0,
+    "reject": 0,
+    "reject_rate": null,
+    "accept_rate": null,
+    "top_jerk": [],
+    "top_temperature": []
+  },
+  "policy": {
+    "offer_throttle_counts": {},
+    "offer_throttle_examples": {}
+  },
+  "evidence": {
+    "invariants": {
+      "fatal_failures": [],
+      "warn_failures": []
+    },
+    "boundary_spans": [],
+    "prospection": {
+      "top_jerk": [],
+      "top_temperature": []
+    },
+    "policy": {
+      "throttle_examples": {}
+    }
+  },
+  "health": {
+    "status": "GREEN",
+    "reasons": []
+  },
+  "ru_v0_summary": {
+    "gate_action_counts": {},
+    "policy_version_counts": {},
+    "missing_required_fields_events": 0,
+    "ru_v0_events": 0
+  },
+  "qualia_gate_stats": {
+    "memory_hint": {
+      "memory_hint_rate": 0.3333333333333333,
+      "memory_hint_blocked_rate": 1.0,
+      "memory_hint_total": 3,
+      "memory_hint_shown": 1,
+      "memory_hint_blocked": 3,
+      "memory_hint_verbatim_block_count": 0,
+      "memory_hint_key_topk": [
+        [
+          "memory_hint.minimal",
+          1
+        ]
+      ],
+      "memory_hint_category_topk": [
+        [
+          "legacy",
+          1
+        ]
+      ],
+      "memory_hint_category_blocked_reason": {
+        "legacy": {
+          "interrupt_cost": 1
+        },
+        "unknown": {
+          "interrupt_cost": 2
+        }
+      },
+      "memory_hint_blocked_reason_topk": [
+        [
+          "interrupt_cost",
+          3
+        ]
+      ],
+      "avg_interrupt_cost_when_blocked": 1.0,
+      "community_turn_violation_count": 0,
+      "memory_hint_pressure_mean": 0.0,
+      "memory_hint_pressure_p95": 0.0,
+      "memory_hint_pressure_delta_mean": 0.0,
+      "memory_hint_blocked_pressure_mean": 0.0
+    }
+  }
+}

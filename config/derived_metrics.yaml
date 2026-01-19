@@ -1,0 +1,26 @@
+schema_version: "v1.0.0"
+calc_version: "v1.0.0"
+windows_ms:
+  short: 900000
+  mid: 86400000
+  long: 604800000
+metric_windows:
+  var_d_value:
+    - short
+    - mid
+    - long
+  edge_autocorr_tau:
+    - mid
+    - long
+  pe_to_dvalue_coupling:
+    - short
+    - mid
+  replay_rate:
+    - mid
+    - long
+default_calc_version: "v1.0.0"
+numeric_stability:
+  eps: 1e-6
+join_policy:
+  state_join: "by_state_id"
+  max_lag_divisor: 10

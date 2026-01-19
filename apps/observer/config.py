@@ -19,7 +19,11 @@ class ObserverSettings(BaseSettings):
     overlay_poll_seconds: int = 3
 
     if SettingsConfigDict is not None:
-        model_config = SettingsConfigDict(env_prefix="EQNET_", env_file=".env")
+        model_config = SettingsConfigDict(
+            env_prefix="EQNET_",
+            env_file=".env",
+            extra="ignore",
+        )
     else:
         class Config:  # type: ignore[no-redef]
             env_prefix = "EQNET_"

@@ -1,0 +1,244 @@
+{
+  "generated_at": "2026-01-19T11:51:08.515829",
+  "day": "2026-01-19",
+  "telemetry_paths": [
+    "telemetry\\ignition-20260119.jsonl"
+  ],
+  "trace_path": "logs/activation_traces.jsonl",
+  "trace_root": "trace_v1",
+  "nightly_audit": {
+    "schema_version": "nightly_audit_v1",
+    "date": "2026-01-19",
+    "trace_files": [
+      "trace_v1\\2026-01-19\\runtime-26792.jsonl",
+      "trace_v1\\2026-01-19\\runtime-27056.jsonl",
+      "trace_v1\\2026-01-19\\runtime-34372.jsonl"
+    ],
+    "invariants": {
+      "summary": {},
+      "fatal_failures": 0,
+      "warn_fail_rate": null
+    },
+    "boundary": {
+      "threshold": 0.5,
+      "span_count": 0,
+      "max_length": 0,
+      "span_chain_max": 0,
+      "spans": []
+    },
+    "prospection": {
+      "total": 0,
+      "reject": 0,
+      "reject_rate": null,
+      "accept_rate": null,
+      "top_jerk": [],
+      "top_temperature": []
+    },
+    "policy": {
+      "offer_throttle_counts": {},
+      "offer_throttle_examples": {}
+    },
+    "evidence": {
+      "invariants": {
+        "fatal_failures": [],
+        "warn_failures": []
+      },
+      "boundary_spans": [],
+      "prospection": {
+        "top_jerk": [],
+        "top_temperature": []
+      },
+      "policy": {
+        "throttle_examples": {}
+      }
+    },
+    "health": {
+      "status": "GREEN",
+      "reasons": []
+    },
+    "ru_v0_summary": {
+      "gate_action_counts": {},
+      "policy_version_counts": {},
+      "missing_required_fields_events": 0,
+      "ru_v0_events": 0
+    },
+    "qualia_gate_stats": {
+      "memory_hint": {
+        "memory_hint_rate": 0.3333333333333333,
+        "memory_hint_blocked_rate": 1.0,
+        "memory_hint_total": 3,
+        "memory_hint_shown": 1,
+        "memory_hint_blocked": 3,
+        "memory_hint_verbatim_block_count": 0,
+        "memory_hint_key_topk": [
+          [
+            "memory_hint.minimal",
+            1
+          ]
+        ],
+        "memory_hint_category_topk": [
+          [
+            "legacy",
+            1
+          ]
+        ],
+        "memory_hint_category_blocked_reason": {
+          "legacy": {
+            "interrupt_cost": 1
+          },
+          "unknown": {
+            "interrupt_cost": 2
+          }
+        },
+        "memory_hint_blocked_reason_topk": [
+          [
+            "interrupt_cost",
+            3
+          ]
+        ],
+        "avg_interrupt_cost_when_blocked": 1.0,
+        "community_turn_violation_count": 0,
+        "memory_hint_pressure_mean": 0.0,
+        "memory_hint_pressure_p95": 0.0,
+        "memory_hint_pressure_delta_mean": 0.0,
+        "memory_hint_blocked_pressure_mean": 0.0
+      }
+    }
+  },
+  "nightly_audit_error": null,
+  "trace_count": 0,
+  "trace_coverage": 0.0,
+  "kpi": {
+    "step_count": 0,
+    "cancel_count": 0,
+    "cancel_rate": 0.0,
+    "cancel_causes": {},
+    "drive_limit": 0.75,
+    "drive_over_limit": 0,
+    "drive_recovery": {
+      "count": 0,
+      "avg_steps": 0.0,
+      "max_steps": 0.0
+    },
+    "drive_trend": {
+      "first_mean": 0.0,
+      "second_mean": 0.0,
+      "delta": 0.0
+    }
+  },
+  "transitions": {
+    "count": 0,
+    "first_ts": null,
+    "transition_turn_index": null,
+    "pre_kpi": null,
+    "post_kpi": null
+  },
+  "deviant": {
+    "count": 0,
+    "ratio": 0.0,
+    "decision_cycle_total": 0,
+    "decision_cycle_executed": 0,
+    "by_world": {},
+    "reasons": {}
+  },
+  "resonance": {
+    "count": 0,
+    "ratio": 0.0,
+    "decision_cycle_total": 0,
+    "decision_cycle_executed": 0,
+    "by_world": {},
+    "reasons": {}
+  },
+  "executed_boundary": {
+    "executed_count": 0
+  },
+  "executed_boundary_by_world": {},
+  "decision_boundary": {
+    "all_decision_boundary_max": 0.0,
+    "cancel_boundary_max": 0.0
+  },
+  "decision_boundary_by_world": {},
+  "decision_score": {
+    "decision_score_executed_max": 0.0,
+    "decision_score_cancel_max": 0.0,
+    "decision_score_all_max": 0.0,
+    "u_hat_executed_max": 0.0,
+    "u_hat_cancel_max": 0.0,
+    "u_hat_all_max": 0.0,
+    "veto_score_executed_min": 0.0,
+    "veto_score_cancel_max": 0.0,
+    "veto_score_all_max": 0.0
+  },
+  "decision_score_by_world": {},
+  "high_boundary_cancel": {
+    "threshold": 0.55,
+    "count": 0,
+    "decision_score": {
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0
+    },
+    "u_hat": {
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0
+    },
+    "veto_score": {
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0
+    },
+    "risk": {
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0
+    },
+    "uncertainty": {
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0
+    }
+  },
+  "high_boundary_cancel_by_world": {},
+  "cancel_summary": {
+    "total": 0,
+    "reasons": {},
+    "max_reason_examples": {}
+  },
+  "cancel_by_world": {},
+  "ru_v0_summary": {
+    "gate_action_counts": {},
+    "policy_version_counts": {},
+    "missing_required_fields_events": 0,
+    "ru_v0_events": 0
+  },
+  "segments": {},
+  "recall_report": {
+    "schema_version": "activation_nightly_v1",
+    "trace_count": 0,
+    "anchors": {},
+    "confidence": {
+      "avg_internal": 0.0,
+      "avg_external": 0.0,
+      "max_internal": 0.0,
+      "min_internal": 0.0
+    },
+    "ignitions": [],
+    "dream_prompt": "No ignition events captured today; skip dream prompt."
+  },
+  "world_breakdown": {},
+  "deviant_window": {
+    "days": [
+      "2026-01-19"
+    ],
+    "by_world": {}
+  },
+  "world_prior_proposals": [],
+  "resonance_window": {
+    "days": [
+      "2026-01-19"
+    ],
+    "by_world": {}
+  },
+  "resonance_notices": []
+}

@@ -865,6 +865,28 @@ def _write_markdown(path: Path, payload: Dict[str, Any]) -> None:
     lines.append(f"- trace_count: {payload.get('trace_count', 0)}")
     lines.append(f"- coverage_ratio: {payload.get('trace_coverage', 0.0)}")
     lines.append("")
+    qualia_gate_stats = (nightly.get("qualia_gate_stats") or {}) if isinstance(nightly, dict) else {}
+    memory_hint = qualia_gate_stats.get("memory_hint") if isinstance(qualia_gate_stats, dict) else {}
+    if isinstance(memory_hint, dict) and memory_hint:
+        lines.append("## Memory Hint")
+        lines.append(f"- rate: {memory_hint.get('memory_hint_rate', 0.0)}")
+        lines.append(f"- blocked_rate: {memory_hint.get('memory_hint_blocked_rate', 0.0)}")
+        lines.append(f"- blocked_reasons: {memory_hint.get('memory_hint_blocked_reason_topk', [])}")
+        lines.append(f"- key_topk: {memory_hint.get('memory_hint_key_topk', [])}")
+        lines.append(f"- category_topk: {memory_hint.get('memory_hint_category_topk', [])}")
+        lines.append(f"- avg_interrupt_cost_when_blocked: {memory_hint.get('avg_interrupt_cost_when_blocked', 0.0)}")
+        lines.append(f"- community_turn_violation_count: {memory_hint.get('community_turn_violation_count', 0)}")
+        lines.append(
+            f"- pressure_mean: {memory_hint.get('memory_hint_pressure_mean', 0.0)}"
+        )
+        lines.append(f"- pressure_p95: {memory_hint.get('memory_hint_pressure_p95', 0.0)}")
+        lines.append(
+            f"- pressure_delta_mean: {memory_hint.get('memory_hint_pressure_delta_mean', 0.0)}"
+        )
+        lines.append(
+            f"- blocked_pressure_mean: {memory_hint.get('memory_hint_blocked_pressure_mean', 0.0)}"
+        )
+        lines.append("")
     transitions = payload.get("transitions", {})
     lines.append("## World Transitions")
     lines.append(f"- transition_count: {transitions.get('count', 0)}")

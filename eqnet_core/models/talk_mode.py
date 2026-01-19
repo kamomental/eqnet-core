@@ -6,6 +6,7 @@ from enum import Enum
 class TalkMode(str, Enum):
     """Canonical talk-mode labels shared across runtime + policy."""
 
+    PRESENCE = "presence"
     WATCH = "watch"
     SOOTHE = "soothe"
     ASK = "ask"
@@ -24,7 +25,13 @@ class TalkMode(str, Enum):
         raise ValueError(f"Unknown talk mode: {value}")
 
     def uplift(self, other: "TalkMode") -> "TalkMode":
-        """Pick the more active mode (WATCH < SOOTHE < ASK < TALK)."""
+        """Pick the more active mode (WATCH < PRESENCE < SOOTHE < ASK < TALK)."""
 
-        order = {TalkMode.WATCH: 0, TalkMode.SOOTHE: 1, TalkMode.ASK: 2, TalkMode.TALK: 3}
+        order = {
+            TalkMode.WATCH: 0,
+            TalkMode.PRESENCE: 1,
+            TalkMode.SOOTHE: 2,
+            TalkMode.ASK: 3,
+            TalkMode.TALK: 4,
+        }
         return self if order[self] >= order[other] else other

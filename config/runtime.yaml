@@ -122,6 +122,44 @@ backchannel:
   silence_ms_for_aizuchi: 420
   energy_bias: 0.05
   culture: "ja-JP"
+presence:
+  enable: true
+  shadow_threshold: 0.70
+  max_ack_interval_s: 180
+  min_silence_ms: 1200
+  short_after_silence_ms: 15000
+  ack_key_short: "presence_ack.short"
+  ack_key_minimal: "presence_ack.minimal"
+  ack_max_chars: 24
+ack:
+  watch_key: "ack.watch"
+  soothe_key: "ack.soothe"
+  ask_key: "ack.ask"
+  talk_key: "ack.talk"
+  fast_ack_key: "ack.fast.ack"
+  fast_breath_key: "ack.fast.breath"
+  max_chars: 64
+memory_hint_policy:
+  enable: true
+  allow_verbatim: false
+  hint_style: "temperature"
+  max_label_chars: 32
+  max_reply_chars: 80
+  hint_key_prefix: "memory_hint."
+  ban_patterns:
+    - "[\"'`]"
+  social_mode: "solo"
+  turn_taking_mode: "last_speaker_not_ai"
+  style_when_suppressed: "none"
+  min_silence_ms_for_hint: 600
+  pressure_threshold: 0.9
+  pressure_margin: 0.05
+  pressure_decay_per_s: 0.985
+  pressure_floor: 0.0
+  pressure_ceiling: 1.0
+  pressure_w_interrupt: 0.70
+  pressure_w_social: 0.40
+  pressure_w_lowconf: 0.60
 offer_gate:
   threshold: 0.55
   listen_bias: 0.15

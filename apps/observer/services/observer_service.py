@@ -6,6 +6,7 @@ from typing import Any
 from ..stores.audit_store import AuditStore
 from ..stores.trace_store import TraceStore
 from .redact import redact_trace_payload
+from emot_terrain_lab.i18n.locale import lookup_text
 
 
 class ObserverService:
@@ -17,6 +18,7 @@ class ObserverService:
 
     # API -----------------------------------------------------------------
     def list_audits(self) -> list[dict[str, Any]]:
+        no_data_label = lookup_text("ja", "observer.no_data") or "no_data"
         out: list[dict[str, Any]] = []
         for item in self.audit_store.list_items():
             out.append(
@@ -33,6 +35,11 @@ class ObserverService:
                             "max_length": item.boundary_max_length,
                         },
                         "top_reasons": item.top_reasons,
+                        "memory_hint": {
+                            "category_topk": item.memory_hint_category_topk,
+                            "category_blocked_reason": item.memory_hint_category_blocked_reason,
+                            "no_data_label": no_data_label,
+                        },
                     },
                 }
             )

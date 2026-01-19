@@ -15,6 +15,8 @@ class AuditListItem:
     warn_fail_rate: float | None
     boundary_max_length: int | None
     top_reasons: list[dict[str, Any]]
+    memory_hint_category_topk: list[list[Any]]
+    memory_hint_category_blocked_reason: dict[str, dict[str, Any]]
 
 
 class AuditStore:
@@ -47,6 +49,9 @@ class AuditStore:
         items: list[AuditListItem] = []
         for path in self.list_paths():
             payload = self.read_json(path)
+            audit_payload = payload.get("nightly_audit") if isinstance(payload, dict) else None
+            if not isinstance(audit_payload, dict):
+                audit_payload = payload
             metadata = payload.get("metadata") or {}
             date = str(metadata.get("date") or path.stem.split("_")[-1])
             health = payload.get("health") or {}
@@ -54,6 +59,12 @@ class AuditStore:
             boundary = payload.get("boundary") or {}
             boundary_summary = boundary.get("summary") or {}
             reasons = list(health.get("reasons") or [])
+            qualia_stats = audit_payload.get("qualia_gate_stats") or {}
+            memory_hint = qualia_stats.get("memory_hint") if isinstance(qualia_stats, dict) else {}
+            category_topk = list(memory_hint.get("memory_hint_category_topk") or [])
+            category_blocked_reason = (
+                memory_hint.get("memory_hint_category_blocked_reason") or {}
+            )
 
             items.append(
                 AuditListItem(
@@ -64,6 +75,8 @@ class AuditStore:
                     warn_fail_rate=stats.get("warn_fail_rate"),
                     boundary_max_length=boundary_summary.get("max_length"),
                     top_reasons=reasons[:3],
+                    memory_hint_category_topk=category_topk,
+                    memory_hint_category_blocked_reason=category_blocked_reason,
                 )
             )
         items.sort(key=lambda entry: entry.date, reverse=True)
