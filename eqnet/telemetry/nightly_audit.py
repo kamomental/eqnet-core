@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Tuple
 from collections import Counter
@@ -26,6 +27,7 @@ class NightlyAuditConfig:
     boundary_threshold: float = 0.5
     health_thresholds: Dict[str, Any] | None = None
     evidence_limit: int = EVIDENCE_DEFAULT_LIMIT
+    memory_reference_log_path: Path | None = None
 
 
 def _iter_jsonl(path: Path) -> Iterator[Dict[str, Any]]:
@@ -197,6 +199,17 @@ def _evaluate_health(
             )
 
     return {"status": status, "reasons": reasons}
+
+
+def _bump_health(health: Dict[str, Any], *, level: str, reason: str) -> Dict[str, Any]:
+    rank = {"GREEN": 0, "YELLOW": 1, "RED": 2}
+    current = str(health.get("status") or "GREEN")
+    if rank.get(level, 0) > rank.get(current, 0):
+        health["status"] = level
+    reasons = health.setdefault("reasons", [])
+    if isinstance(reasons, list):
+        reasons.append({"level": level, "reason": reason})
+    return health
 
 
 def _ru_v0_summary(records: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -399,6 +412,199 @@ def _extract_memory_hint_category(key: str) -> str:
         return "legacy"
     return "unknown"
 
+
+def _closed_loop_trace_coverage(records: List[Dict[str, Any]], day_key: str) -> Dict[str, Any]:
+    life_count = 0
+    policy_count = 0
+    output_count = 0
+    linked_count = 0
+    first_seen_ts: int | None = None
+    last_seen_ts: int | None = None
+
+    for record in records:
+        policy_obs = (
+            ((record.get("policy") or {}).get("observations") or {}).get("hub") or {}
+        )
+        qualia_obs = (
+            ((record.get("qualia") or {}).get("observations") or {}).get("hub") or {}
+        )
+        if not isinstance(policy_obs, dict) or not isinstance(qualia_obs, dict):
+            continue
+        if str(policy_obs.get("day_key") or "") != day_key:
+            continue
+
+        ts = record.get("timestamp_ms")
+        if isinstance(ts, int):
+            first_seen_ts = ts if first_seen_ts is None else min(first_seen_ts, ts)
+            last_seen_ts = ts if last_seen_ts is None else max(last_seen_ts, ts)
+
+        life_fp = qualia_obs.get("life_indicator_fingerprint")
+        policy_fp = qualia_obs.get("policy_prior_fingerprint")
+        output_fp = qualia_obs.get("output_control_fingerprint")
+
+        has_life = isinstance(life_fp, str) and bool(life_fp.strip())
+        has_policy = isinstance(policy_fp, str) and bool(policy_fp.strip())
+        has_output = isinstance(output_fp, str) and bool(output_fp.strip())
+
+        if has_life:
+            life_count += 1
+        if has_policy:
+            policy_count += 1
+        if has_output:
+            output_count += 1
+        if has_life and has_policy and has_output:
+            linked_count += 1
+
+    missing_keys: List[str] = []
+    if life_count == 0:
+        missing_keys.append("life_indicator_fingerprint")
+    if policy_count == 0:
+        missing_keys.append("policy_prior_fingerprint")
+    if output_count == 0:
+        missing_keys.append("output_control_fingerprint")
+    if linked_count == 0:
+        missing_keys.append("closed_loop_link")
+
+    return {
+        "closed_loop_trace_ok": len(missing_keys) == 0,
+        "missing_keys": missing_keys,
+        "life_indicator_count": life_count,
+        "policy_prior_count": policy_count,
+        "output_control_count": output_count,
+        "linked_count": linked_count,
+        "first_seen_ts": first_seen_ts,
+        "last_seen_ts": last_seen_ts,
+    }
+
+
+def _iter_memory_reference_for_day(path: Path, day_key: str) -> Iterator[Dict[str, Any]]:
+    if not path.exists():
+        return
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            ts = row.get("ts")
+            if not isinstance(ts, (int, float)):
+                continue
+            utc_day = datetime.fromtimestamp(float(ts), timezone.utc).strftime("%Y-%m-%d")
+            if utc_day == day_key:
+                yield row
+
+
+def _recall_cue_budget_audit(path: Path | None, day_key: str) -> Dict[str, Any]:
+    if path is None:
+        return {
+            "recall_cue_ok": True,
+            "rarity_budget_ok": True,
+            "missing_keys": [],
+            "counts": {
+                "memory_reference_total": 0,
+                "cue_v1_count": 0,
+                "suppressed_count": 0,
+            },
+            "reasons": {},
+        }
+    total = 0
+    cue_v1 = 0
+    suppressed = 0
+    missing_keys: list[str] = []
+    reason_counts: Counter[str] = Counter()
+    for row in _iter_memory_reference_for_day(path, day_key):
+        total += 1
+        mode = row.get("recall_render_mode")
+        if isinstance(mode, str) and mode == "cue_v1":
+            cue_v1 += 1
+        rarity = row.get("rarity_budget")
+        if isinstance(rarity, dict):
+            if bool(rarity.get("suppressed")):
+                suppressed += 1
+            reason = rarity.get("reason")
+            if isinstance(reason, str) and reason:
+                reason_counts[reason] += 1
+            if not isinstance(rarity.get("suppressed"), bool):
+                missing_keys.append("rarity_budget.suppressed")
+        else:
+            missing_keys.append("rarity_budget")
+
+    if total > 0 and cue_v1 == 0:
+        missing_keys.append("recall_render_mode")
+
+    if total == 0:
+        recall_cue_ok = True
+        rarity_budget_ok = True
+    else:
+        recall_cue_ok = cue_v1 > 0
+        rarity_budget_ok = ("rarity_budget" not in missing_keys and "rarity_budget.suppressed" not in missing_keys)
+
+    return {
+        "recall_cue_ok": recall_cue_ok,
+        "rarity_budget_ok": rarity_budget_ok,
+        "missing_keys": sorted(set(missing_keys)),
+        "counts": {
+            "memory_reference_total": total,
+            "cue_v1_count": cue_v1,
+            "suppressed_count": suppressed,
+        },
+        "reasons": dict(reason_counts),
+    }
+
+
+def _repair_coverage(records: List[Dict[str, Any]], day_key: str) -> Dict[str, Any]:
+    total = 0
+    trigger_count = 0
+    progressed_count = 0
+    next_step_count = 0
+    state_counts: Counter[str] = Counter()
+    missing_keys: list[str] = []
+    for row in records:
+        policy_obs = (((row.get("policy") or {}).get("observations") or {}).get("hub") or {})
+        if not isinstance(policy_obs, dict):
+            continue
+        if str(policy_obs.get("day_key") or "") != day_key:
+            continue
+        total += 1
+        before = policy_obs.get("repair_state_before")
+        after = policy_obs.get("repair_state_after")
+        event = policy_obs.get("repair_event")
+        reasons = policy_obs.get("repair_reason_codes")
+        finger = policy_obs.get("repair_fingerprint")
+        if not isinstance(before, str) or not before:
+            missing_keys.append("repair_state_before")
+        if not isinstance(after, str) or not after:
+            missing_keys.append("repair_state_after")
+        if not isinstance(event, str) or not event:
+            missing_keys.append("repair_event")
+        if not isinstance(reasons, list):
+            missing_keys.append("repair_reason_codes")
+        if not isinstance(finger, str) or not finger:
+            missing_keys.append("repair_fingerprint")
+        if isinstance(event, str) and event == "TRIGGER":
+            trigger_count += 1
+        if isinstance(before, str) and isinstance(after, str) and before != after:
+            progressed_count += 1
+        if isinstance(after, str):
+            state_counts[after] += 1
+            if after == "NEXT_STEP":
+                next_step_count += 1
+    stuck_suspected = False
+    if trigger_count > 0 and progressed_count == 0 and next_step_count == 0:
+        stuck_suspected = True
+    return {
+        "repair_events_total": total,
+        "trigger_count": trigger_count,
+        "state_counts": dict(state_counts),
+        "progressed_count": progressed_count,
+        "next_step_count": next_step_count,
+        "stuck_suspected": stuck_suspected,
+        "missing_keys": sorted(set(missing_keys)),
+    }
+
 def generate_audit(cfg: NightlyAuditConfig) -> Path:
     day_dir = cfg.trace_root / cfg.date_yyyy_mm_dd
     if not day_dir.exists():
@@ -553,6 +759,42 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
         reject_rate,
         thresholds,
     )
+    closed_loop = _closed_loop_trace_coverage(records, cfg.date_yyyy_mm_dd)
+    if not closed_loop.get("closed_loop_trace_ok", False):
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason=f"closed-loop trace coverage missing keys: {closed_loop.get('missing_keys')}",
+        )
+    recall_cue_budget = _recall_cue_budget_audit(
+        cfg.memory_reference_log_path,
+        cfg.date_yyyy_mm_dd,
+    )
+    if not recall_cue_budget.get("recall_cue_ok", True):
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason=f"recall cue coverage missing keys: {recall_cue_budget.get('missing_keys')}",
+        )
+    if not recall_cue_budget.get("rarity_budget_ok", True):
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason=f"rarity budget metadata missing keys: {recall_cue_budget.get('missing_keys')}",
+        )
+    repair_coverage = _repair_coverage(records, cfg.date_yyyy_mm_dd)
+    if repair_coverage.get("missing_keys"):
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason=f"repair coverage missing keys: {repair_coverage.get('missing_keys')}",
+        )
+    if repair_coverage.get("stuck_suspected"):
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason="repair trigger detected without progression",
+        )
 
     qualia_gate_stats = _qualia_gate_boundary_stats(records)
     presence_stats = _qualia_gate_presence_stats(records)
@@ -590,6 +832,9 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
         },
         "evidence": evidence,
         "health": health,
+        "closed_loop_trace": closed_loop,
+        "recall_cue_budget": recall_cue_budget,
+        "repair_coverage": repair_coverage,
         "ru_v0_summary": _ru_v0_summary(records),
         "qualia_gate_stats": qualia_gate_stats,
     }

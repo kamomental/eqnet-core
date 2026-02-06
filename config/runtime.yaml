@@ -172,11 +172,17 @@ memory_reference:
   fidelity_low: 0.45
   anchor_high: 0.50
   max_reply_chars: 140
+  cue_label_chars: 24
+  rarity_budget_day: 3
+  rarity_budget_week: 12
   cooldown_s: 30
   log_path: "logs/memory_ref.jsonl"
   per_culture:
     ja-jp:
       max_reply_chars: 120
+      cue_label_chars: 20
+      rarity_budget_day: 3
+      rarity_budget_week: 12
       cooldown_s: 30
 observer:
   mode: "llm_first"

@@ -83,6 +83,11 @@ from datetime import datetime
 from emot_terrain_lab.terrain.system import EmotionalMemorySystem
 from emot_terrain_lab.memory.reference_helper import handle_memory_reference
 from emot_terrain_lab.memory.memory_hint import render_memory_hint
+from emot_terrain_lab.memory.recall_policy import (
+    RarityBudgetState,
+    apply_rarity_budget,
+    render_recall_cue,
+)
 from emot_terrain_lab.perception.text_affect import quick_text_affect_v2
 
 try:
@@ -565,6 +570,7 @@ class EmotionalHubRuntime:
         }
         self._pending_text_affect: Optional[AffectSample] = None
         self._memory_ref_cooldown_until = 0.0
+        self._recall_budget_state = RarityBudgetState()
         if self._memory_ref_cfg and hasattr(self._memory_ref_cfg, "log_path"):
             try:
                 self._memory_ref_log_path = Path(self._memory_ref_cfg.log_path)
@@ -2442,6 +2448,28 @@ class EmotionalHubRuntime:
                 k=int(getattr(cfg, "k", 3)),
                 max_reply_chars=max_reply_chars,
             )
+            if result is not None:
+                cue_label_chars = int(
+                    overrides.get("cue_label_chars", getattr(cfg, "cue_label_chars", 24))
+                )
+                result = render_recall_cue(
+                    result,
+                    culture=culture_tag,
+                    max_reply_chars=max_reply_chars,
+                    cue_label_chars=cue_label_chars,
+                )
+                daily_limit = int(
+                    overrides.get("rarity_budget_day", getattr(cfg, "rarity_budget_day", 3))
+                )
+                weekly_limit = int(
+                    overrides.get("rarity_budget_week", getattr(cfg, "rarity_budget_week", 12))
+                )
+                result = apply_rarity_budget(
+                    result,
+                    state=self._recall_budget_state,
+                    daily_limit=daily_limit,
+                    weekly_limit=weekly_limit,
+                )
         self._last_memory_hint_meta = None
         hint_payload: Dict[str, Any] = result or {"reply": None, "fidelity": 0.0}
         if hint_cfg and getattr(hint_cfg, "enable", False):
@@ -3009,7 +3037,21 @@ class EmotionalHubRuntime:
             "reply_len": len((result.get("reply") or "")),
             "anchor": (result.get("meta") or {}).get("anchor"),
             "disclaimer_source": (result.get("meta") or {}).get("disclaimer_source"),
+            "recall_render_mode": (result.get("meta") or {}).get("recall_render_mode"),
+            "cue_label": (result.get("meta") or {}).get("cue_label"),
         }
+        rarity = (result.get("meta") or {}).get("rarity_budget") or {}
+        if isinstance(rarity, dict):
+            record["rarity_budget"] = {
+                "day_key": rarity.get("day_key"),
+                "week_key": rarity.get("week_key"),
+                "daily_limit": rarity.get("daily_limit"),
+                "weekly_limit": rarity.get("weekly_limit"),
+                "day_used": rarity.get("day_used"),
+                "week_used": rarity.get("week_used"),
+                "suppressed": rarity.get("suppressed"),
+                "reason": rarity.get("reason"),
+            }
         candidate = result.get("candidate") or {}
         if candidate:
             record["node"] = candidate.get("node")

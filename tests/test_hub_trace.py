@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -141,6 +141,23 @@ def test_log_moment_emits_trace_when_flag_enabled(
     policy_obs = data.get("policy", {}).get("observations", {}).get("hub", {})
     assert policy_obs.get("talk_mode") == "talk"
     assert policy_obs.get("idempotency_status") == "done"
+    assert isinstance(policy_obs.get("day_key"), str)
+    assert policy_obs.get("day_key")
+    assert isinstance(policy_obs.get("episode_id"), str)
+    assert policy_obs.get("episode_id")
+    assert str(policy_obs.get("episode_id")).startswith("ep-")
+    assert isinstance(policy_obs.get("control_applied_at"), str)
+    assert policy_obs.get("control_applied_at") == "response_gate_v1"
+    assert policy_obs.get("repair_state_before") == "RECOGNIZE"
+    assert policy_obs.get("repair_state_after") == "RECOGNIZE"
+    assert policy_obs.get("repair_event") == "NONE"
+    assert isinstance(policy_obs.get("repair_reason_codes"), list)
+    assert isinstance(policy_obs.get("repair_fingerprint"), str)
+    assert policy_obs.get("repair_fingerprint")
+    assert isinstance(qualia_obs.get("life_indicator_fingerprint"), (str, type(None)))
+    assert isinstance(qualia_obs.get("policy_prior_fingerprint"), (str, type(None)))
+    assert isinstance(qualia_obs.get("output_control_fingerprint"), str)
+    assert qualia_obs.get("output_control_fingerprint")
 
 
 def test_runtime_delegate_resolution_prefers_external_via_env(
@@ -211,6 +228,165 @@ def test_log_moment_does_not_fail_if_trace_emit_raises(
 
     monkeypatch.setattr("eqnet.hub.api.run_hub_turn", boom)
     hub.log_moment(_dummy_moment(), "still safe")
+
+
+def test_log_moment_applies_policy_prior_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    hub = _hub(tmp_path, monkeypatch)
+    calls: list[dict[str, Any]] = []
+
+    class _StubControl:
+        control_applied_at = "response_gate_v1"
+
+        def to_fingerprint_payload(self) -> dict[str, Any]:
+            return {
+                "response_style_mode": "neutral",
+                "recall_budget_override": 3,
+                "safety_strictness": 0.5,
+                "temperature_cap": 0.5,
+                "control_applied_at": "response_gate_v1",
+            }
+
+    def _spy_apply(policy_prior, *, day_key, episode_id, repair_snapshot=None):  # noqa: ANN001
+        calls.append(
+            {
+                "day_key": day_key,
+                "episode_id": episode_id,
+                "pp": policy_prior,
+                "repair_snapshot": repair_snapshot,
+            }
+        )
+        return _StubControl()
+
+    monkeypatch.setattr("eqnet.hub.api.apply_policy_prior", _spy_apply)
+    moment = _dummy_moment()
+    hub.log_moment(moment, "once")
+    assert len(calls) == 1
+    assert calls[0]["repair_snapshot"] is not None
+
+
+def test_log_moment_explicit_repair_trigger_updates_trace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    hub = _hub(tmp_path, monkeypatch)
+    moment = _dummy_moment()
+    moment.repair_trigger = True
+    moment.reason_codes = ["user_distress"]
+    hub.log_moment(moment, "repair me")
+
+    day_dir = trace_root / _day_key_from_dt(moment.timestamp)
+    files = list(day_dir.glob("hub-*.jsonl"))
+    assert files
+    data = json.loads(files[0].read_text(encoding="utf-8").strip())
+    obs = data.get("policy", {}).get("observations", {}).get("hub", {})
+    assert obs.get("repair_event") == "TRIGGER"
+    assert obs.get("repair_state_before") == "RECOGNIZE"
+    assert obs.get("repair_state_after") == "RECOGNIZE"
+    assert obs.get("output_control_repair_state") == "RECOGNIZE"
+    assert "USER_DISTRESS" in (obs.get("repair_reason_codes") or [])
+    assert isinstance(obs.get("repair_fingerprint"), str)
+    assert obs.get("repair_fingerprint")
+
+
+def test_log_moment_without_repair_trigger_keeps_repair_noop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    hub = _hub(tmp_path, monkeypatch)
+    moment = _dummy_moment()
+    hub.log_moment(moment, "normal")
+
+    day_dir = trace_root / _day_key_from_dt(moment.timestamp)
+    files = list(day_dir.glob("hub-*.jsonl"))
+    assert files
+    data = json.loads(files[0].read_text(encoding="utf-8").strip())
+    obs = data.get("policy", {}).get("observations", {}).get("hub", {})
+    assert obs.get("repair_event") == "NONE"
+    assert obs.get("repair_state_before") == "RECOGNIZE"
+    assert obs.get("repair_state_after") == "RECOGNIZE"
+    assert obs.get("output_control_repair_state") == "RECOGNIZE"
+
+
+def test_log_moment_explicit_repair_event_sequence_updates_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    hub = _hub(tmp_path, monkeypatch)
+    base = _dummy_moment()
+
+    seq = [
+        ("TRIGGER", ["USER_DISTRESS"]),
+        ("ACK", []),
+        ("CALM", []),
+        ("COMMIT", []),
+    ]
+    for idx, (event_name, reasons) in enumerate(seq):
+        moment = _dummy_moment(base.timestamp)
+        moment.turn_id = base.turn_id + idx
+        moment.repair_event = event_name
+        moment.reason_codes = reasons
+        hub.log_moment(moment, f"repair-{event_name.lower()}")
+
+    day_dir = trace_root / _day_key_from_dt(base.timestamp)
+    files = list(day_dir.glob("hub-*.jsonl"))
+    assert files
+    rows = [
+        json.loads(line)
+        for line in files[0].read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    policy_rows = [r.get("policy", {}).get("observations", {}).get("hub", {}) for r in rows]
+    # Check final transition reached NEXT_STEP.
+    last = policy_rows[-1]
+    assert last.get("repair_event") == "COMMIT"
+    assert last.get("repair_state_after") == "NEXT_STEP"
+    assert last.get("output_control_repair_state") == "NEXT_STEP"
+
+
+def test_day_key_consistency_across_hub_operations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    monkeypatch.setenv("EQNET_TRACE_V1", "1")
+    hub = _hub(tmp_path, monkeypatch)
+    fixed_moment = _dummy_moment(datetime(2025, 12, 14, 9, 0, 0, tzinfo=timezone.utc))
+
+    hub.log_moment(fixed_moment, "key alignment")
+    hub.run_nightly(date(2025, 12, 14))
+    hub.query_state(as_of="20251214")
+
+    day_key = "2025-12-14"
+    day_dir = trace_root / day_key
+    files = list(day_dir.glob("hub-*.jsonl"))
+    assert files
+    records = [
+        json.loads(line)
+        for line in files[0].read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    observed = []
+    for record in records:
+        obs = record.get("policy", {}).get("observations", {}).get("hub", {})
+        op = obs.get("operation")
+        if op in {"run_nightly", "query_state"}:
+            observed.append((op, obs.get("day_key")))
+        if op is None and obs.get("day_key"):
+            observed.append(("log_moment", obs.get("day_key")))
+    assert observed
+    assert all(day == day_key for _, day in observed)
 
 
 def test_log_moment_shadow_delegation_emits_delegate_observation(
@@ -399,11 +575,24 @@ def test_query_state_emits_trace_contract_keys(
     obs = data.get("policy", {}).get("observations", {}).get("hub", {})
     assert obs.get("as_of") == as_of_key
     assert obs.get("resolved_day_key") == as_of_key
+    assert obs.get("day_key") == as_of_key
+    assert obs.get("episode_id") == "query_state"
+    assert obs.get("control_applied_at") == "query_state"
+    assert obs.get("repair_state_before") == "RECOGNIZE"
+    assert obs.get("repair_state_after") == "RECOGNIZE"
+    assert obs.get("repair_event") == "NONE"
+    assert isinstance(obs.get("repair_reason_codes"), list)
+    assert isinstance(obs.get("repair_fingerprint"), str)
+    assert obs.get("repair_fingerprint")
     assert isinstance(obs.get("delegation_mode"), str)
     assert isinstance(obs.get("delegate_status"), str)
     qobs = data.get("qualia", {}).get("observations", {}).get("hub", {})
     assert isinstance(qobs.get("state_fingerprint"), str)
     assert qobs.get("state_fingerprint")
+    assert isinstance(qobs.get("life_indicator_fingerprint"), (str, type(None)))
+    assert isinstance(qobs.get("policy_prior_fingerprint"), (str, type(None)))
+    assert isinstance(qobs.get("output_control_fingerprint"), str)
+    assert qobs.get("output_control_fingerprint")
 
 
 def test_query_state_shadow_delegation_mismatch_observed(

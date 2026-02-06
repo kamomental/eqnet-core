@@ -18,7 +18,20 @@ from eqnet.runtime.state import QualiaState
 from eqnet.runtime.turn import CoreState, SafetyConfig
 from eqnet.orchestrators.hub_adapter import run_hub_turn
 from eqnet.hub.moment_entry import to_moment_entry
+from eqnet.hub.output_control import apply_policy_prior
+from eqnet.hub.repair_fsm import (
+    RepairEvent,
+    RepairSnapshot,
+    apply_repair_event,
+    repair_fingerprint,
+)
 from eqnet.hub.text_policy import apply_text_policy
+from eqnet.hub.trace_keys import (
+    get_or_create_episode_id,
+    resolve_day_key_from_as_of,
+    resolve_day_key_from_date,
+    resolve_day_key_from_moment,
+)
 from eqnet.hub.idempotency import IdempotencyStore, NoopIdempotencyStore
 from eqnet.hub.runtime_contract import HubRuntime
 from eqnet.runtime.external_runtime import (
@@ -55,6 +68,7 @@ class EQNetConfig:
     state_dir: Path = Path("state")
     trace_dir: Path = Path("telemetry/trace_v1")
     audit_dir: Path = Path("telemetry/audit")
+    memory_reference_log_path: Path | None = None
     audit_thresholds: Dict[str, Any] | None = None
 
 
@@ -79,6 +93,7 @@ class EQNetHub:
         self._latest_qualia_state: Optional[QualiaState] = None
         self._latest_life_indicator: Optional[LifeIndicator] = None
         self._latest_policy_prior: Optional[PolicyPrior] = None
+        self._repair_snapshot: RepairSnapshot = RepairSnapshot.initial()
         self._trace_safety = SafetyConfig()
         self._runtime_delegate = self._resolve_runtime_delegate(runtime_delegate)
         self._idempotency_store = idempotency_store or NoopIdempotencyStore()
@@ -112,6 +127,14 @@ class EQNetHub:
         delegate_name = self._delegate_name()
         reserved = self._idempotency_store.check_and_reserve(idem_key)
         moment_entry = self._to_moment_entry(raw_event, raw_text)
+        repair_before = self._repair_snapshot
+        repair_event, repair_reason_codes = self._detect_repair_trigger(raw_event, raw_text)
+        repair_after = self._apply_repair_event(
+            repair_before,
+            event=repair_event,
+            reason_codes=repair_reason_codes,
+        )
+        self._repair_snapshot = repair_after
         input_fingerprint = self._fingerprint_moment_input(raw_event, raw_text)
         if not reserved:
             self._emit_trace_v1(
@@ -126,6 +149,11 @@ class EQNetHub:
                 mismatch_reason_codes=[],
                 moment_input_fingerprint=input_fingerprint,
                 qualia_state_fingerprint=None,
+                repair_state_before=repair_before.state.value,
+                repair_state_after=repair_after.state.value,
+                repair_event=repair_event.value,
+                repair_reason_codes=list(repair_reason_codes),
+                repair_snapshot_fingerprint=repair_fingerprint(repair_after),
             )
             return
 
@@ -166,6 +194,11 @@ class EQNetHub:
                 mismatch_reason_codes=mismatch_reason_codes,
                 moment_input_fingerprint=input_fingerprint,
                 qualia_state_fingerprint=qualia_state_fingerprint,
+                repair_state_before=repair_before.state.value,
+                repair_state_after=repair_after.state.value,
+                repair_event=repair_event.value,
+                repair_reason_codes=list(repair_reason_codes),
+                repair_snapshot_fingerprint=repair_fingerprint(repair_after),
             )
 
     # ------------------------------------------------------------------
@@ -202,6 +235,7 @@ class EQNetHub:
                 mismatch_reason_codes=[],
                 life_indicator_fingerprint=None,
                 policy_prior_fingerprint=None,
+                output_control_fingerprint=None,
                 audit_fingerprint=None,
             )
             return
@@ -211,6 +245,7 @@ class EQNetHub:
         mismatch_reason_codes: list[str] = []
         life_indicator_fingerprint: Optional[str] = None
         policy_prior_fingerprint: Optional[str] = None
+        output_control_fingerprint: Optional[str] = None
         audit_fingerprint: Optional[str] = None
         try:
             day = date_obj
@@ -222,6 +257,7 @@ class EQNetHub:
             current = self._snapshot_nightly_fingerprints(day)
             life_indicator_fingerprint = current["life_indicator_fingerprint"]
             policy_prior_fingerprint = current["policy_prior_fingerprint"]
+            output_control_fingerprint = current["output_control_fingerprint"]
             audit_fingerprint = current["audit_fingerprint"]
 
             idem_status = "done"
@@ -230,6 +266,7 @@ class EQNetHub:
                     "day": date_obj.isoformat(),
                     "life_indicator": life_indicator_fingerprint,
                     "policy_prior": policy_prior_fingerprint,
+                    "output_control": output_control_fingerprint,
                     "audit": audit_fingerprint,
                     "delegate_status": delegate_status,
                 }
@@ -252,8 +289,12 @@ class EQNetHub:
                 mismatch_reason_codes=mismatch_reason_codes,
                 life_indicator_fingerprint=life_indicator_fingerprint,
                 policy_prior_fingerprint=policy_prior_fingerprint,
+                output_control_fingerprint=output_control_fingerprint,
                 audit_fingerprint=audit_fingerprint,
             )
+            # Rebuild nightly audit after hub trace emission so coverage checks
+            # observe the final closed-loop trace set for the day.
+            self._run_nightly_audit(date_obj)
 
     # ------------------------------------------------------------------
     # 3) query_state: UI/Persona が "今" と "今日" を見る窓
@@ -264,7 +305,7 @@ class EQNetHub:
         *,
         as_of: Optional[str] = None,
     ) -> dict:
-        normalized_as_of = _normalize_day_key(as_of) or as_of
+        normalized_as_of = resolve_day_key_from_as_of(as_of) or as_of
         mode = self._delegation_mode()
         mismatch_policy = self._mismatch_policy()
         delegate_name = self._delegate_name()
@@ -279,11 +320,11 @@ class EQNetHub:
         raw_delegate_state = self._runtime_delegate.query_state(as_of=normalized_as_of)
         result_state = dict(raw_delegate_state or {})
         delegate_status = "ok"
-        delegate_resolved = _normalize_day_key(result_state.get("resolved_day_key"))
+        delegate_resolved = resolve_day_key_from_as_of(result_state.get("resolved_day_key"))
         if delegate_resolved is not None:
             resolved_day_key = delegate_resolved
         elif normalized_as_of is not None:
-            resolved_day_key = _normalize_day_key(normalized_as_of)
+            resolved_day_key = resolve_day_key_from_as_of(normalized_as_of)
             mismatch_reason_codes.append("missing_resolved_day_key")
         else:
             mismatch_reason_codes.append("missing_resolved_day_key")
@@ -292,7 +333,7 @@ class EQNetHub:
         if (
             normalized_as_of is not None
             and resolved_day_key is not None
-            and _normalize_day_key(normalized_as_of) != resolved_day_key
+            and resolve_day_key_from_as_of(normalized_as_of) != resolved_day_key
         ):
             mismatch_reason_codes.append("resolved_day_key_diff")
 
@@ -307,6 +348,7 @@ class EQNetHub:
             _normalize_for_hash(result_state)
         )
         delegate_state_fingerprint = result_fingerprint
+        closed_loop_fp = self._snapshot_closed_loop_fingerprints()
         self._emit_query_state_trace_v1(
             as_of=normalized_as_of,
             resolved_day_key=str(result_state.get("resolved_day_key") or resolved_day_key),
@@ -318,6 +360,9 @@ class EQNetHub:
             state_fingerprint=result_fingerprint,
             delegate_state_fingerprint=delegate_state_fingerprint,
             local_state_fingerprint=None,
+            life_indicator_fingerprint=closed_loop_fp["life_indicator_fingerprint"],
+            policy_prior_fingerprint=closed_loop_fp["policy_prior_fingerprint"],
+            output_control_fingerprint=closed_loop_fp["output_control_fingerprint"],
         )
         if delegate_status == "mismatch" and mismatch_policy == "fail":
             raise RuntimeError("query_state shadow mismatch detected under fail policy")
@@ -409,6 +454,7 @@ class EQNetHub:
             date_yyyy_mm_dd=day,
             boundary_threshold=self._trace_safety.boundary_threshold,
             health_thresholds=thresholds,
+            memory_reference_log_path=getattr(self.config, "memory_reference_log_path", None),
         )
         try:
             generate_audit(cfg)
@@ -453,6 +499,67 @@ class EQNetHub:
                 meta_awareness_score=float(initial_li.get("meta_awareness", 0.5)),
             ).clamp()
 
+    def _detect_repair_trigger(self, raw_event: Any, raw_text: str) -> tuple[RepairEvent, list[str]]:
+        _ = raw_text  # reserved for future heuristic expansion
+        trigger = False
+        event_value: Any = None
+        if isinstance(raw_event, Mapping):
+            trigger = bool(raw_event.get("repair_trigger"))
+            reason_value = raw_event.get("reason_codes")
+            event_value = raw_event.get("repair_event")
+        else:
+            trigger = bool(getattr(raw_event, "repair_trigger", False))
+            reason_value = getattr(raw_event, "reason_codes", None)
+            event_value = getattr(raw_event, "repair_event", None)
+        event = self._normalize_repair_event(event_value)
+        if event is RepairEvent.NONE and trigger:
+            event = RepairEvent.TRIGGER
+        if event is RepairEvent.NONE:
+            return RepairEvent.NONE, []
+        reason_codes = self._normalize_repair_reason_codes(reason_value)
+        if event is RepairEvent.TRIGGER and not reason_codes:
+            reason_codes = ["REPAIR_TRIGGERED"]
+        return event, reason_codes
+
+    def _normalize_repair_event(self, value: Any) -> RepairEvent:
+        if value is None:
+            return RepairEvent.NONE
+        text = str(value).strip().upper()
+        try:
+            return RepairEvent(text)
+        except ValueError:
+            return RepairEvent.NONE
+
+    def _normalize_repair_reason_codes(self, value: Any) -> list[str]:
+        if not isinstance(value, (list, tuple)):
+            return []
+        normalized: list[str] = []
+        for item in value:
+            text = str(item).strip().upper()
+            if not text:
+                continue
+            code = "".join(ch if ("A" <= ch <= "Z" or "0" <= ch <= "9" or ch == "_") else "_" for ch in text)
+            code = code.strip("_")
+            if not code:
+                continue
+            normalized.append(code)
+        # Keep order while deduplicating.
+        return list(dict.fromkeys(normalized))
+
+    def _apply_repair_event(
+        self,
+        snapshot: RepairSnapshot,
+        *,
+        event: RepairEvent,
+        reason_codes: list[str],
+    ) -> RepairSnapshot:
+        return apply_repair_event(
+            snapshot,
+            event=event,
+            reason_codes=reason_codes,
+            now_ts=datetime.now(timezone.utc).timestamp(),
+        )
+
 
     def _emit_trace_v1(
         self,
@@ -469,6 +576,11 @@ class EQNetHub:
         mismatch_reason_codes: list[str] | None = None,
         moment_input_fingerprint: Optional[str] = None,
         qualia_state_fingerprint: Optional[str] = None,
+        repair_state_before: Optional[str] = None,
+        repair_state_after: Optional[str] = None,
+        repair_event: Optional[str] = None,
+        repair_reason_codes: list[str] | None = None,
+        repair_snapshot_fingerprint: Optional[str] = None,
     ) -> None:
         if not _env_truthy(TRACE_FLAG_ENV):
             return
@@ -492,6 +604,16 @@ class EQNetHub:
                 trace_obs = thin_entry.setdefault("trace_observations", {}).setdefault("qualia", {})
                 trace_obs["user_text"] = {"policy": policy, **text_obs}
             policy_obs = thin_entry.setdefault("trace_observations", {}).setdefault("policy", {})
+            day_key = resolve_day_key_from_moment(_moment_timestamp(moment_entry))
+            episode_id = get_or_create_episode_id(moment_entry)
+            output_control = apply_policy_prior(
+                self.latest_policy_prior(),
+                day_key=day_key,
+                episode_id=episode_id,
+                repair_snapshot=self._repair_snapshot,
+            )
+            output_control_payload = output_control.to_fingerprint_payload()
+            output_control_fingerprint = self._fingerprint_json_payload(output_control_payload)
             policy_obs.update(
                 {
                     "delegate_to": delegate_to,
@@ -500,13 +622,26 @@ class EQNetHub:
                     "idempotency_status": idempotency_status,
                     "mismatch_policy": mismatch_policy,
                     "mismatch_reason_codes": list(mismatch_reason_codes or []),
+                    "day_key": day_key,
+                    "episode_id": episode_id,
+                    "control_applied_at": output_control.control_applied_at,
+                    "output_control_repair_state": output_control.repair_state,
+                    "repair_state_before": repair_state_before or self._repair_snapshot.state.value,
+                    "repair_state_after": repair_state_after or self._repair_snapshot.state.value,
+                    "repair_event": repair_event or RepairEvent.NONE.value,
+                    "repair_reason_codes": list(repair_reason_codes or self._repair_snapshot.reason_codes),
+                    "repair_fingerprint": repair_snapshot_fingerprint or repair_fingerprint(self._repair_snapshot),
                 }
             )
+            closed_loop_fp = self._snapshot_closed_loop_fingerprints()
             qualia_obs = thin_entry.setdefault("trace_observations", {}).setdefault("qualia", {})
             qualia_obs.update(
                 {
                     "moment_input_fingerprint": moment_input_fingerprint,
                     "qualia_state_fingerprint": qualia_state_fingerprint,
+                    "life_indicator_fingerprint": closed_loop_fp["life_indicator_fingerprint"],
+                    "policy_prior_fingerprint": closed_loop_fp["policy_prior_fingerprint"],
+                    "output_control_fingerprint": output_control_fingerprint,
                 }
             )
 
@@ -679,6 +814,16 @@ class EQNetHub:
         return f"run_nightly:{digest[:24]}"
 
     def _snapshot_nightly_fingerprints(self, day: date) -> dict[str, Optional[str]]:
+        closed_loop = self._snapshot_closed_loop_fingerprints()
+        audit_fingerprint = self._load_audit_fingerprint(day)
+        return {
+            "life_indicator_fingerprint": closed_loop["life_indicator_fingerprint"],
+            "policy_prior_fingerprint": closed_loop["policy_prior_fingerprint"],
+            "output_control_fingerprint": closed_loop["output_control_fingerprint"],
+            "audit_fingerprint": audit_fingerprint,
+        }
+
+    def _snapshot_closed_loop_fingerprints(self) -> dict[str, Optional[str]]:
         life_indicator_fingerprint = None
         if self._latest_life_indicator is not None:
             life_indicator_fingerprint = self._fingerprint_json_payload(
@@ -693,11 +838,21 @@ class EQNetHub:
             policy_prior_fingerprint = self._fingerprint_json_payload(
                 _normalize_for_hash(self._latest_policy_prior.__dict__)
             )
-        audit_fingerprint = self._load_audit_fingerprint(day)
+        output_control_payload = {
+            "policy_prior": _normalize_for_hash(
+                self._latest_policy_prior.__dict__ if self._latest_policy_prior is not None else {}
+            ),
+            "trace_safety": {
+                "boundary_threshold": getattr(self._trace_safety, "boundary_threshold", None),
+                "text_policy": getattr(self._trace_safety, "text_policy", None),
+                "text_truncate_chars": getattr(self._trace_safety, "text_truncate_chars", None),
+            },
+        }
+        output_control_fingerprint = self._fingerprint_json_payload(output_control_payload)
         return {
             "life_indicator_fingerprint": life_indicator_fingerprint,
             "policy_prior_fingerprint": policy_prior_fingerprint,
-            "audit_fingerprint": audit_fingerprint,
+            "output_control_fingerprint": output_control_fingerprint,
         }
 
     def _fingerprint_json_payload(self, payload: Mapping[str, Any]) -> str:
@@ -728,6 +883,7 @@ class EQNetHub:
         mismatch_reason_codes: list[str],
         life_indicator_fingerprint: Optional[str],
         policy_prior_fingerprint: Optional[str],
+        output_control_fingerprint: Optional[str],
         audit_fingerprint: Optional[str],
     ) -> None:
         if not _env_truthy(TRACE_FLAG_ENV):
@@ -761,6 +917,14 @@ class EQNetHub:
                     "hub": {
                         "operation": "run_nightly",
                         "day": date_obj.isoformat(),
+                        "day_key": resolve_day_key_from_date(date_obj),
+                        "episode_id": "nightly",
+                        "control_applied_at": "nightly",
+                        "repair_state_before": self._repair_snapshot.state.value,
+                        "repair_state_after": self._repair_snapshot.state.value,
+                        "repair_event": RepairEvent.NONE.value,
+                        "repair_reason_codes": list(self._repair_snapshot.reason_codes),
+                        "repair_fingerprint": repair_fingerprint(self._repair_snapshot),
                         "delegation_mode": delegation_mode,
                         "delegate_to": delegate_to,
                         "delegate_status": delegate_status,
@@ -775,6 +939,7 @@ class EQNetHub:
                     "hub": {
                         "life_indicator_fingerprint": life_indicator_fingerprint,
                         "policy_prior_fingerprint": policy_prior_fingerprint,
+                        "output_control_fingerprint": output_control_fingerprint,
                         "audit_fingerprint": audit_fingerprint,
                     }
                 }
@@ -796,10 +961,13 @@ class EQNetHub:
         state_fingerprint: str,
         delegate_state_fingerprint: Optional[str],
         local_state_fingerprint: Optional[str],
+        life_indicator_fingerprint: Optional[str],
+        policy_prior_fingerprint: Optional[str],
+        output_control_fingerprint: Optional[str],
     ) -> None:
         if not _env_truthy(TRACE_FLAG_ENV):
             return
-        normalized = _normalize_day_key(resolved_day_key)
+        normalized = resolve_day_key_from_as_of(resolved_day_key)
         if normalized is not None:
             stamp = datetime.strptime(normalized, "%Y-%m-%d").replace(
                 tzinfo=timezone.utc,
@@ -835,6 +1003,14 @@ class EQNetHub:
                         "operation": "query_state",
                         "as_of": as_of,
                         "resolved_day_key": resolved_day_key,
+                        "day_key": resolve_day_key_from_as_of(resolved_day_key) or resolved_day_key,
+                        "episode_id": "query_state",
+                        "control_applied_at": "query_state",
+                        "repair_state_before": self._repair_snapshot.state.value,
+                        "repair_state_after": self._repair_snapshot.state.value,
+                        "repair_event": RepairEvent.NONE.value,
+                        "repair_reason_codes": list(self._repair_snapshot.reason_codes),
+                        "repair_fingerprint": repair_fingerprint(self._repair_snapshot),
                         "delegation_mode": delegation_mode,
                         "configured_delegation_mode": delegation_mode,
                         "delegate_to": delegate_to,
@@ -850,6 +1026,9 @@ class EQNetHub:
                         "state_fingerprint": state_fingerprint,
                         "delegate_state_fingerprint": delegate_state_fingerprint,
                         "local_state_fingerprint": local_state_fingerprint,
+                        "life_indicator_fingerprint": life_indicator_fingerprint,
+                        "policy_prior_fingerprint": policy_prior_fingerprint,
+                        "output_control_fingerprint": output_control_fingerprint,
                     }
                 }
             },
@@ -865,18 +1044,7 @@ def _env_truthy(name: str) -> bool:
 
 
 def _normalize_day_key(value: Any) -> Optional[str]:
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    for fmt in ("%Y-%m-%d", "%Y%m%d"):
-        try:
-            parsed = datetime.strptime(text, fmt)
-            return parsed.strftime("%Y-%m-%d")
-        except ValueError:
-            continue
-    return None
+    return resolve_day_key_from_as_of(value)
 
 
 def _normalize_for_hash(value: Any) -> Any:

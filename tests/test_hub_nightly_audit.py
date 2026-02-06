@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -76,6 +76,108 @@ def test_run_nightly_audit_writes_file(tmp_path):
     assert isinstance(ru["missing_required_fields_events"], int)
     assert "ru_v0_events" in ru
     assert isinstance(ru["ru_v0_events"], int)
+    closed = payload.get("closed_loop_trace") or {}
+    assert isinstance(closed.get("closed_loop_trace_ok"), bool)
+    assert isinstance(closed.get("missing_keys"), list)
+    recall = payload.get("recall_cue_budget") or {}
+    assert isinstance(recall.get("recall_cue_ok"), bool)
+    assert isinstance(recall.get("rarity_budget_ok"), bool)
+    assert isinstance(recall.get("counts"), dict)
+    repair = payload.get("repair_coverage") or {}
+    assert isinstance(repair.get("repair_events_total"), int)
+    assert isinstance(repair.get("trigger_count"), int)
+    assert isinstance(repair.get("state_counts"), dict)
+    assert isinstance(repair.get("progressed_count"), int)
+    assert isinstance(repair.get("next_step_count"), int)
+    assert isinstance(repair.get("stuck_suspected"), bool)
+    assert isinstance(repair.get("missing_keys"), list)
+
+
+def test_run_nightly_audit_closed_loop_ok_when_required_fingerprints_exist(tmp_path):
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    sample = {
+        "timestamp_ms": 1000,
+        "turn_id": "turn-1",
+        "scenario_id": "audit-demo",
+        "source_loop": "hub",
+        "policy": {
+            "observations": {
+                "hub": {
+                    "operation": "run_nightly",
+                    "day_key": day,
+                }
+            }
+        },
+        "qualia": {
+            "observations": {
+                "hub": {
+                    "life_indicator_fingerprint": "life-fp",
+                    "policy_prior_fingerprint": "policy-fp",
+                    "output_control_fingerprint": "output-fp",
+                }
+            }
+        },
+    }
+    (day_dir / "hub-1.jsonl").write_text(json.dumps(sample) + "\n", encoding="utf-8")
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    hub._run_nightly_audit(date(2025, 12, 14))
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    closed = payload.get("closed_loop_trace") or {}
+    assert closed.get("closed_loop_trace_ok") is True
+    assert closed.get("missing_keys") == []
+
+
+def test_run_nightly_audit_closed_loop_flags_missing_output_control(tmp_path):
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    sample = {
+        "timestamp_ms": 1000,
+        "turn_id": "turn-1",
+        "scenario_id": "audit-demo",
+        "source_loop": "hub",
+        "policy": {
+            "observations": {
+                "hub": {
+                    "operation": "run_nightly",
+                    "day_key": day,
+                }
+            }
+        },
+        "qualia": {
+            "observations": {
+                "hub": {
+                    "life_indicator_fingerprint": "life-fp",
+                    "policy_prior_fingerprint": "policy-fp",
+                }
+            }
+        },
+    }
+    (day_dir / "hub-1.jsonl").write_text(json.dumps(sample) + "\n", encoding="utf-8")
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    hub._run_nightly_audit(date(2025, 12, 14))
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    closed = payload.get("closed_loop_trace") or {}
+    assert closed.get("closed_loop_trace_ok") is False
+    assert "output_control_fingerprint" in (closed.get("missing_keys") or [])
 
 
 def test_run_nightly_shadow_delegate_writes_trace_observation(tmp_path, monkeypatch):
@@ -114,9 +216,19 @@ def test_run_nightly_shadow_delegate_writes_trace_observation(tmp_path, monkeypa
     assert obs.get("delegation_mode") == "shadow"
     assert obs.get("delegate_status") == "ok"
     assert obs.get("idempotency_status") == "done"
+    assert obs.get("day_key") == "2025-12-14"
+    assert obs.get("episode_id") == "nightly"
+    assert obs.get("control_applied_at") == "nightly"
+    assert obs.get("repair_state_before") == "RECOGNIZE"
+    assert obs.get("repair_state_after") == "RECOGNIZE"
+    assert obs.get("repair_event") == "NONE"
+    assert isinstance(obs.get("repair_reason_codes"), list)
+    assert isinstance(obs.get("repair_fingerprint"), str)
+    assert obs.get("repair_fingerprint")
     qobs = nightly_records[-1]["qualia"]["observations"]["hub"]
     assert "life_indicator_fingerprint" in qobs
     assert "policy_prior_fingerprint" in qobs
+    assert "output_control_fingerprint" in qobs
     assert "audit_fingerprint" in qobs
 
 
@@ -221,3 +333,204 @@ def test_run_nightly_on_mode_does_not_call_builtin_path(tmp_path, monkeypatch):
     assert not hasattr(hub, "_builtin_runtime_delegate")
     hub.run_nightly(date(2025, 12, 14))
     assert delegate.calls
+
+
+def test_run_nightly_audit_recall_cue_budget_ok(tmp_path):
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    trace_sample = {
+        "timestamp_ms": 1,
+        "turn_id": "turn-1",
+        "scenario_id": "audit-demo",
+        "source_loop": "hub",
+        "policy": {"observations": {"hub": {"day_key": day}}},
+        "qualia": {"observations": {"hub": {"output_control_fingerprint": "fp"}}},
+    }
+    (day_dir / "hub-1.jsonl").write_text(json.dumps(trace_sample) + "\n", encoding="utf-8")
+    memory_log = tmp_path / "logs" / "memory_ref.jsonl"
+    memory_log.parent.mkdir(parents=True, exist_ok=True)
+    ts = datetime(2025, 12, 14, 12, 0, tzinfo=timezone.utc).timestamp()
+    memory_sample = {
+        "ts": ts,
+        "recall_render_mode": "cue_v1",
+        "rarity_budget": {
+            "suppressed": False,
+            "reason": "ok",
+        },
+    }
+    memory_log.write_text(json.dumps(memory_sample) + "\n", encoding="utf-8")
+
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+        memory_reference_log_path=memory_log,
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    hub._run_nightly_audit(date(2025, 12, 14))
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    recall = payload.get("recall_cue_budget") or {}
+    assert recall.get("recall_cue_ok") is True
+    assert recall.get("rarity_budget_ok") is True
+    counts = recall.get("counts") or {}
+    assert counts.get("memory_reference_total") == 1
+    assert counts.get("cue_v1_count") == 1
+
+
+def test_run_nightly_audit_recall_cue_budget_missing_fields(tmp_path):
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    trace_sample = {
+        "timestamp_ms": 1,
+        "turn_id": "turn-1",
+        "scenario_id": "audit-demo",
+        "source_loop": "hub",
+        "policy": {"observations": {"hub": {"day_key": day}}},
+        "qualia": {"observations": {"hub": {"output_control_fingerprint": "fp"}}},
+    }
+    (day_dir / "hub-1.jsonl").write_text(json.dumps(trace_sample) + "\n", encoding="utf-8")
+    memory_log = tmp_path / "logs" / "memory_ref.jsonl"
+    memory_log.parent.mkdir(parents=True, exist_ok=True)
+    ts = datetime(2025, 12, 14, 12, 0, tzinfo=timezone.utc).timestamp()
+    memory_sample = {
+        "ts": ts,
+        "mode": "recall",
+    }
+    memory_log.write_text(json.dumps(memory_sample) + "\n", encoding="utf-8")
+
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+        memory_reference_log_path=memory_log,
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    hub._run_nightly_audit(date(2025, 12, 14))
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    recall = payload.get("recall_cue_budget") or {}
+    assert recall.get("recall_cue_ok") is False
+    assert recall.get("rarity_budget_ok") is False
+    missing = recall.get("missing_keys") or []
+    assert "recall_render_mode" in missing
+    assert "rarity_budget" in missing
+
+
+def test_run_nightly_audit_repair_coverage_progressed(tmp_path):
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {
+            "timestamp_ms": 1000,
+            "turn_id": "turn-1",
+            "source_loop": "hub",
+            "policy": {"observations": {"hub": {
+                "day_key": day,
+                "repair_state_before": "RECOGNIZE",
+                "repair_state_after": "RECOGNIZE",
+                "repair_event": "TRIGGER",
+                "repair_reason_codes": ["USER_DISTRESS"],
+                "repair_fingerprint": "fp-1",
+            }}},
+            "qualia": {"observations": {"hub": {"output_control_fingerprint": "q"}}},
+        },
+        {
+            "timestamp_ms": 2000,
+            "turn_id": "turn-2",
+            "source_loop": "hub",
+            "policy": {"observations": {"hub": {
+                "day_key": day,
+                "repair_state_before": "RECOGNIZE",
+                "repair_state_after": "NON_BLAME",
+                "repair_event": "ACK",
+                "repair_reason_codes": [],
+                "repair_fingerprint": "fp-2",
+            }}},
+            "qualia": {"observations": {"hub": {"output_control_fingerprint": "q"}}},
+        },
+        {
+            "timestamp_ms": 3000,
+            "turn_id": "turn-3",
+            "source_loop": "hub",
+            "policy": {"observations": {"hub": {
+                "day_key": day,
+                "repair_state_before": "ACCEPT",
+                "repair_state_after": "NEXT_STEP",
+                "repair_event": "COMMIT",
+                "repair_reason_codes": [],
+                "repair_fingerprint": "fp-3",
+            }}},
+            "qualia": {"observations": {"hub": {"output_control_fingerprint": "q"}}},
+        },
+    ]
+    (day_dir / "hub-1.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n",
+        encoding="utf-8",
+    )
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    hub._run_nightly_audit(date(2025, 12, 14))
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    repair = payload.get("repair_coverage") or {}
+    assert repair.get("trigger_count") >= 1
+    assert repair.get("next_step_count") >= 1
+    assert repair.get("stuck_suspected") is False
+
+
+def test_run_nightly_audit_repair_coverage_stuck_yellow(tmp_path):
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {
+            "timestamp_ms": 1000,
+            "turn_id": "turn-1",
+            "source_loop": "hub",
+            "policy": {"observations": {"hub": {
+                "day_key": day,
+                "repair_state_before": "RECOGNIZE",
+                "repair_state_after": "RECOGNIZE",
+                "repair_event": "TRIGGER",
+                "repair_reason_codes": ["USER_DISTRESS"],
+                "repair_fingerprint": "fp-1",
+            }}},
+            "qualia": {"observations": {"hub": {"output_control_fingerprint": "q"}}},
+        },
+    ]
+    (day_dir / "hub-1.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n",
+        encoding="utf-8",
+    )
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    hub._run_nightly_audit(date(2025, 12, 14))
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    repair = payload.get("repair_coverage") or {}
+    assert repair.get("trigger_count") >= 1
+    assert repair.get("next_step_count") == 0
+    assert repair.get("progressed_count") == 0
+    assert repair.get("stuck_suspected") is True
+    health = payload.get("health") or {}
+    assert health.get("status") in {"YELLOW", "RED"}
