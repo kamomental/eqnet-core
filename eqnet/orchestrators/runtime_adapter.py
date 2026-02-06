@@ -31,6 +31,8 @@ from eqnet.telemetry.trace_writer import append_trace_event, write_trace_jsonl
 META_TEMPLATE = {
     "schema_version": "trace_v1",
     "source_loop": "runtime",
+    "runtime_version": "unknown",
+    "idempotency_key": "",
 }
 
 ENV_ENABLE = os.getenv("EQNET_WORKSPACE_SNAPSHOT_ENABLE", "1").strip().lower() in {"1", "true", "yes", "y", "on"}
@@ -71,6 +73,12 @@ def run_runtime_turn(
     result.trace.seed = percept.seed
     result.trace.timestamp_ms = percept.timestamp_ms
     meta = dict(META_TEMPLATE)
+    runtime_version = payload.get("runtime_version")
+    if isinstance(runtime_version, str) and runtime_version.strip():
+        meta["runtime_version"] = runtime_version.strip()
+    idem_key = payload.get("idempotency_key")
+    if isinstance(idem_key, str):
+        meta["idempotency_key"] = idem_key
     meta["scenario_id"] = percept.scenario_id
     meta["turn_id"] = percept.turn_id
     meta["seed"] = percept.seed

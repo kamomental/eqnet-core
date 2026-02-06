@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -11,7 +12,6 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from eqnet.qualia_model import update_qualia_state
 from eqnet.runtime.life_indicator import LifeIndicator
 from eqnet.runtime.policy import PolicyPrior
 from eqnet.runtime.state import QualiaState
@@ -19,12 +19,17 @@ from eqnet.runtime.turn import CoreState, SafetyConfig
 from eqnet.orchestrators.hub_adapter import run_hub_turn
 from eqnet.hub.moment_entry import to_moment_entry
 from eqnet.hub.text_policy import apply_text_policy
+from eqnet.hub.idempotency import IdempotencyStore, NoopIdempotencyStore
+from eqnet.hub.runtime_contract import HubRuntime
+from eqnet.runtime.external_runtime import (
+    ExternalRuntimeDelegate,
+    ExternalRuntimeDelegateV2,
+)
 from eqnet.telemetry.trace_paths import TracePathConfig, trace_output_path
+from eqnet.telemetry.trace_writer import append_trace_event
 from eqnet.telemetry.nightly_audit import NightlyAuditConfig, generate_audit
 from eqnet.persona.loader import PersonaConfig
-from emot_terrain_lab.hub.qualia_logging import append_qualia_telemetry
 from emot_terrain_lab.ops.nightly_life_indicator import (
-    compute_life_indicator_for_day,
     load_qualia_log,
 )
 
@@ -33,6 +38,13 @@ logger = logging.getLogger(__name__)
 
 TRACE_FLAG_ENV = "EQNET_TRACE_V1"
 TRACE_DIR_ENV = "EQNET_TRACE_V1_DIR"
+RUNTIME_VERSION_ENV = "EQNET_RUNTIME_VERSION"
+RUNTIME_IMPL_ENV = "EQNET_RUNTIME_IMPL"
+EXTERNAL_RUNTIME_VERSION_ENV = "EQNET_EXTERNAL_RUNTIME_VERSION"
+DELEGATION_MODE_ENV = "HUB_DELEGATION_MODE"
+MISMATCH_POLICY_ENV = "HUB_MISMATCH_POLICY"
+DEFAULT_RUNTIME_VERSION = "eqnet_hub_v1"
+TRACE_SCHEMA_VERSION = "trace_v1"
 REDACTED_TEXT = "<redacted>"
 
 
@@ -55,6 +67,9 @@ class EQNetHub:
         *,
         embed_text_fn: Callable[[str], Any],
         persona: Optional[PersonaConfig] = None,
+        runtime_delegate: Optional[HubRuntime] = None,
+        idempotency_store: Optional[IdempotencyStore] = None,
+        runtime_version: Optional[str] = None,
     ) -> None:
         if embed_text_fn is None:
             raise ValueError("embed_text_fn が必要です")
@@ -65,6 +80,14 @@ class EQNetHub:
         self._latest_life_indicator: Optional[LifeIndicator] = None
         self._latest_policy_prior: Optional[PolicyPrior] = None
         self._trace_safety = SafetyConfig()
+        self._runtime_delegate = self._resolve_runtime_delegate(runtime_delegate)
+        self._idempotency_store = idempotency_store or NoopIdempotencyStore()
+        self._runtime_version = (
+            runtime_version
+            or os.getenv(RUNTIME_VERSION_ENV)
+            or getattr(self._runtime_delegate, "runtime_version", None)
+            or DEFAULT_RUNTIME_VERSION
+        )
         if persona is not None:
             self._apply_persona_defaults(persona)
 
@@ -72,81 +95,233 @@ class EQNetHub:
     # 1) log_moment: raw_event/raw_text を心の入口へ流す
     # ------------------------------------------------------------------
 
-    def log_moment(self, raw_event: Any, raw_text: str) -> None:
+    def log_moment(
+        self,
+        raw_event: Any,
+        raw_text: str,
+        *,
+        idempotency_key: Optional[str] = None,
+    ) -> None:
+        idem_key = idempotency_key or self._derive_idempotency_key(
+            op="log_moment",
+            raw_event=raw_event,
+            raw_text=raw_text,
+        )
+        mode = self._delegation_mode()
+        mismatch_policy = self._mismatch_policy()
+        delegate_name = self._delegate_name()
+        reserved = self._idempotency_store.check_and_reserve(idem_key)
         moment_entry = self._to_moment_entry(raw_event, raw_text)
-        text_emb = self.embed_text_fn(raw_text)
-        qstate = update_qualia_state(prev_state=None, moment_entry=moment_entry, text_embedding=text_emb)
-        self._latest_qualia_state = qstate
-        append_qualia_telemetry(self.config.telemetry_dir, qstate)
-        self._append_moment_log(moment_entry)
-        self._emit_trace_v1(moment_entry, raw_text)
+        input_fingerprint = self._fingerprint_moment_input(raw_event, raw_text)
+        if not reserved:
+            self._emit_trace_v1(
+                moment_entry,
+                raw_text,
+                runtime_version=self._runtime_version,
+                idempotency_key=idem_key,
+                idempotency_status="skipped",
+                delegate_to=delegate_name,
+                delegation_mode=mode,
+                mismatch_policy=mismatch_policy,
+                mismatch_reason_codes=[],
+                moment_input_fingerprint=input_fingerprint,
+                qualia_state_fingerprint=None,
+            )
+            return
+
+        idem_status = "reserved"
+        delegate_status = "not_called"
+        mismatch_reason_codes: list[str] = []
+        qualia_state_fingerprint: Optional[str] = None
+        try:
+            self._runtime_delegate.log_moment(
+                raw_event,
+                raw_text,
+                idempotency_key=idem_key,
+            )
+            delegate_status = "ok"
+            qualia_state_fingerprint = self._fingerprint_current_qualia_state()
+
+            idem_status = "done"
+            self._idempotency_store.mark_done(
+                idem_key,
+                self._fingerprint_from_moment(moment_entry),
+            )
+        except Exception as exc:
+            mismatch_reason_codes.append("DELEGATE_EXCEPTION")
+            idem_status = "failed"
+            self._idempotency_store.mark_failed(idem_key, type(exc).__name__)
+            raise
+        finally:
+            self._emit_trace_v1(
+                moment_entry,
+                raw_text,
+                runtime_version=self._runtime_version,
+                idempotency_key=idem_key,
+                idempotency_status=idem_status,
+                delegate_to=delegate_name,
+                delegation_mode=mode,
+                delegate_status=delegate_status,
+                mismatch_policy=mismatch_policy,
+                mismatch_reason_codes=mismatch_reason_codes,
+                moment_input_fingerprint=input_fingerprint,
+                qualia_state_fingerprint=qualia_state_fingerprint,
+            )
 
     # ------------------------------------------------------------------
     # 2) run_nightly: 1 日分の danger/healing/life_indicator を更新
     # ------------------------------------------------------------------
 
-    def run_nightly(self, date_obj: Optional[date] = None) -> None:
+    def run_nightly(
+        self,
+        date_obj: Optional[date] = None,
+        *,
+        idempotency_key: Optional[str] = None,
+    ) -> None:
         date_obj = date_obj or date.today()
         date_str = date_obj.strftime("%Y%m%d")
         qualia_path = self.config.telemetry_dir / f"qualia-{date_str}.jsonl"
         qualia_records = load_qualia_log(qualia_path)
-
-        num_diary_entries = self._count_diary_entries(date_obj)
-        num_self_reflection_entries = self._count_self_reflection_entries(date_obj)
-
-        life_indicator = compute_life_indicator_for_day(
-            qualia_records,
-            num_diary_entries=num_diary_entries,
-            num_self_reflection_entries=num_self_reflection_entries,
+        idem_key = idempotency_key or self._derive_nightly_idempotency_key(
+            date_obj=date_obj,
+            qualia_records=qualia_records,
         )
-        self._latest_life_indicator = life_indicator
-        policy_prior = self._run_danger_healing_and_policy_updates(date_obj, qualia_records, life_indicator)
-        self._latest_policy_prior = policy_prior
+        mode = self._delegation_mode()
+        mismatch_policy = self._mismatch_policy()
+        delegate_name = self._delegate_name()
+        reserved = self._idempotency_store.check_and_reserve(idem_key)
+        if not reserved:
+            self._emit_nightly_trace_v1(
+                date_obj=date_obj,
+                idempotency_key=idem_key,
+                idempotency_status="skipped",
+                delegate_to=delegate_name,
+                delegation_mode=mode,
+                delegate_status="not_called",
+                mismatch_policy=mismatch_policy,
+                mismatch_reason_codes=[],
+                life_indicator_fingerprint=None,
+                policy_prior_fingerprint=None,
+                audit_fingerprint=None,
+            )
+            return
 
-        self._save_life_indicator(date_obj, life_indicator)
-        self._save_policy_prior(policy_prior)
-        self._write_nightly_report(date_obj, life_indicator, policy_prior)
-        self._run_nightly_audit(date_obj)
+        idem_status = "reserved"
+        delegate_status = "not_called"
+        mismatch_reason_codes: list[str] = []
+        life_indicator_fingerprint: Optional[str] = None
+        policy_prior_fingerprint: Optional[str] = None
+        audit_fingerprint: Optional[str] = None
+        try:
+            day = date_obj
+            self._runtime_delegate.run_nightly(
+                day,
+                idempotency_key=idem_key,
+            )
+            delegate_status = "ok"
+            current = self._snapshot_nightly_fingerprints(day)
+            life_indicator_fingerprint = current["life_indicator_fingerprint"]
+            policy_prior_fingerprint = current["policy_prior_fingerprint"]
+            audit_fingerprint = current["audit_fingerprint"]
+
+            idem_status = "done"
+            result_fingerprint = self._fingerprint_json_payload(
+                {
+                    "day": date_obj.isoformat(),
+                    "life_indicator": life_indicator_fingerprint,
+                    "policy_prior": policy_prior_fingerprint,
+                    "audit": audit_fingerprint,
+                    "delegate_status": delegate_status,
+                }
+            )
+            self._idempotency_store.mark_done(idem_key, result_fingerprint)
+        except Exception as exc:
+            mismatch_reason_codes.append("DELEGATE_EXCEPTION")
+            idem_status = "failed"
+            self._idempotency_store.mark_failed(idem_key, type(exc).__name__)
+            raise
+        finally:
+            self._emit_nightly_trace_v1(
+                date_obj=date_obj,
+                idempotency_key=idem_key,
+                idempotency_status=idem_status,
+                delegate_to=delegate_name,
+                delegation_mode=mode,
+                delegate_status=delegate_status,
+                mismatch_policy=mismatch_policy,
+                mismatch_reason_codes=mismatch_reason_codes,
+                life_indicator_fingerprint=life_indicator_fingerprint,
+                policy_prior_fingerprint=policy_prior_fingerprint,
+                audit_fingerprint=audit_fingerprint,
+            )
 
     # ------------------------------------------------------------------
     # 3) query_state: UI/Persona が "今" と "今日" を見る窓
     # ------------------------------------------------------------------
 
-    def query_state(self) -> dict:
-        latest_q = self._latest_qualia_state
-        latest_li = self._latest_life_indicator or self._load_latest_life_indicator()
-        latest_pp = self._latest_policy_prior or self._load_latest_policy_prior()
+    def query_state(
+        self,
+        *,
+        as_of: Optional[str] = None,
+    ) -> dict:
+        normalized_as_of = _normalize_day_key(as_of) or as_of
+        mode = self._delegation_mode()
+        mismatch_policy = self._mismatch_policy()
+        delegate_name = self._delegate_name()
+        delegate_status = "not_called"
+        mismatch_reason_codes: list[str] = []
+        resolved_day_key: Optional[str] = None
+        delegate_state_fingerprint: Optional[str] = None
 
-        state: Dict[str, Any] = {
-            "latest_qualia": None,
-            "life_indicator": None,
-            "policy_prior": None,
-            "danger": self._load_recent_danger_metrics(),
-            "healing": self._load_recent_healing_metrics(),
-        }
-        if self.persona is not None:
-            state["persona"] = {
-                "id": self.persona.persona_id,
-                "display_name": self.persona.display_name,
-                "meta": self.persona.meta,
-            }
-        if latest_q:
-            vec = latest_q.qualia_vec
-            dim = int(vec.shape[0]) if hasattr(vec, "shape") else len(vec)
-            state["latest_qualia"] = {
-                "timestamp": latest_q.timestamp.isoformat(),
-                "dimension": dim,
-                "qualia_vec": vec.tolist(),
-            }
-        if latest_li:
-            state["life_indicator"] = {
-                "identity": latest_li.identity_score,
-                "qualia": latest_li.qualia_score,
-                "meta_awareness": latest_li.meta_awareness_score,
-            }
-        if latest_pp:
-            state["policy_prior"] = latest_pp.__dict__
-        return state
+        if self._runtime_delegate is None:
+            raise RuntimeError("query_state requires runtime_delegate")
+
+        raw_delegate_state = self._runtime_delegate.query_state(as_of=normalized_as_of)
+        result_state = dict(raw_delegate_state or {})
+        delegate_status = "ok"
+        delegate_resolved = _normalize_day_key(result_state.get("resolved_day_key"))
+        if delegate_resolved is not None:
+            resolved_day_key = delegate_resolved
+        elif normalized_as_of is not None:
+            resolved_day_key = _normalize_day_key(normalized_as_of)
+            mismatch_reason_codes.append("missing_resolved_day_key")
+        else:
+            mismatch_reason_codes.append("missing_resolved_day_key")
+            resolved_day_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        if (
+            normalized_as_of is not None
+            and resolved_day_key is not None
+            and _normalize_day_key(normalized_as_of) != resolved_day_key
+        ):
+            mismatch_reason_codes.append("resolved_day_key_diff")
+
+        if mismatch_reason_codes:
+            delegate_status = "mismatch"
+            if mismatch_policy == "fail":
+                mismatch_reason_codes.append("policy_fail")
+
+        result_state["resolved_day_key"] = resolved_day_key
+
+        result_fingerprint = self._fingerprint_json_payload(
+            _normalize_for_hash(result_state)
+        )
+        delegate_state_fingerprint = result_fingerprint
+        self._emit_query_state_trace_v1(
+            as_of=normalized_as_of,
+            resolved_day_key=str(result_state.get("resolved_day_key") or resolved_day_key),
+            delegate_to=delegate_name,
+            delegation_mode=mode,
+            delegate_status=delegate_status,
+            mismatch_policy=mismatch_policy,
+            mismatch_reason_codes=mismatch_reason_codes,
+            state_fingerprint=result_fingerprint,
+            delegate_state_fingerprint=delegate_state_fingerprint,
+            local_state_fingerprint=None,
+        )
+        if delegate_status == "mismatch" and mismatch_policy == "fail":
+            raise RuntimeError("query_state shadow mismatch detected under fail policy")
+        return result_state
 
     # --- internal helpers -------------------------------------------------
 
@@ -279,13 +454,30 @@ class EQNetHub:
             ).clamp()
 
 
-    def _emit_trace_v1(self, moment_entry: Any, raw_text: str) -> None:
+    def _emit_trace_v1(
+        self,
+        moment_entry: Any,
+        raw_text: str,
+        *,
+        runtime_version: str,
+        idempotency_key: str,
+        idempotency_status: str,
+        delegate_to: str,
+        delegation_mode: str,
+        delegate_status: str = "unknown",
+        mismatch_policy: str = "warn",
+        mismatch_reason_codes: list[str] | None = None,
+        moment_input_fingerprint: Optional[str] = None,
+        qualia_state_fingerprint: Optional[str] = None,
+    ) -> None:
         if not _env_truthy(TRACE_FLAG_ENV):
             return
         try:
             thin_entry = to_moment_entry(moment_entry)
             if "user_text" not in thin_entry:
                 thin_entry["user_text"] = raw_text
+            thin_entry["runtime_version"] = runtime_version
+            thin_entry["idempotency_key"] = idempotency_key
             allow_raw = os.getenv("EQNET_TRACE_ALLOW_RAW_TEXT") == "1"
             policy = getattr(self._trace_safety, "text_policy", "redact")
             truncate = getattr(self._trace_safety, "text_truncate_chars", 200)
@@ -299,6 +491,24 @@ class EQNetHub:
             if sanitized_text is not None:
                 trace_obs = thin_entry.setdefault("trace_observations", {}).setdefault("qualia", {})
                 trace_obs["user_text"] = {"policy": policy, **text_obs}
+            policy_obs = thin_entry.setdefault("trace_observations", {}).setdefault("policy", {})
+            policy_obs.update(
+                {
+                    "delegate_to": delegate_to,
+                    "delegation_mode": delegation_mode,
+                    "delegate_status": delegate_status,
+                    "idempotency_status": idempotency_status,
+                    "mismatch_policy": mismatch_policy,
+                    "mismatch_reason_codes": list(mismatch_reason_codes or []),
+                }
+            )
+            qualia_obs = thin_entry.setdefault("trace_observations", {}).setdefault("qualia", {})
+            qualia_obs.update(
+                {
+                    "moment_input_fingerprint": moment_input_fingerprint,
+                    "qualia_state_fingerprint": qualia_state_fingerprint,
+                }
+            )
 
             payload, _stamp = _build_trace_payload(
                 thin_entry,
@@ -316,12 +526,383 @@ class EQNetHub:
         except Exception as exc:  # pragma: no cover - defensive guardrail
             logger.warning("trace_v1 emit failed", exc_info=exc)
 
+    def _delegation_mode(self) -> str:
+        raw = (os.getenv(DELEGATION_MODE_ENV) or "off").strip().lower()
+        if raw in {"off", "shadow", "on"}:
+            return raw
+        return "off"
+
+    def _mismatch_policy(self) -> str:
+        raw = (os.getenv(MISMATCH_POLICY_ENV) or "warn").strip().lower()
+        if raw in {"warn", "fail"}:
+            return raw
+        return "warn"
+
+    def _delegate_name(self) -> str:
+        if self._runtime_delegate is None:
+            return "none"
+        klass = self._runtime_delegate.__class__
+        return f"{klass.__module__}.{klass.__name__}"
+
+    def _resolve_runtime_delegate(
+        self,
+        runtime_delegate: Optional[HubRuntime],
+    ) -> HubRuntime:
+        if runtime_delegate is not None:
+            return runtime_delegate
+        runtime_impl = (os.getenv(RUNTIME_IMPL_ENV) or "external_v2").strip().lower()
+        if runtime_impl == "external":
+            version = (
+                os.getenv(EXTERNAL_RUNTIME_VERSION_ENV)
+                or "external_runtime_v1"
+            )
+            return ExternalRuntimeDelegate(self, runtime_version=version)
+        if runtime_impl == "external_v2":
+            version = (
+                os.getenv(EXTERNAL_RUNTIME_VERSION_ENV)
+                or "external_runtime_v2"
+            )
+            return ExternalRuntimeDelegateV2(
+                config=self.config,
+                embed_text_fn=self.embed_text_fn,
+                latest_state_writer=self._set_latest_state,
+                latest_state_reader=self._get_latest_state,
+                runtime_version=version,
+                trace_dir_env=TRACE_DIR_ENV,
+                boundary_threshold=self._trace_safety.boundary_threshold,
+            )
+        raise RuntimeError(
+            "runtime_delegate resolution failed: set runtime_delegate or EQNET_RUNTIME_IMPL=external_v2/external"
+        )
+
+    def _set_latest_state(self, kind: str, value: Any) -> None:
+        if kind == "qualia":
+            self._latest_qualia_state = value
+        elif kind == "life_indicator":
+            self._latest_life_indicator = value
+        elif kind == "policy_prior":
+            self._latest_policy_prior = value
+
+    def _get_latest_state(self) -> Dict[str, Any]:
+        return {
+            "qualia": self._latest_qualia_state,
+            "life_indicator": self._latest_life_indicator,
+            "policy_prior": self._latest_policy_prior,
+        }
+
+    def _derive_idempotency_key(
+        self,
+        *,
+        op: str,
+        raw_event: Any,
+        raw_text: str,
+    ) -> str:
+        entry = to_moment_entry(raw_event)
+        stamp = _moment_timestamp(entry)
+        scenario, turn_id, _seed = _derive_identifiers(
+            entry,
+            getattr(self.persona, "persona_id", None),
+        )
+        text_hash = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()[:16]
+        base = "|".join(
+            [op, scenario, turn_id, str(int(stamp.timestamp() * 1000)), text_hash]
+        )
+        digest = hashlib.sha256(base.encode("utf-8")).hexdigest()
+        return f"{op}:{digest[:24]}"
+
+    def _fingerprint_from_moment(self, moment_entry: Any) -> str:
+        stamp = _moment_timestamp(moment_entry)
+        payload = {
+            "timestamp_ms": int(stamp.timestamp() * 1000),
+            "turn_id": _entry_value(moment_entry, "turn_id"),
+            "session_id": _entry_value(moment_entry, "session_id"),
+        }
+        raw = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+    def _fingerprint_moment_input(self, raw_event: Any, raw_text: str) -> str:
+        entry = to_moment_entry(raw_event)
+        norm_entry = _normalize_for_hash(entry)
+        payload = {
+            "entry": norm_entry,
+            "text_hash": hashlib.sha256(raw_text.encode("utf-8")).hexdigest()[:16],
+        }
+        return self._fingerprint_json_payload(payload)
+
+    def _fingerprint_current_qualia_state(self) -> Optional[str]:
+        qstate = self._latest_qualia_state
+        if qstate is None:
+            return None
+        vec = getattr(qstate, "qualia_vec", None)
+        if vec is None:
+            norm = _normalize_for_hash(getattr(qstate, "__dict__", {}))
+            return self._fingerprint_json_payload(norm)
+        if hasattr(vec, "tolist"):
+            values = vec.tolist()
+        else:
+            values = list(vec)
+        floats = []
+        for item in values:
+            try:
+                floats.append(round(float(item), 6))
+            except (TypeError, ValueError):
+                floats.append(0.0)
+        payload = {
+            "dimension": len(floats),
+            "head": floats[:64],
+        }
+        return self._fingerprint_json_payload(payload)
+
+    def _derive_nightly_idempotency_key(
+        self,
+        *,
+        date_obj: date,
+        qualia_records: list[dict[str, Any]],
+    ) -> str:
+        first_ts = None
+        last_ts = None
+        if qualia_records:
+            first_ts = qualia_records[0].get("timestamp_ms") or qualia_records[0].get("timestamp")
+            last_ts = qualia_records[-1].get("timestamp_ms") or qualia_records[-1].get("timestamp")
+        summary = {
+            "op": "run_nightly",
+            "day": date_obj.isoformat(),
+            "count": len(qualia_records),
+            "first_ts": first_ts,
+            "last_ts": last_ts,
+            "runtime_version": self._runtime_version,
+            "schema_version": TRACE_SCHEMA_VERSION,
+        }
+        digest = hashlib.sha256(
+            json.dumps(summary, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+        return f"run_nightly:{digest[:24]}"
+
+    def _snapshot_nightly_fingerprints(self, day: date) -> dict[str, Optional[str]]:
+        life_indicator_fingerprint = None
+        if self._latest_life_indicator is not None:
+            life_indicator_fingerprint = self._fingerprint_json_payload(
+                {
+                    "identity": self._latest_life_indicator.identity_score,
+                    "qualia": self._latest_life_indicator.qualia_score,
+                    "meta_awareness": self._latest_life_indicator.meta_awareness_score,
+                }
+            )
+        policy_prior_fingerprint = None
+        if self._latest_policy_prior is not None:
+            policy_prior_fingerprint = self._fingerprint_json_payload(
+                _normalize_for_hash(self._latest_policy_prior.__dict__)
+            )
+        audit_fingerprint = self._load_audit_fingerprint(day)
+        return {
+            "life_indicator_fingerprint": life_indicator_fingerprint,
+            "policy_prior_fingerprint": policy_prior_fingerprint,
+            "audit_fingerprint": audit_fingerprint,
+        }
+
+    def _fingerprint_json_payload(self, payload: Mapping[str, Any]) -> str:
+        raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+    def _load_audit_fingerprint(self, date_obj: date) -> Optional[str]:
+        day = date_obj.strftime("%Y-%m-%d")
+        audit_path = Path(getattr(self.config, "audit_dir", self.config.telemetry_dir / "audit")) / f"nightly_audit_{day}.json"
+        if not audit_path.exists():
+            return None
+        try:
+            payload = json.loads(audit_path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        return self._fingerprint_json_payload(payload)
+
+    def _emit_nightly_trace_v1(
+        self,
+        *,
+        date_obj: date,
+        idempotency_key: str,
+        idempotency_status: str,
+        delegate_to: str,
+        delegation_mode: str,
+        delegate_status: str,
+        mismatch_policy: str,
+        mismatch_reason_codes: list[str],
+        life_indicator_fingerprint: Optional[str],
+        policy_prior_fingerprint: Optional[str],
+        audit_fingerprint: Optional[str],
+    ) -> None:
+        if not _env_truthy(TRACE_FLAG_ENV):
+            return
+        stamp = datetime(
+            year=date_obj.year,
+            month=date_obj.month,
+            day=date_obj.day,
+            tzinfo=timezone.utc,
+        )
+        root_override = os.getenv(TRACE_DIR_ENV)
+        base_dir = Path(root_override) if root_override else self.config.telemetry_dir / "trace_v1"
+        target = trace_output_path(
+            TracePathConfig(base_dir=base_dir, source_loop="hub"),
+            timestamp_ms=int(stamp.timestamp() * 1000),
+        )
+        event = {
+            "schema_version": TRACE_SCHEMA_VERSION,
+            "source_loop": "hub",
+            "runtime_version": self._runtime_version,
+            "idempotency_key": idempotency_key,
+            "scenario_id": "nightly",
+            "turn_id": f"nightly-{date_obj.isoformat()}",
+            "seed": abs(hash(idempotency_key)) % 1_000_000 + 1,
+            "timestamp_ms": int(stamp.timestamp() * 1000),
+            "boundary": {},
+            "self": {},
+            "prospection": {},
+            "policy": {
+                "observations": {
+                    "hub": {
+                        "operation": "run_nightly",
+                        "day": date_obj.isoformat(),
+                        "delegation_mode": delegation_mode,
+                        "delegate_to": delegate_to,
+                        "delegate_status": delegate_status,
+                        "idempotency_status": idempotency_status,
+                        "mismatch_policy": mismatch_policy,
+                        "mismatch_reason_codes": mismatch_reason_codes,
+                    }
+                }
+            },
+            "qualia": {
+                "observations": {
+                    "hub": {
+                        "life_indicator_fingerprint": life_indicator_fingerprint,
+                        "policy_prior_fingerprint": policy_prior_fingerprint,
+                        "audit_fingerprint": audit_fingerprint,
+                    }
+                }
+            },
+            "invariants": {},
+        }
+        append_trace_event(target, event)
+
+    def _emit_query_state_trace_v1(
+        self,
+        *,
+        as_of: Optional[str],
+        resolved_day_key: str,
+        delegate_to: str,
+        delegation_mode: str,
+        delegate_status: str,
+        mismatch_policy: str,
+        mismatch_reason_codes: list[str],
+        state_fingerprint: str,
+        delegate_state_fingerprint: Optional[str],
+        local_state_fingerprint: Optional[str],
+    ) -> None:
+        if not _env_truthy(TRACE_FLAG_ENV):
+            return
+        normalized = _normalize_day_key(resolved_day_key)
+        if normalized is not None:
+            stamp = datetime.strptime(normalized, "%Y-%m-%d").replace(
+                tzinfo=timezone.utc,
+                hour=12,
+                minute=0,
+                second=0,
+            )
+        else:
+            stamp = datetime.now(timezone.utc)
+        now_ms = int(stamp.timestamp() * 1000)
+        root_override = os.getenv(TRACE_DIR_ENV)
+        base_dir = Path(root_override) if root_override else self.config.telemetry_dir / "trace_v1"
+        target = trace_output_path(
+            TracePathConfig(base_dir=base_dir, source_loop="hub"),
+            timestamp_ms=now_ms,
+        )
+        seed_source = f"query_state|{as_of}|{resolved_day_key}|{state_fingerprint}"
+        event = {
+            "schema_version": TRACE_SCHEMA_VERSION,
+            "source_loop": "hub",
+            "runtime_version": self._runtime_version,
+            "idempotency_key": "",
+            "scenario_id": "query_state",
+            "turn_id": f"query-state-{now_ms}",
+            "seed": abs(hash(seed_source)) % 1_000_000 + 1,
+            "timestamp_ms": now_ms,
+            "boundary": {},
+            "self": {},
+            "prospection": {},
+            "policy": {
+                "observations": {
+                    "hub": {
+                        "operation": "query_state",
+                        "as_of": as_of,
+                        "resolved_day_key": resolved_day_key,
+                        "delegation_mode": delegation_mode,
+                        "configured_delegation_mode": delegation_mode,
+                        "delegate_to": delegate_to,
+                        "delegate_status": delegate_status,
+                        "mismatch_policy": mismatch_policy,
+                        "mismatch_reason_codes": mismatch_reason_codes,
+                    }
+                }
+            },
+            "qualia": {
+                "observations": {
+                    "hub": {
+                        "state_fingerprint": state_fingerprint,
+                        "delegate_state_fingerprint": delegate_state_fingerprint,
+                        "local_state_fingerprint": local_state_fingerprint,
+                    }
+                }
+            },
+            "invariants": {},
+        }
+        append_trace_event(target, event)
 
 def _env_truthy(name: str) -> bool:
     value = os.getenv(name)
     if value is None:
         return False
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalize_day_key(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d", "%Y%m%d"):
+        try:
+            parsed = datetime.strptime(text, fmt)
+            return parsed.strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
+
+
+def _normalize_for_hash(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        excluded = {
+            "timestamp",
+            "timestamp_ms",
+            "updated_at",
+            "generated_at",
+            "created_at",
+        }
+        normalized_items = []
+        for k, v in value.items():
+            key = str(k)
+            if key in excluded:
+                continue
+            normalized_items.append((key, _normalize_for_hash(v)))
+        return {k: v for k, v in sorted(normalized_items, key=lambda item: item[0])}
+    if isinstance(value, list):
+        return [_normalize_for_hash(v) for v in value]
+    if isinstance(value, tuple):
+        return [_normalize_for_hash(v) for v in value]
+    if isinstance(value, set):
+        normalized = [_normalize_for_hash(v) for v in value]
+        return sorted(normalized, key=lambda item: json.dumps(item, sort_keys=True, ensure_ascii=False, default=str))
+    return value
 
 
 def _maybe_float(value: Any) -> float | None:
@@ -475,6 +1056,8 @@ def _build_trace_payload(
         "timestamp_ms": int(stamp.timestamp() * 1000),
         "seed": seed,
         "user_text": _entry_value(entry, "user_text") or REDACTED_TEXT,
+        "runtime_version": _entry_value(entry, "runtime_version") or DEFAULT_RUNTIME_VERSION,
+        "idempotency_key": _entry_value(entry, "idempotency_key") or "",
         "somatic": somatic,
         "context": {k: v for k, v in context_payload.items() if v is not None},
         "world": world_payload,

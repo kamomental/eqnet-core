@@ -1,0 +1,29 @@
+avatar:
+  base_image: "emot_terrain_lab/ui/avatar/assets/base/dotgirl_base.png"
+
+  canvas:
+    scale: 4
+    bg: [0, 0, 0]
+    green: [120, 255, 120]
+    skin: [100, 220, 100]
+
+  regions:
+    eyes: { x: 22, y: 18, w: 40, h: 10 }
+    mouth: { x: 30, y: 44, w: 24, h: 10 }
+
+  motion:
+    bob_px: 1
+    hop_px: 2
+    bob_period_s: 2.8
+    hop_s: 0.16
+    blink:
+      base_interval_s: [2.5, 6.5]
+      close_s: 0.06
+      open_s: 0.08
+
+  mouth:
+    wavy_amp_px: 1
+    steps: 10
+    fang:
+      enable: true
+      x_ratio: 0.62

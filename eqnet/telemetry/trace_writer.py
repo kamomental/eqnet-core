@@ -9,6 +9,8 @@ from eqnet.contracts import TurnResult
 META_FIELDS = (
     "schema_version",
     "source_loop",
+    "runtime_version",
+    "idempotency_key",
     "scenario_id",
     "turn_id",
     "seed",

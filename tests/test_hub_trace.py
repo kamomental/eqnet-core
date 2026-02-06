@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
@@ -8,7 +8,59 @@ from typing import Any
 
 import pytest
 
-from eqnet.hub.api import EQNetConfig, EQNetHub
+from eqnet.hub.api import EQNetConfig, EQNetHub, _normalize_for_hash
+from eqnet.hub.idempotency import InMemoryIdempotencyStore
+from eqnet.runtime.external_runtime import ExternalRuntimeDelegate, ExternalRuntimeDelegateV2
+
+
+class _DelegateRuntime:
+    def __init__(
+        self,
+        *,
+        default_resolved_day_key: str,
+        state_overrides: dict[str, Any] | None = None,
+    ) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.query_calls: list[dict[str, Any]] = []
+        self.default_resolved_day_key = default_resolved_day_key
+        self.state_overrides = dict(state_overrides or {})
+
+    def log_moment(
+        self,
+        raw_event: Any,
+        raw_text: str,
+        *,
+        idempotency_key: str | None = None,
+    ) -> None:
+        self.calls.append(
+            {
+                "raw_event_type": type(raw_event).__name__,
+                "raw_text": raw_text,
+                "idempotency_key": idempotency_key,
+            }
+        )
+
+    def run_nightly(
+        self,
+        date_obj=None,  # noqa: ANN001, ARG002
+        *,
+        idempotency_key: str | None = None,  # noqa: ARG002
+    ) -> None:
+        return None
+
+    def query_state(self, *, as_of: str | None = None) -> dict[str, Any]:
+        self.query_calls.append({"as_of": as_of})
+        resolved_day_key = as_of or self.default_resolved_day_key
+        payload = {
+            "latest_qualia": None,
+            "life_indicator": None,
+            "policy_prior": None,
+            "danger": {},
+            "healing": {},
+            "resolved_day_key": resolved_day_key,
+        }
+        payload.update(self.state_overrides)
+        return payload
 
 
 def _dummy_moment(ts: datetime | None = None) -> Any:
@@ -16,7 +68,13 @@ def _dummy_moment(ts: datetime | None = None) -> Any:
     moment = SimpleNamespace()
     moment.timestamp = timestamp
     moment.awareness_stage = 1
-    moment.emotion = SimpleNamespace(mask=0.1, love=0.3, stress=0.4, heart_rate_norm=0.5, breath_ratio_norm=0.6)
+    moment.emotion = SimpleNamespace(
+        mask=0.1,
+        love=0.3,
+        stress=0.4,
+        heart_rate_norm=0.5,
+        breath_ratio_norm=0.6,
+    )
     moment.culture = SimpleNamespace(rho=0.2, politeness=0.7, intimacy=0.4)
     moment.mood = {"arousal": 0.5, "stress": 0.2}
     moment.metrics = {"proximity": 0.8, "stress": 0.2}
@@ -38,27 +96,113 @@ def _hub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> EQNetHub:
     return EQNetHub(config=config, embed_text_fn=lambda text: [0.0, 0.1, 0.2])
 
 
-def test_log_moment_emits_trace_when_flag_enabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _day_key_from_dt(stamp: datetime) -> str:
+    return stamp.astimezone(timezone.utc).strftime("%Y-%m-%d")
+
+
+@pytest.fixture
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+@pytest.fixture
+def now_day_key(now_utc: datetime) -> str:
+    return _day_key_from_dt(now_utc)
+
+
+def test_log_moment_emits_trace_when_flag_enabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     trace_root = tmp_path / "trace_dump"
     monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
     hub = _hub(tmp_path, monkeypatch)
-    hub.log_moment(_dummy_moment(), "hello user")
-    day_dir = trace_root / "2024-01-02"
+    moment = _dummy_moment()
+    hub.log_moment(moment, "hello user")
+    day_dir = trace_root / _day_key_from_dt(moment.timestamp)
     files = list(day_dir.glob("hub-*.jsonl"))
     assert files, "trace output should be written when flag is enabled"
     data = json.loads(files[0].read_text(encoding="utf-8").strip())
     assert data["schema_version"] == "trace_v1"
+    assert isinstance(data.get("runtime_version"), str)
+    assert data.get("runtime_version")
+    assert isinstance(data.get("idempotency_key"), str)
+    assert data.get("idempotency_key")
     assert data["source_loop"] == "hub"
     assert data["scenario_id"] == "session-demo"
     assert set(data.keys()) >= {"boundary", "policy", "prospection", "qualia", "invariants"}
     qualia_obs = data.get("qualia", {}).get("observations", {}).get("hub", {})
     user_text_meta = qualia_obs.get("user_text") or {}
     assert user_text_meta.get("policy") == "redact"
+    assert isinstance(qualia_obs.get("moment_input_fingerprint"), str)
+    assert qualia_obs.get("moment_input_fingerprint")
+    assert isinstance(qualia_obs.get("qualia_state_fingerprint"), str)
+    assert qualia_obs.get("qualia_state_fingerprint")
     policy_obs = data.get("policy", {}).get("observations", {}).get("hub", {})
     assert policy_obs.get("talk_mode") == "talk"
+    assert policy_obs.get("idempotency_status") == "done"
 
 
-def test_log_moment_does_not_fail_if_trace_emit_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runtime_delegate_resolution_prefers_external_via_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EQNET_RUNTIME_IMPL", "external")
+    monkeypatch.setenv("EQNET_EXTERNAL_RUNTIME_VERSION", "external-test-v1")
+    hub = _hub(tmp_path, monkeypatch)
+    assert isinstance(hub._runtime_delegate, ExternalRuntimeDelegate)
+
+
+def test_runtime_delegate_resolution_prefers_external_v2_via_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EQNET_RUNTIME_IMPL", "external_v2")
+    monkeypatch.setenv("EQNET_EXTERNAL_RUNTIME_VERSION", "external-v2-test-v1")
+    hub = _hub(tmp_path, monkeypatch)
+    assert isinstance(hub._runtime_delegate, ExternalRuntimeDelegateV2)
+
+
+def test_external_runtime_version_appears_in_trace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    monkeypatch.setenv("EQNET_RUNTIME_IMPL", "external")
+    monkeypatch.setenv("EQNET_EXTERNAL_RUNTIME_VERSION", "external-test-v2")
+    hub = _hub(tmp_path, monkeypatch)
+    moment = _dummy_moment()
+    hub.log_moment(moment, "hello external")
+    day_dir = trace_root / _day_key_from_dt(moment.timestamp)
+    files = list(day_dir.glob("hub-*.jsonl"))
+    assert files
+    data = json.loads(files[0].read_text(encoding="utf-8").strip())
+    assert data.get("runtime_version") == "external-test-v2"
+
+
+def test_external_v2_runtime_version_appears_in_trace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    monkeypatch.setenv("EQNET_RUNTIME_IMPL", "external_v2")
+    monkeypatch.setenv("EQNET_EXTERNAL_RUNTIME_VERSION", "external-v2-test-v2")
+    hub = _hub(tmp_path, monkeypatch)
+    moment = _dummy_moment()
+    hub.log_moment(moment, "hello external v2")
+    day_dir = trace_root / _day_key_from_dt(moment.timestamp)
+    files = list(day_dir.glob("hub-*.jsonl"))
+    assert files
+    data = json.loads(files[0].read_text(encoding="utf-8").strip())
+    assert data.get("runtime_version") == "external-v2-test-v2"
+
+
+def test_log_moment_does_not_fail_if_trace_emit_raises(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     hub = _hub(tmp_path, monkeypatch)
     monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(tmp_path / "trace_dump"))
 
@@ -67,3 +211,340 @@ def test_log_moment_does_not_fail_if_trace_emit_raises(tmp_path: Path, monkeypat
 
     monkeypatch.setattr("eqnet.hub.api.run_hub_turn", boom)
     hub.log_moment(_dummy_moment(), "still safe")
+
+
+def test_log_moment_shadow_delegation_emits_delegate_observation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    now_day_key: str,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    monkeypatch.setenv("HUB_DELEGATION_MODE", "shadow")
+    monkeypatch.setenv("EQNET_TRACE_V1", "1")
+
+    delegate = _DelegateRuntime(default_resolved_day_key=now_day_key)
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+    )
+    hub = EQNetHub(
+        config=config,
+        embed_text_fn=lambda text: [0.0, 0.1, 0.2],
+        runtime_delegate=delegate,
+    )
+    hub.log_moment(_dummy_moment(), "shadow user")
+
+    assert delegate.calls, "delegate should be called in shadow mode"
+    day_dir = trace_root / _day_key_from_dt(_dummy_moment().timestamp)
+    files = list(day_dir.glob("hub-*.jsonl"))
+    data = json.loads(files[0].read_text(encoding="utf-8").strip())
+    policy_obs = data.get("policy", {}).get("observations", {}).get("hub", {})
+    assert policy_obs.get("delegation_mode") == "shadow"
+    assert policy_obs.get("delegate_status") == "ok"
+
+
+def test_log_moment_idempotency_skips_duplicate_updates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    monkeypatch.setenv("EQNET_TRACE_V1", "1")
+
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+    )
+    store = InMemoryIdempotencyStore()
+    hub = EQNetHub(
+        config=config,
+        embed_text_fn=lambda text: [0.0, 0.1, 0.2],
+        idempotency_store=store,
+    )
+    moment = _dummy_moment()
+    hub.log_moment(moment, "same")
+    hub.log_moment(moment, "same")
+
+    day_dir = trace_root / _day_key_from_dt(moment.timestamp)
+    files = list(day_dir.glob("hub-*.jsonl"))
+    assert files
+    lines = [
+        json.loads(line)
+        for line in files[0].read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    statuses = [
+        record.get("policy", {}).get("observations", {}).get("hub", {}).get("idempotency_status")
+        for record in lines
+    ]
+    assert "done" in statuses
+    assert "skipped" in statuses
+
+
+def test_log_moment_shadow_records_delegate_exception_reason_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    now_day_key: str,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    monkeypatch.setenv("HUB_DELEGATION_MODE", "shadow")
+    monkeypatch.setenv("HUB_MISMATCH_POLICY", "warn")
+    monkeypatch.setenv("EQNET_TRACE_V1", "1")
+
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [0.0, 0.1, 0.2])
+
+    class _FailingDelegate(_DelegateRuntime):
+        def __init__(self) -> None:
+            super().__init__(default_resolved_day_key=now_day_key)
+
+        def log_moment(
+            self,
+            raw_event: Any,
+            raw_text: str,
+            *,
+            idempotency_key: str | None = None,
+        ) -> None:
+            super().log_moment(raw_event, raw_text, idempotency_key=idempotency_key)
+            raise RuntimeError("delegate boom")
+
+    delegate = _FailingDelegate()
+    hub._runtime_delegate = delegate  # test-only override
+    with pytest.raises(RuntimeError):
+        hub.log_moment(_dummy_moment(), "shadow mismatch")
+
+    day_dir = trace_root / _day_key_from_dt(_dummy_moment().timestamp)
+    files = list(day_dir.glob("hub-*.jsonl"))
+    assert files
+    data = json.loads(files[0].read_text(encoding="utf-8").strip())
+    policy_obs = data.get("policy", {}).get("observations", {}).get("hub", {})
+    assert policy_obs.get("delegate_status") == "not_called"
+    assert "DELEGATE_EXCEPTION" in (policy_obs.get("mismatch_reason_codes") or [])
+
+
+def test_log_moment_on_mode_does_not_call_builtin_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    now_day_key: str,
+) -> None:
+    monkeypatch.setenv("HUB_DELEGATION_MODE", "on")
+    monkeypatch.setenv("EQNET_TRACE_V1", "1")
+    delegate = _DelegateRuntime(default_resolved_day_key=now_day_key)
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+    )
+    hub = EQNetHub(
+        config=config,
+        embed_text_fn=lambda text: [0.0, 0.1, 0.2],
+        runtime_delegate=delegate,
+    )
+
+    assert not hasattr(hub, "_builtin_runtime_delegate")
+    hub.log_moment(_dummy_moment(), "on mode")
+    assert delegate.calls
+
+
+def test_query_state_emits_trace_contract_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    now_day_key: str,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    monkeypatch.setenv("EQNET_TRACE_V1", "1")
+    delegate = _DelegateRuntime(default_resolved_day_key=now_day_key)
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+    )
+    hub = EQNetHub(
+        config=config,
+        embed_text_fn=lambda text: [0.0, 0.1, 0.2],
+        runtime_delegate=delegate,
+    )
+
+    as_of_key = now_day_key
+    state = hub.query_state(as_of=as_of_key)
+    assert "resolved_day_key" in state
+
+    day_dir = trace_root / state["resolved_day_key"]
+    files = list(day_dir.glob("hub-*.jsonl"))
+    assert files
+    records = [
+        json.loads(line)
+        for line in files[0].read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    query_records = [
+        r
+        for r in records
+        if r.get("policy", {}).get("observations", {}).get("hub", {}).get("operation") == "query_state"
+    ]
+    assert query_records
+    data = query_records[-1]
+    assert data["schema_version"] == "trace_v1"
+    assert isinstance(data.get("runtime_version"), str)
+    assert "idempotency_key" in data
+    obs = data.get("policy", {}).get("observations", {}).get("hub", {})
+    assert obs.get("as_of") == as_of_key
+    assert obs.get("resolved_day_key") == as_of_key
+    assert isinstance(obs.get("delegation_mode"), str)
+    assert isinstance(obs.get("delegate_status"), str)
+    qobs = data.get("qualia", {}).get("observations", {}).get("hub", {})
+    assert isinstance(qobs.get("state_fingerprint"), str)
+    assert qobs.get("state_fingerprint")
+
+
+def test_query_state_shadow_delegation_mismatch_observed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    now_day_key: str,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    monkeypatch.setenv("EQNET_TRACE_V1", "1")
+    monkeypatch.setenv("HUB_DELEGATION_MODE", "shadow")
+
+    delegate = _DelegateRuntime(default_resolved_day_key=now_day_key)
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+    )
+    hub = EQNetHub(
+        config=config,
+        embed_text_fn=lambda text: [0.0, 0.1, 0.2],
+        runtime_delegate=delegate,
+    )
+    as_of_key = now_day_key
+    state = hub.query_state(as_of=as_of_key)
+    assert delegate.query_calls
+    assert state.get("resolved_day_key") == as_of_key
+
+    day_dir = trace_root / as_of_key
+    files = list(day_dir.glob("hub-*.jsonl"))
+    assert files
+    records = [
+        json.loads(line)
+        for line in files[0].read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    query_records = [
+        r
+        for r in records
+        if r.get("policy", {}).get("observations", {}).get("hub", {}).get("operation") == "query_state"
+    ]
+    assert query_records
+    obs = query_records[-1].get("policy", {}).get("observations", {}).get("hub", {})
+    assert obs.get("delegation_mode") == "shadow"
+    assert obs.get("delegate_status") in {"ok", "mismatch"}
+    assert obs.get("mismatch_policy") in {"warn", "fail"}
+
+
+def test_query_state_shadow_prefers_runtime_resolved_day_key_when_as_of_none(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    now_day_key: str,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    monkeypatch.setenv("EQNET_TRACE_V1", "1")
+    monkeypatch.setenv("HUB_DELEGATION_MODE", "shadow")
+
+    delegate = _DelegateRuntime(default_resolved_day_key=now_day_key)
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+    )
+    hub = EQNetHub(
+        config=config,
+        embed_text_fn=lambda text: [0.0, 0.1, 0.2],
+        runtime_delegate=delegate,
+    )
+    state = hub.query_state(as_of=None)
+    assert state.get("resolved_day_key") == delegate.default_resolved_day_key
+
+    day_dir = trace_root / delegate.default_resolved_day_key
+    files = list(day_dir.glob("hub-*.jsonl"))
+    assert files
+
+
+def test_query_state_shadow_fail_policy_raises_on_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    now_day_key: str,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    monkeypatch.setenv("EQNET_TRACE_V1", "1")
+    monkeypatch.setenv("HUB_DELEGATION_MODE", "shadow")
+    monkeypatch.setenv("HUB_MISMATCH_POLICY", "fail")
+
+    delegate = _DelegateRuntime(
+        default_resolved_day_key=now_day_key,
+        state_overrides={"resolved_day_key": "2099-01-01"},
+    )
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+    )
+    hub = EQNetHub(
+        config=config,
+        embed_text_fn=lambda text: [0.0, 0.1, 0.2],
+        runtime_delegate=delegate,
+    )
+
+    with pytest.raises(RuntimeError):
+        hub.query_state(as_of=now_day_key)
+
+
+def test_query_state_on_mode_does_not_call_local_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    now_day_key: str,
+) -> None:
+    monkeypatch.setenv("EQNET_TRACE_V1", "1")
+    monkeypatch.setenv("HUB_DELEGATION_MODE", "on")
+    delegate = _DelegateRuntime(default_resolved_day_key=now_day_key)
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+    )
+    hub = EQNetHub(
+        config=config,
+        embed_text_fn=lambda text: [0.0, 0.1, 0.2],
+        runtime_delegate=delegate,
+    )
+    state = hub.query_state(as_of=now_day_key)
+    assert delegate.query_calls
+    assert state.get("resolved_day_key") == now_day_key
+
+
+def test_normalize_for_hash_ignores_order_and_time_fields() -> None:
+    left = {
+        "b": 2,
+        "a": {"y": 2, "x": 1, "updated_at": "2026-01-01T00:00:00Z"},
+        "timestamp": "2026-01-01T00:00:00Z",
+        "items": [{"k": "v", "generated_at": "t1"}],
+    }
+    right = {
+        "a": {"x": 1, "y": 2, "updated_at": "2026-01-31T00:00:00Z"},
+        "b": 2,
+        "timestamp": "2027-01-01T00:00:00Z",
+        "items": [{"k": "v", "generated_at": "t2"}],
+    }
+    assert _normalize_for_hash(left) == _normalize_for_hash(right)

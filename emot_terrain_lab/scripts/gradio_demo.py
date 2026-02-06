@@ -39,6 +39,12 @@ import yaml
 import requests
 import matplotlib.pyplot as plt
 from emot_terrain_lab.hub.future_memory import FutureMemoryController
+from emot_terrain_lab.ui.avatar import (
+    AvatarAnimator,
+    AvatarInputs,
+    AvatarRenderer,
+    load_avatar_config,
+)
 
 try:
     import cv2
@@ -224,6 +230,43 @@ else:
     _MP_FACE = None
 
 _TTS_ENGINE = None
+_AVATAR_ANIMATOR: Optional[AvatarAnimator] = None
+_AVATAR_RENDERER: Optional[AvatarRenderer] = None
+_AVATAR_LAST_TICK: Optional[float] = None
+_AVATAR_ERROR: Optional[str] = None
+
+
+def _get_avatar_components() -> Optional[Tuple[AvatarAnimator, AvatarRenderer]]:
+    global _AVATAR_ANIMATOR, _AVATAR_RENDERER, _AVATAR_LAST_TICK, _AVATAR_ERROR
+    if _AVATAR_ERROR:
+        return None
+    if _AVATAR_ANIMATOR is None or _AVATAR_RENDERER is None:
+        try:
+            cfg = load_avatar_config()
+            _AVATAR_ANIMATOR = AvatarAnimator(cfg)
+            _AVATAR_RENDERER = AvatarRenderer(cfg)
+            _AVATAR_LAST_TICK = time.monotonic()
+        except Exception as exc:
+            _AVATAR_ERROR = str(exc)
+            return None
+    return _AVATAR_ANIMATOR, _AVATAR_RENDERER
+
+
+def _render_avatar(voice_energy: float, is_speaking: bool) -> Any:
+    components = _get_avatar_components()
+    if components is None:
+        return gr.update()
+    animator, renderer = components
+    now = time.monotonic()
+    global _AVATAR_LAST_TICK
+    if _AVATAR_LAST_TICK is None:
+        dt = 0.0
+    else:
+        dt = max(0.0, now - _AVATAR_LAST_TICK)
+    _AVATAR_LAST_TICK = now
+
+    state = animator.step(dt, AvatarInputs(voice_energy=voice_energy, is_speaking=is_speaking))
+    return renderer.render(state, animator.time_sec)
 
 
 class HeartbeatSynth:
@@ -935,7 +978,7 @@ def talkmode_step_ui(
     user_text: str,
     force_refresh: bool = False,
     activate_session: bool = False,
-) -> Tuple[Any, str, Any, str]:
+) -> Tuple[Any, str, Any, str, Any]:
     global _SESSION_STARTED, _SESSION_SILENCE_MS, _SESSION_LAST_SAMPLE_MS, _SESSION_FREEZE_SMOOTH, _SESSION_LAST_FREEZE_RAW
 
     memory_anchor = _summarize_memory_tags(memory_tags)
@@ -976,7 +1019,7 @@ def talkmode_step_ui(
         _SESSION_FREEZE_SMOOTH = 0.0
         _SESSION_LAST_FREEZE_RAW = 0.0
     if not _SESSION_STARTED:
-        return gr.update(), gr.update(), gr.update(), "WATCH"
+        return gr.update(), gr.update(), gr.update(), "WATCH", gr.update()
 
     hub_response = _hub_step(payload)
     guard_action = "ok"
@@ -1073,7 +1116,8 @@ def talkmode_step_ui(
         talk_update = gr.update()
 
     context_payload = json.dumps(ctx_json, ensure_ascii=False, indent=2)
-    return talk_update, context_payload, fig, mode.name
+    avatar_image = _render_avatar(float(voice_energy), mode == TalkMode.TALK)
+    return talk_update, context_payload, fig, mode.name, avatar_image
 
 
 def _talkmode_refresh_start(*args):
@@ -1098,7 +1142,7 @@ def talkmode_auto_tick(
     ignition: float,
     memory_tags: str,
     user_text: str,
-) -> Tuple[Any, Any, Any, Any, Any]:
+) -> Tuple[Any, Any, Any, Any, Any, Any]:
     global _SESSION_STARTED
     if not auto_enabled or not _SESSION_STARTED:
         return (
@@ -1107,10 +1151,11 @@ def talkmode_auto_tick(
             gr.update(),
             gr.update(value="WATCH"),
             gr.update(value=since_ms),
+            gr.update(),
         )
 
     since_ms = min(int(since_ms) + 500, 4000)
-    text, ctx_json, fig, mode = talkmode_step_ui(
+    text, ctx_json, fig, mode, avatar_image = talkmode_step_ui(
         face,
         voice_energy,
         dm,
@@ -1126,7 +1171,14 @@ def talkmode_auto_tick(
         force_refresh=False,
         activate_session=False,
     )
-    return text, ctx_json, fig, gr.update(value=mode), gr.update(value=since_ms)
+    return (
+        text,
+        ctx_json,
+        fig,
+        gr.update(value=mode),
+        gr.update(value=since_ms),
+        avatar_image,
+    )
 
 
 def talkmode_camera_stream(
@@ -1232,9 +1284,12 @@ with gr.Blocks() as demo:
             else:
                 camera = None
                 camera_preview = None
-            talk_mode_display = gr.Textbox(
-                label="TalkMode", value="WATCH", interactive=False
-            )
+            with gr.Column():
+                talk_mode_display = gr.Textbox(
+                    label="TalkMode", value="WATCH", interactive=False
+                )
+            with gr.Column():
+                avatar_out = gr.Image(label="Avatar", type="pil")
 
         gr.Markdown(
             "※ Auto update をオンにすると 0.5 秒ごとに再判定します。初回は下の Run ボタンを押してください。"
@@ -1291,7 +1346,7 @@ with gr.Blocks() as demo:
                 memory_tags,
                 user_text,
             ],
-            [talk_text, context_json, heartbeat_plot, talk_mode_display],
+            [talk_text, context_json, heartbeat_plot, talk_mode_display, avatar_out],
         )
 
         auto_toggle = gr.Checkbox(True, label="Auto update (0.5 s)")
@@ -1313,7 +1368,14 @@ with gr.Blocks() as demo:
                 memory_tags,
                 user_text,
             ],
-            [talk_text, context_json, heartbeat_plot, talk_mode_display, since_slider],
+            [
+                talk_text,
+                context_json,
+                heartbeat_plot,
+                talk_mode_display,
+                since_slider,
+                avatar_out,
+            ],
         )
 
         controls = [
@@ -1347,7 +1409,7 @@ with gr.Blocks() as demo:
                     memory_tags,
                     user_text,
                 ],
-                [talk_text, context_json, heartbeat_plot, talk_mode_display],
+                [talk_text, context_json, heartbeat_plot, talk_mode_display, avatar_out],
             )
 
         if camera is not None and camera_preview is not None:
