@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import hashlib
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Protocol
@@ -19,6 +20,68 @@ from emot_terrain_lab.ops.nightly_life_indicator import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+DEFAULT_MEMORY_THERMO_POLICY: Dict[str, Any] = {
+    "policy_version": "memory-ops-v1",
+    "entropy_model_id": "defrag-observe-v1",
+    "enabled_metrics": [
+        "memory_item_count",
+        "link_count",
+        "bytes_estimate",
+        "summary_count",
+    ],
+    "delta_weights": {
+        "memory_item_count": 1.0,
+        "link_count": 1.0,
+        "bytes_estimate": 1.0,
+        "summary_count": 1.0,
+    },
+    "entropy_cost_class_thresholds": {
+        "mid": 0.05,
+        "high": 0.20,
+    },
+    "default_phase": "stabilization",
+    "phase_profiles": {
+        "exploration": {
+            "phase_weight_profile": "phase.exploration.v1",
+            "delta_weights": {
+                "memory_item_count": 1.3,
+                "link_count": 1.1,
+                "bytes_estimate": 0.8,
+                "summary_count": 0.7,
+            },
+            "entropy_cost_class_thresholds": {"mid": 0.06, "high": 0.22},
+        },
+        "stabilization": {
+            "phase_weight_profile": "phase.stabilization.v1",
+            "delta_weights": {
+                "memory_item_count": 1.0,
+                "link_count": 1.0,
+                "bytes_estimate": 1.0,
+                "summary_count": 1.0,
+            },
+            "entropy_cost_class_thresholds": {"mid": 0.05, "high": 0.20},
+        },
+        "recovery": {
+            "phase_weight_profile": "phase.recovery.v1",
+            "delta_weights": {
+                "memory_item_count": 0.8,
+                "link_count": 1.4,
+                "bytes_estimate": 1.1,
+                "summary_count": 1.2,
+            },
+            "entropy_cost_class_thresholds": {"mid": 0.04, "high": 0.16},
+        },
+    },
+    "energy_budget_limit": 0.10,
+    "output_control_profiles": {
+        "normal": "normal_v1",
+        "throttled": "cautious_budget_v1",
+    },
+    "throttle_reason_codes": {
+        "budget_exceeded": "BUDGET_EXCEEDED",
+    },
+}
 
 
 class InternalRuntimeSurface(Protocol):
@@ -135,6 +198,11 @@ class ExternalRuntimeDelegateV2(HubRuntime):
         day_key_compact = day.strftime("%Y%m%d")
         qualia_path = self._config.telemetry_dir / f"qualia-{day_key_compact}.jsonl"
         qualia_records = load_qualia_log(qualia_path)
+        thermo_policy = _memory_thermo_policy(self._config)
+        previous_thermo = self._read_latest().get("memory_thermo")
+        phase_ctx = _resolve_phase_context(thermo_policy, previous_thermo)
+        defrag_result = _run_defrag_observe(qualia_records, thermo_policy, phase_ctx)
+        self._write_latest("memory_thermo", defrag_result)
         life_indicator = compute_life_indicator_for_day(
             qualia_records,
             num_diary_entries=0,
@@ -255,3 +323,195 @@ def _normalize_day_key(value: Any) -> Optional[str]:
         except ValueError:
             continue
     return None
+
+
+def _memory_thermo_policy(config: Any) -> Dict[str, Any]:
+    raw = getattr(config, "memory_thermo_policy", None)
+    if not isinstance(raw, dict):
+        return dict(DEFAULT_MEMORY_THERMO_POLICY)
+    merged = dict(DEFAULT_MEMORY_THERMO_POLICY)
+    merged.update(raw)
+    return merged
+
+
+def _run_defrag_observe(
+    qualia_records: list[dict[str, Any]],
+    policy: Dict[str, Any],
+    phase_ctx: Dict[str, Any],
+) -> Dict[str, Any]:
+    before = _measure_defrag_metrics(qualia_records, policy)
+    # Stage-1 observe: no structural mutation, only metering.
+    after = dict(before)
+    delta = _metrics_delta(before, after)
+    memory_entropy_delta = _entropy_delta_from_metrics(
+        delta,
+        phase_ctx.get("delta_weights") or {},
+    )
+    entropy_cost_class = _entropy_cost_class(
+        memory_entropy_delta,
+        phase_ctx.get("entropy_cost_class_thresholds") or {},
+    )
+    entropy_budget_ok = True
+    energy_budget_used = float(memory_entropy_delta)
+    energy_budget_limit = float(policy.get("energy_budget_limit", 0.10))
+    budget_throttle_applied = energy_budget_used >= energy_budget_limit
+    profile_cfg = policy.get("output_control_profiles") if isinstance(policy.get("output_control_profiles"), dict) else {}
+    reason_cfg = policy.get("throttle_reason_codes") if isinstance(policy.get("throttle_reason_codes"), dict) else {}
+    output_control_profile = str(
+        profile_cfg.get("throttled" if budget_throttle_applied else "normal")
+        or ("cautious_budget_v1" if budget_throttle_applied else "normal_v1")
+    )
+    throttle_reason_code = str(reason_cfg.get("budget_exceeded") or "BUDGET_EXCEEDED") if budget_throttle_applied else ""
+    projection_fp = _value_projection_fingerprint(
+        policy_version=str(policy.get("policy_version") or "memory-ops-v1"),
+        entropy_model_id=str(policy.get("entropy_model_id") or "defrag-observe-v1"),
+        memory_phase=str(phase_ctx.get("memory_phase") or "stabilization"),
+        phase_weight_profile=str(phase_ctx.get("phase_weight_profile") or "default"),
+        delta_weights=phase_ctx.get("delta_weights") or {},
+        thresholds=phase_ctx.get("entropy_cost_class_thresholds") or {},
+    )
+    return {
+        "defrag_status": "observed",
+        "defrag_mode": "observe",
+        "defrag_metrics_before": before,
+        "defrag_metrics_after": after,
+        "defrag_metrics_delta": delta,
+        "memory_entropy_delta": memory_entropy_delta,
+        "entropy_cost_class": entropy_cost_class,
+        "irreversible_op": False,
+        "entropy_budget_ok": entropy_budget_ok,
+        "memory_phase": str(phase_ctx.get("memory_phase") or "stabilization"),
+        "phase_weight_profile": str(phase_ctx.get("phase_weight_profile") or "default"),
+        "value_projection_fingerprint": projection_fp,
+        "phase_override_applied": bool(phase_ctx.get("phase_override_applied", False)),
+        "energy_budget_used": energy_budget_used,
+        "energy_budget_limit": energy_budget_limit,
+        "budget_throttle_applied": budget_throttle_applied,
+        "output_control_profile": output_control_profile,
+        "throttle_reason_code": throttle_reason_code,
+        "policy_version": str(policy.get("policy_version") or "memory-ops-v1"),
+        "entropy_model_id": str(policy.get("entropy_model_id") or "defrag-observe-v1"),
+    }
+
+
+def _measure_defrag_metrics(
+    qualia_records: list[dict[str, Any]],
+    policy: Dict[str, Any],
+) -> Dict[str, float]:
+    enabled = policy.get("enabled_metrics") or []
+    metrics: Dict[str, float] = {}
+    for metric_name in enabled:
+        key = str(metric_name)
+        if key == "memory_item_count":
+            metrics[key] = float(len(qualia_records))
+        elif key == "link_count":
+            metrics[key] = float(
+                sum(
+                    1
+                    for row in qualia_records
+                    if isinstance(row, dict)
+                    and any(
+                        candidate in row
+                        for candidate in ("parent_id", "link_id", "edge_id", "ref_id")
+                    )
+                )
+            )
+        elif key == "bytes_estimate":
+            metrics[key] = float(
+                sum(len(json.dumps(row, ensure_ascii=False, default=str)) for row in qualia_records)
+            )
+        elif key == "summary_count":
+            metrics[key] = float(
+                sum(
+                    1
+                    for row in qualia_records
+                    if isinstance(row, dict)
+                    and str(row.get("type") or row.get("kind") or "").lower() == "summary"
+                )
+            )
+    return metrics
+
+
+def _metrics_delta(before: Dict[str, float], after: Dict[str, float]) -> Dict[str, float]:
+    keys = set(before.keys()) | set(after.keys())
+    return {k: float(after.get(k, 0.0) - before.get(k, 0.0)) for k in sorted(keys)}
+
+
+def _entropy_delta_from_metrics(delta: Dict[str, float], weights: Dict[str, Any]) -> float:
+    total = 0.0
+    scale = 0.0
+    for key, value in delta.items():
+        weight = float(weights.get(key, 1.0))
+        total += abs(float(value)) * weight
+        scale += abs(weight)
+    if scale <= 0.0:
+        return 0.0
+    return float(total / scale)
+
+
+def _entropy_cost_class(memory_entropy_delta: float, thresholds: Dict[str, Any]) -> str:
+    high = float(thresholds.get("high", 0.20))
+    mid = float(thresholds.get("mid", 0.05))
+    if memory_entropy_delta >= high:
+        return "HIGH"
+    if memory_entropy_delta >= mid:
+        return "MID"
+    return "LOW"
+
+
+def _resolve_phase_context(policy: Dict[str, Any], previous_thermo: Any) -> Dict[str, Any]:
+    profiles = policy.get("phase_profiles") if isinstance(policy.get("phase_profiles"), dict) else {}
+    default_phase = str(policy.get("default_phase") or "stabilization")
+    selected_phase = default_phase
+    override_phase = policy.get("memory_phase_override")
+    override_applied = False
+    if isinstance(override_phase, str) and override_phase in profiles:
+        selected_phase = override_phase
+        override_applied = True
+    elif isinstance(override_phase, str) and override_phase:
+        selected_phase = default_phase
+    if isinstance(previous_thermo, dict):
+        prev_phase = previous_thermo.get("memory_phase")
+        if (
+            not (isinstance(override_phase, str) and override_phase in profiles)
+            and isinstance(prev_phase, str)
+            and prev_phase in profiles
+        ):
+            selected_phase = prev_phase
+    profile = profiles.get(selected_phase) if isinstance(profiles, dict) else None
+    if not isinstance(profile, dict):
+        profile = {}
+    weights = profile.get("delta_weights") if isinstance(profile.get("delta_weights"), dict) else policy.get("delta_weights") or {}
+    thresholds = (
+        profile.get("entropy_cost_class_thresholds")
+        if isinstance(profile.get("entropy_cost_class_thresholds"), dict)
+        else policy.get("entropy_cost_class_thresholds") or {}
+    )
+    return {
+        "memory_phase": selected_phase,
+        "phase_weight_profile": str(profile.get("phase_weight_profile") or f"phase.{selected_phase}.default"),
+        "delta_weights": dict(weights),
+        "entropy_cost_class_thresholds": dict(thresholds),
+        "phase_override_applied": override_applied,
+    }
+
+
+def _value_projection_fingerprint(
+    *,
+    policy_version: str,
+    entropy_model_id: str,
+    memory_phase: str,
+    phase_weight_profile: str,
+    delta_weights: Dict[str, Any],
+    thresholds: Dict[str, Any],
+) -> str:
+    payload = {
+        "policy_version": policy_version,
+        "entropy_model_id": entropy_model_id,
+        "memory_phase": memory_phase,
+        "phase_weight_profile": phase_weight_profile,
+        "delta_weights": delta_weights,
+        "entropy_cost_class_thresholds": thresholds,
+    }
+    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]

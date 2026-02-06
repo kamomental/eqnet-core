@@ -91,6 +91,20 @@ def test_run_nightly_audit_writes_file(tmp_path):
     assert isinstance(repair.get("next_step_count"), int)
     assert isinstance(repair.get("stuck_suspected"), bool)
     assert isinstance(repair.get("missing_keys"), list)
+    thermo = payload.get("memory_thermo_contract") or {}
+    assert isinstance(thermo.get("memory_thermo_contract_ok"), bool)
+    assert isinstance(thermo.get("missing_keys"), list)
+    assert isinstance(thermo.get("events_checked"), int)
+    assert isinstance(thermo.get("throttle_inconsistency_count"), int)
+    assert isinstance(thermo.get("throttle_reason_missing_count"), int)
+    assert isinstance(thermo.get("throttle_profile_missing_count"), int)
+    assert isinstance(thermo.get("irreversible_without_trace_count"), int)
+    assert isinstance(thermo.get("entropy_class_inconsistency_count"), int)
+    assert isinstance(thermo.get("defrag_metrics_missing_count"), int)
+    assert isinstance(thermo.get("defrag_delta_inconsistency_count"), int)
+    assert isinstance(thermo.get("phase_transition_fp_stale_count"), int)
+    assert isinstance(thermo.get("phase_override_applied_count"), int)
+    assert isinstance(thermo.get("warnings"), list)
 
 
 def test_run_nightly_audit_closed_loop_ok_when_required_fingerprints_exist(tmp_path):
@@ -230,6 +244,20 @@ def test_run_nightly_shadow_delegate_writes_trace_observation(tmp_path, monkeypa
     assert "policy_prior_fingerprint" in qobs
     assert "output_control_fingerprint" in qobs
     assert "audit_fingerprint" in qobs
+    assert isinstance(obs.get("memory_entropy_delta"), (int, float))
+    assert isinstance(obs.get("memory_phase"), str)
+    assert isinstance(obs.get("energy_budget_used"), (int, float))
+    assert isinstance(obs.get("budget_throttle_applied"), bool)
+    assert isinstance(obs.get("throttle_reason_code"), str)
+    assert isinstance(obs.get("output_control_profile"), str)
+    assert isinstance(obs.get("phase_override_applied"), bool)
+    assert isinstance(obs.get("policy_version"), str)
+    assert isinstance(obs.get("entropy_model_id"), str)
+    assert isinstance(obs.get("event_id"), str)
+    assert isinstance(obs.get("trace_id"), str)
+    assert isinstance(obs.get("defrag_metrics_before"), dict)
+    assert isinstance(obs.get("defrag_metrics_after"), dict)
+    assert isinstance(obs.get("defrag_metrics_delta"), dict)
 
 
 def test_run_nightly_idempotency_skip(tmp_path, monkeypatch):
@@ -534,3 +562,384 @@ def test_run_nightly_audit_repair_coverage_stuck_yellow(tmp_path):
     assert repair.get("stuck_suspected") is True
     health = payload.get("health") or {}
     assert health.get("status") in {"YELLOW", "RED"}
+
+
+def test_run_nightly_audit_memory_thermo_contract_yellow_on_throttle_inconsistency(tmp_path):
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {
+            "timestamp_ms": 1000,
+            "turn_id": "turn-1",
+            "source_loop": "hub",
+            "policy": {"observations": {"hub": {
+                "day_key": day,
+                "memory_entropy_delta": 0.1,
+                "memory_phase": "stabilization",
+                "energy_budget_used": 1.0,
+                "energy_budget_limit": 2.0,
+                "budget_throttle_applied": True,
+                "policy_version": "memory-ops-v1",
+                "entropy_model_id": "entropy-model-v1",
+                "event_id": "evt-1",
+                "trace_id": "tr-1",
+                "defrag_metrics_before": {"memory_item_count": 2.0},
+                "defrag_metrics_after": {"memory_item_count": 3.0},
+                "defrag_metrics_delta": {"memory_item_count": 1.0},
+                "throttle_reason_code": "BUDGET_EXCEEDED",
+                "output_control_profile": "cautious_budget_v1",
+            }}},
+            "qualia": {"observations": {"hub": {"output_control_fingerprint": "q"}}},
+        },
+    ]
+    (day_dir / "hub-1.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n",
+        encoding="utf-8",
+    )
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    hub._run_nightly_audit(date(2025, 12, 14))
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    thermo = payload.get("memory_thermo_contract") or {}
+    assert thermo.get("memory_thermo_contract_ok") is False
+    assert int(thermo.get("throttle_inconsistency_count") or 0) >= 1
+    health = payload.get("health") or {}
+    assert health.get("status") in {"YELLOW", "RED"}
+
+
+def test_run_nightly_audit_memory_thermo_contract_yellow_on_irreversible_without_trace(tmp_path):
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {
+            "timestamp_ms": 1000,
+            "turn_id": "turn-1",
+            "source_loop": "hub",
+            "policy": {"observations": {"hub": {
+                "day_key": day,
+                "memory_entropy_delta": 0.2,
+                "memory_phase": "stabilization",
+                "energy_budget_used": 2.0,
+                "energy_budget_limit": 1.0,
+                "budget_throttle_applied": True,
+                "irreversible_op": True,
+                "entropy_cost_class": "MID",
+                "policy_version": "memory-ops-v1",
+                "entropy_model_id": "entropy-model-v1",
+                "defrag_metrics_before": {"memory_item_count": 2.0},
+                "defrag_metrics_after": {"memory_item_count": 3.0},
+                "defrag_metrics_delta": {"memory_item_count": 1.0},
+                "throttle_reason_code": "BUDGET_EXCEEDED",
+                "output_control_profile": "cautious_budget_v1",
+            }}},
+            "qualia": {"observations": {"hub": {"output_control_fingerprint": "q"}}},
+        },
+    ]
+    (day_dir / "hub-1.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n",
+        encoding="utf-8",
+    )
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    hub._run_nightly_audit(date(2025, 12, 14))
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    thermo = payload.get("memory_thermo_contract") or {}
+    assert thermo.get("memory_thermo_contract_ok") is False
+    assert int(thermo.get("irreversible_without_trace_count") or 0) >= 1
+    health = payload.get("health") or {}
+    assert health.get("status") in {"YELLOW", "RED"}
+
+
+def test_run_nightly_audit_memory_thermo_contract_yellow_on_defrag_delta_mismatch(tmp_path):
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {
+            "timestamp_ms": 1000,
+            "turn_id": "turn-1",
+            "source_loop": "hub",
+            "policy": {"observations": {"hub": {
+                "day_key": day,
+                "memory_entropy_delta": 0.2,
+                "memory_phase": "stabilization",
+                "energy_budget_used": 2.0,
+                "energy_budget_limit": 1.0,
+                "budget_throttle_applied": True,
+                "irreversible_op": False,
+                "entropy_cost_class": "MID",
+                "policy_version": "memory-ops-v1",
+                "entropy_model_id": "entropy-model-v1",
+                "event_id": "evt-1",
+                "trace_id": "tr-1",
+                "defrag_metrics_before": {"memory_item_count": 2.0},
+                "defrag_metrics_after": {"memory_item_count": 3.0},
+                "defrag_metrics_delta": {"memory_item_count": 0.5},
+                "throttle_reason_code": "BUDGET_EXCEEDED",
+                "output_control_profile": "cautious_budget_v1",
+            }}},
+            "qualia": {"observations": {"hub": {"output_control_fingerprint": "q"}}},
+        },
+    ]
+    (day_dir / "hub-1.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n",
+        encoding="utf-8",
+    )
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    hub._run_nightly_audit(date(2025, 12, 14))
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    thermo = payload.get("memory_thermo_contract") or {}
+    assert thermo.get("memory_thermo_contract_ok") is False
+    assert int(thermo.get("defrag_delta_inconsistency_count") or 0) >= 1
+    health = payload.get("health") or {}
+    assert health.get("status") in {"YELLOW", "RED"}
+
+
+def test_run_nightly_audit_memory_thermo_contract_yellow_on_phase_transition_fp_stale(tmp_path):
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {
+            "timestamp_ms": 1000,
+            "turn_id": "turn-1",
+            "source_loop": "hub",
+            "policy": {"observations": {"hub": {
+                "day_key": day,
+                "memory_entropy_delta": 0.1,
+                "memory_phase": "exploration",
+                "phase_weight_profile": "phase.exploration.v1",
+                "value_projection_fingerprint": "fp-same",
+                "energy_budget_used": 1.0,
+                "energy_budget_limit": 1.0,
+                "budget_throttle_applied": True,
+                "irreversible_op": False,
+                "entropy_cost_class": "MID",
+                "policy_version": "memory-ops-v1",
+                "entropy_model_id": "entropy-model-v1",
+                "event_id": "evt-1",
+                "trace_id": "tr-1",
+                "defrag_metrics_before": {"memory_item_count": 2.0},
+                "defrag_metrics_after": {"memory_item_count": 2.0},
+                "defrag_metrics_delta": {"memory_item_count": 0.0},
+                "throttle_reason_code": "BUDGET_EXCEEDED",
+                "output_control_profile": "cautious_budget_v1",
+            }}},
+            "qualia": {"observations": {"hub": {"output_control_fingerprint": "q"}}},
+        },
+        {
+            "timestamp_ms": 2000,
+            "turn_id": "turn-2",
+            "source_loop": "hub",
+            "policy": {"observations": {"hub": {
+                "day_key": day,
+                "memory_entropy_delta": 0.2,
+                "memory_phase": "recovery",
+                "phase_weight_profile": "phase.recovery.v1",
+                "value_projection_fingerprint": "fp-same",
+                "energy_budget_used": 1.0,
+                "energy_budget_limit": 1.0,
+                "budget_throttle_applied": True,
+                "irreversible_op": False,
+                "entropy_cost_class": "MID",
+                "policy_version": "memory-ops-v1",
+                "entropy_model_id": "entropy-model-v1",
+                "event_id": "evt-2",
+                "trace_id": "tr-2",
+                "defrag_metrics_before": {"memory_item_count": 2.0},
+                "defrag_metrics_after": {"memory_item_count": 2.0},
+                "defrag_metrics_delta": {"memory_item_count": 0.0},
+                "throttle_reason_code": "BUDGET_EXCEEDED",
+                "output_control_profile": "cautious_budget_v1",
+            }}},
+            "qualia": {"observations": {"hub": {"output_control_fingerprint": "q"}}},
+        },
+    ]
+    (day_dir / "hub-1.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n",
+        encoding="utf-8",
+    )
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    hub._run_nightly_audit(date(2025, 12, 14))
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    thermo = payload.get("memory_thermo_contract") or {}
+    assert thermo.get("memory_thermo_contract_ok") is False
+    assert int(thermo.get("phase_transition_fp_stale_count") or 0) >= 1
+    health = payload.get("health") or {}
+    assert health.get("status") in {"YELLOW", "RED"}
+
+
+def test_run_nightly_audit_memory_thermo_contract_yellow_on_missing_throttle_reason(tmp_path):
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    row = {
+        "timestamp_ms": 1000,
+        "turn_id": "turn-1",
+        "source_loop": "hub",
+        "policy": {"observations": {"hub": {
+            "day_key": day,
+            "memory_entropy_delta": 0.2,
+            "memory_phase": "stabilization",
+            "phase_weight_profile": "phase.stabilization.v1",
+            "value_projection_fingerprint": "fp-1",
+            "energy_budget_used": 2.0,
+            "energy_budget_limit": 1.0,
+            "budget_throttle_applied": True,
+            "output_control_profile": "cautious_budget_v1",
+            "irreversible_op": False,
+            "entropy_cost_class": "MID",
+            "policy_version": "memory-ops-v1",
+            "entropy_model_id": "entropy-model-v1",
+            "event_id": "evt-1",
+            "trace_id": "tr-1",
+            "defrag_metrics_before": {"memory_item_count": 2.0},
+            "defrag_metrics_after": {"memory_item_count": 2.0},
+            "defrag_metrics_delta": {"memory_item_count": 0.0},
+        }}},
+        "qualia": {"observations": {"hub": {"output_control_fingerprint": "q"}}},
+    }
+    (day_dir / "hub-1.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    hub._run_nightly_audit(date(2025, 12, 14))
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    thermo = payload.get("memory_thermo_contract") or {}
+    assert thermo.get("memory_thermo_contract_ok") is False
+    assert int(thermo.get("throttle_reason_missing_count") or 0) >= 1
+
+
+def test_run_nightly_audit_memory_thermo_contract_yellow_on_missing_throttle_profile(tmp_path):
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    row = {
+        "timestamp_ms": 1000,
+        "turn_id": "turn-1",
+        "source_loop": "hub",
+        "policy": {"observations": {"hub": {
+            "day_key": day,
+            "memory_entropy_delta": 0.2,
+            "memory_phase": "stabilization",
+            "phase_weight_profile": "phase.stabilization.v1",
+            "value_projection_fingerprint": "fp-1",
+            "energy_budget_used": 2.0,
+            "energy_budget_limit": 1.0,
+            "budget_throttle_applied": True,
+            "throttle_reason_code": "BUDGET_EXCEEDED",
+            "irreversible_op": False,
+            "entropy_cost_class": "MID",
+            "policy_version": "memory-ops-v1",
+            "entropy_model_id": "entropy-model-v1",
+            "event_id": "evt-1",
+            "trace_id": "tr-1",
+            "defrag_metrics_before": {"memory_item_count": 2.0},
+            "defrag_metrics_after": {"memory_item_count": 2.0},
+            "defrag_metrics_delta": {"memory_item_count": 0.0},
+        }}},
+        "qualia": {"observations": {"hub": {"output_control_fingerprint": "q"}}},
+    }
+    (day_dir / "hub-1.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    hub._run_nightly_audit(date(2025, 12, 14))
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    thermo = payload.get("memory_thermo_contract") or {}
+    assert thermo.get("memory_thermo_contract_ok") is False
+    assert int(thermo.get("throttle_profile_missing_count") or 0) >= 1
+
+
+def test_run_nightly_audit_memory_thermo_contract_warn_on_phase_override_applied(tmp_path):
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    row = {
+        "timestamp_ms": 1000,
+        "turn_id": "turn-1",
+        "source_loop": "hub",
+        "policy": {"observations": {"hub": {
+            "day_key": day,
+            "memory_entropy_delta": 0.0,
+            "memory_phase": "exploration",
+            "phase_weight_profile": "phase.exploration.v1",
+            "value_projection_fingerprint": "fp-1",
+            "energy_budget_used": 0.0,
+            "energy_budget_limit": 1.0,
+            "budget_throttle_applied": False,
+            "throttle_reason_code": "",
+            "output_control_profile": "normal_v1",
+            "phase_override_applied": True,
+            "irreversible_op": False,
+            "entropy_cost_class": "LOW",
+            "policy_version": "memory-ops-v1",
+            "entropy_model_id": "entropy-model-v1",
+            "event_id": "evt-1",
+            "trace_id": "tr-1",
+            "defrag_metrics_before": {"memory_item_count": 1.0},
+            "defrag_metrics_after": {"memory_item_count": 1.0},
+            "defrag_metrics_delta": {"memory_item_count": 0.0},
+        }}},
+        "qualia": {"observations": {"hub": {"output_control_fingerprint": "q"}}},
+    }
+    (day_dir / "hub-1.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    hub._run_nightly_audit(date(2025, 12, 14))
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    thermo = payload.get("memory_thermo_contract") or {}
+    assert thermo.get("memory_thermo_contract_ok") is True
+    assert int(thermo.get("phase_override_applied_count") or 0) >= 1
+    assert "PHASE_OVERRIDE_APPLIED" in (thermo.get("warnings") or [])

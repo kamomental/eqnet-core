@@ -605,6 +605,152 @@ def _repair_coverage(records: List[Dict[str, Any]], day_key: str) -> Dict[str, A
         "missing_keys": sorted(set(missing_keys)),
     }
 
+
+def _memory_thermo_contract_coverage(records: List[Dict[str, Any]], day_key: str) -> Dict[str, Any]:
+    total = 0
+    missing_keys: list[str] = []
+    throttle_inconsistency_count = 0
+    throttle_reason_missing_count = 0
+    throttle_profile_missing_count = 0
+    irreversible_without_trace_count = 0
+    entropy_class_inconsistency_count = 0
+    defrag_metrics_missing_count = 0
+    defrag_delta_inconsistency_count = 0
+    required = (
+        "memory_entropy_delta",
+        "memory_phase",
+        "phase_weight_profile",
+        "value_projection_fingerprint",
+        "energy_budget_used",
+        "budget_throttle_applied",
+        "policy_version",
+        "entropy_model_id",
+    )
+    phase_transition_fp_stale_count = 0
+    phase_override_applied_count = 0
+    ordered_phase_rows: list[tuple[int, str, str]] = []
+    for row in records:
+        policy_obs = (((row.get("policy") or {}).get("observations") or {}).get("hub") or {})
+        if not isinstance(policy_obs, dict):
+            continue
+        if str(policy_obs.get("day_key") or "") != day_key:
+            continue
+        total += 1
+        for key in required:
+            if key not in policy_obs:
+                missing_keys.append(key)
+        if "memory_entropy_delta" in policy_obs and not isinstance(policy_obs.get("memory_entropy_delta"), (int, float)):
+            missing_keys.append("memory_entropy_delta")
+        if "memory_phase" in policy_obs and not isinstance(policy_obs.get("memory_phase"), str):
+            missing_keys.append("memory_phase")
+        if "energy_budget_used" in policy_obs and not isinstance(policy_obs.get("energy_budget_used"), (int, float)):
+            missing_keys.append("energy_budget_used")
+        if "budget_throttle_applied" in policy_obs and not isinstance(policy_obs.get("budget_throttle_applied"), bool):
+            missing_keys.append("budget_throttle_applied")
+
+        throttle = policy_obs.get("budget_throttle_applied")
+        used = policy_obs.get("energy_budget_used")
+        limit = policy_obs.get("energy_budget_limit")
+        if isinstance(throttle, bool) and throttle and isinstance(used, (int, float)) and isinstance(limit, (int, float)):
+            if float(used) < float(limit):
+                throttle_inconsistency_count += 1
+            reason = policy_obs.get("throttle_reason_code")
+            profile = policy_obs.get("output_control_profile")
+            if not (isinstance(reason, str) and reason.strip()):
+                throttle_reason_missing_count += 1
+            if not (isinstance(profile, str) and profile.strip()):
+                throttle_profile_missing_count += 1
+        irreversible_op = policy_obs.get("irreversible_op")
+        if isinstance(irreversible_op, bool) and irreversible_op:
+            event_id = policy_obs.get("event_id") or row.get("event_id")
+            trace_id = policy_obs.get("trace_id") or row.get("trace_id")
+            if not (isinstance(event_id, str) and event_id) or not (isinstance(trace_id, str) and trace_id):
+                irreversible_without_trace_count += 1
+        entropy_class = policy_obs.get("entropy_cost_class")
+        if isinstance(irreversible_op, bool) and irreversible_op and isinstance(entropy_class, str):
+            if entropy_class.strip().upper() == "LOW":
+                entropy_class_inconsistency_count += 1
+        phase = policy_obs.get("memory_phase")
+        projection_fp = policy_obs.get("value_projection_fingerprint")
+        ts = row.get("timestamp_ms")
+        if isinstance(phase, str) and phase and isinstance(projection_fp, str) and projection_fp and isinstance(ts, int):
+            ordered_phase_rows.append((ts, phase, projection_fp))
+        if bool(policy_obs.get("phase_override_applied")):
+            phase_override_applied_count += 1
+        before_metrics = policy_obs.get("defrag_metrics_before")
+        after_metrics = policy_obs.get("defrag_metrics_after")
+        delta_metrics = policy_obs.get("defrag_metrics_delta")
+        if isinstance(irreversible_op, bool) and irreversible_op:
+            if not isinstance(before_metrics, dict) or not isinstance(after_metrics, dict) or not isinstance(delta_metrics, dict):
+                defrag_metrics_missing_count += 1
+        if isinstance(before_metrics, dict) and isinstance(after_metrics, dict) and isinstance(delta_metrics, dict):
+            keys = set(before_metrics.keys()) | set(after_metrics.keys()) | set(delta_metrics.keys())
+            inconsistent = False
+            for key in keys:
+                b = before_metrics.get(key)
+                a = after_metrics.get(key)
+                d = delta_metrics.get(key)
+                if not isinstance(b, (int, float)) or not isinstance(a, (int, float)) or not isinstance(d, (int, float)):
+                    continue
+                if abs((float(a) - float(b)) - float(d)) > 1e-6:
+                    inconsistent = True
+                    break
+            if inconsistent:
+                defrag_delta_inconsistency_count += 1
+
+    if total == 0:
+        return {
+            "memory_thermo_contract_ok": True,
+            "missing_keys": [],
+            "events_checked": 0,
+            "throttle_inconsistency_count": 0,
+            "throttle_reason_missing_count": 0,
+            "throttle_profile_missing_count": 0,
+            "irreversible_without_trace_count": 0,
+            "entropy_class_inconsistency_count": 0,
+            "defrag_metrics_missing_count": 0,
+            "defrag_delta_inconsistency_count": 0,
+            "phase_transition_fp_stale_count": 0,
+            "phase_override_applied_count": 0,
+            "warnings": [],
+        }
+    prev_phase: str | None = None
+    prev_fp: str | None = None
+    for _ts, phase, fp in sorted(ordered_phase_rows, key=lambda item: item[0]):
+        if prev_phase is not None and phase != prev_phase and prev_fp is not None and fp == prev_fp:
+            phase_transition_fp_stale_count += 1
+        prev_phase = phase
+        prev_fp = fp
+    return {
+        "memory_thermo_contract_ok": (
+            len(missing_keys) == 0
+            and throttle_inconsistency_count == 0
+            and throttle_reason_missing_count == 0
+            and throttle_profile_missing_count == 0
+            and irreversible_without_trace_count == 0
+            and entropy_class_inconsistency_count == 0
+            and defrag_metrics_missing_count == 0
+            and defrag_delta_inconsistency_count == 0
+            and phase_transition_fp_stale_count == 0
+        ),
+        "missing_keys": sorted(set(missing_keys)),
+        "events_checked": total,
+        "throttle_inconsistency_count": throttle_inconsistency_count,
+        "throttle_reason_missing_count": throttle_reason_missing_count,
+        "throttle_profile_missing_count": throttle_profile_missing_count,
+        "irreversible_without_trace_count": irreversible_without_trace_count,
+        "entropy_class_inconsistency_count": entropy_class_inconsistency_count,
+        "defrag_metrics_missing_count": defrag_metrics_missing_count,
+        "defrag_delta_inconsistency_count": defrag_delta_inconsistency_count,
+        "phase_transition_fp_stale_count": phase_transition_fp_stale_count,
+        "phase_override_applied_count": phase_override_applied_count,
+        "warnings": (
+            ["PHASE_OVERRIDE_APPLIED"]
+            if phase_override_applied_count > 0
+            else []
+        ),
+    }
+
 def generate_audit(cfg: NightlyAuditConfig) -> Path:
     day_dir = cfg.trace_root / cfg.date_yyyy_mm_dd
     if not day_dir.exists():
@@ -795,6 +941,61 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
             level="YELLOW",
             reason="repair trigger detected without progression",
         )
+    memory_thermo_contract = _memory_thermo_contract_coverage(records, cfg.date_yyyy_mm_dd)
+    if memory_thermo_contract.get("missing_keys"):
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason=f"memory thermo contract missing keys: {memory_thermo_contract.get('missing_keys')}",
+        )
+    if int(memory_thermo_contract.get("throttle_inconsistency_count") or 0) > 0:
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason="budget throttle inconsistency detected",
+        )
+    if int(memory_thermo_contract.get("throttle_reason_missing_count") or 0) > 0:
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason="budget throttle reason missing",
+        )
+    if int(memory_thermo_contract.get("throttle_profile_missing_count") or 0) > 0:
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason="budget throttle profile missing",
+        )
+    if int(memory_thermo_contract.get("irreversible_without_trace_count") or 0) > 0:
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason="irreversible_without_trace detected",
+        )
+    if int(memory_thermo_contract.get("entropy_class_inconsistency_count") or 0) > 0:
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason="irreversible_op with LOW entropy_cost_class detected",
+        )
+    if int(memory_thermo_contract.get("defrag_metrics_missing_count") or 0) > 0:
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason="irreversible defrag without metrics detected",
+        )
+    if int(memory_thermo_contract.get("defrag_delta_inconsistency_count") or 0) > 0:
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason="defrag metrics delta inconsistency detected",
+        )
+    if int(memory_thermo_contract.get("phase_transition_fp_stale_count") or 0) > 0:
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason="phase transition without projection fingerprint update detected",
+        )
 
     qualia_gate_stats = _qualia_gate_boundary_stats(records)
     presence_stats = _qualia_gate_presence_stats(records)
@@ -835,6 +1036,7 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
         "closed_loop_trace": closed_loop,
         "recall_cue_budget": recall_cue_budget,
         "repair_coverage": repair_coverage,
+        "memory_thermo_contract": memory_thermo_contract,
         "ru_v0_summary": _ru_v0_summary(records),
         "qualia_gate_stats": qualia_gate_stats,
     }

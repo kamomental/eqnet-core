@@ -130,6 +130,16 @@ def _repair_counts_from_trace(day_dir: Path) -> dict[str, int]:
     }
 
 
+def _trace_rows(day_dir: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for fp in sorted(day_dir.glob("*.jsonl")):
+        for line in fp.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            rows.append(json.loads(line))
+    return rows
+
+
 def test_hub_closed_loop_generates_audit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     scenario = load_proof_scenario()
     memory_ref_log = tmp_path / "logs" / "memory_ref.jsonl"
@@ -199,4 +209,77 @@ def test_hub_closed_loop_generates_audit(tmp_path: Path, monkeypatch: pytest.Mon
     assert repair_counts["trigger_count"] >= 1
     assert repair_counts["next_step_count"] >= 1
     assert repair_counts["output_control_repair_state_count"] >= 1
+
+
+def test_hub_entropy_memory_ops_e2e_sealed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    day = date(2025, 12, 14)
+    memory_ref_log = tmp_path / "logs" / "memory_ref.jsonl"
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=tmp_path / "trace_v1",
+        audit_dir=tmp_path / "audit",
+        memory_reference_log_path=memory_ref_log,
+        memory_thermo_policy={
+            "default_phase": "stabilization",
+            "memory_phase_override": "exploration",
+            "energy_budget_limit": 0.0,
+        },
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    monkeypatch.setenv("EQNET_TRACE_V1", "1")
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(config.trace_dir))
+
+    # Nightly #1: exploration phase
+    hub.run_nightly(day)
+    # Nightly #2: recovery phase (policy override)
+    config.memory_thermo_policy = dict(config.memory_thermo_policy or {})
+    config.memory_thermo_policy["memory_phase_override"] = "recovery"
+    hub.run_nightly(day)
+
+    # One conversation event to ensure gate reflection appears in hub trace.
+    ts = datetime(day.year, day.month, day.day, 18, 0, tzinfo=timezone.utc)
+    event = {
+        "timestamp_ms": int(ts.timestamp() * 1000),
+        "scenario_id": "entropy-e2e",
+        "session_id": "entropy-e2e",
+        "turn_id": "entropy-turn-1",
+        "user_text": "<redacted>",
+    }
+    hub.log_moment(_as_moment_object(event), "<redacted>")
+
+    day_key = day.strftime("%Y-%m-%d")
+    audit_path = config.audit_dir / f"nightly_audit_{day_key}.json"
+    assert audit_path.exists()
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    thermo = audit.get("memory_thermo_contract") or {}
+    assert thermo.get("memory_thermo_contract_ok") is True
+    assert int(thermo.get("phase_transition_fp_stale_count") or 0) == 0
+
+    day_dir = config.trace_dir / day_key
+    rows = _trace_rows(day_dir)
+    assert rows
+    obs_rows = [
+        (((r.get("policy") or {}).get("observations") or {}).get("hub") or {})
+        for r in rows
+    ]
+    nightly_obs = [o for o in obs_rows if o.get("operation") == "run_nightly"]
+    assert nightly_obs
+    assert any(isinstance(o.get("defrag_metrics_before"), dict) for o in nightly_obs)
+    assert any(isinstance(o.get("defrag_metrics_after"), dict) for o in nightly_obs)
+    assert any(isinstance(o.get("defrag_metrics_delta"), dict) for o in nightly_obs)
+    phases = [str(o.get("memory_phase") or "") for o in nightly_obs]
+    assert "exploration" in phases
+    assert "recovery" in phases
+    projection_fps = [str(o.get("value_projection_fingerprint") or "") for o in nightly_obs if isinstance(o.get("value_projection_fingerprint"), str)]
+    assert len(set(projection_fps)) >= 2
+    assert any(bool(o.get("budget_throttle_applied")) for o in nightly_obs)
+    assert any(str(o.get("throttle_reason_code") or "") == "BUDGET_EXCEEDED" for o in nightly_obs)
+    assert any(str(o.get("output_control_profile") or "") == "cautious_budget_v1" for o in nightly_obs)
+
+    log_obs = [o for o in obs_rows if not o.get("operation")]
+    assert log_obs
+    assert any(bool(o.get("budget_throttle_applied")) for o in log_obs)
+    assert any(str(o.get("output_control_profile") or "") == "cautious_budget_v1" for o in log_obs)
 

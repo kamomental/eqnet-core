@@ -70,6 +70,7 @@ class EQNetConfig:
     audit_dir: Path = Path("telemetry/audit")
     memory_reference_log_path: Path | None = None
     audit_thresholds: Dict[str, Any] | None = None
+    memory_thermo_policy: Dict[str, Any] | None = None
 
 
 class EQNetHub:
@@ -93,6 +94,7 @@ class EQNetHub:
         self._latest_qualia_state: Optional[QualiaState] = None
         self._latest_life_indicator: Optional[LifeIndicator] = None
         self._latest_policy_prior: Optional[PolicyPrior] = None
+        self._latest_memory_thermo: dict[str, Any] | None = None
         self._repair_snapshot: RepairSnapshot = RepairSnapshot.initial()
         self._trace_safety = SafetyConfig()
         self._runtime_delegate = self._resolve_runtime_delegate(runtime_delegate)
@@ -247,6 +249,7 @@ class EQNetHub:
         policy_prior_fingerprint: Optional[str] = None
         output_control_fingerprint: Optional[str] = None
         audit_fingerprint: Optional[str] = None
+        memory_thermo: dict[str, Any] | None = None
         try:
             day = date_obj
             self._runtime_delegate.run_nightly(
@@ -259,6 +262,7 @@ class EQNetHub:
             policy_prior_fingerprint = current["policy_prior_fingerprint"]
             output_control_fingerprint = current["output_control_fingerprint"]
             audit_fingerprint = current["audit_fingerprint"]
+            memory_thermo = current.get("memory_thermo")
 
             idem_status = "done"
             result_fingerprint = self._fingerprint_json_payload(
@@ -291,6 +295,7 @@ class EQNetHub:
                 policy_prior_fingerprint=policy_prior_fingerprint,
                 output_control_fingerprint=output_control_fingerprint,
                 audit_fingerprint=audit_fingerprint,
+                memory_thermo=memory_thermo,
             )
             # Rebuild nightly audit after hub trace emission so coverage checks
             # observe the final closed-loop trace set for the day.
@@ -560,6 +565,47 @@ class EQNetHub:
             now_ts=datetime.now(timezone.utc).timestamp(),
         )
 
+    def _memory_thermo_contract_fields(
+        self,
+        *,
+        memory_entropy_delta: float | None = None,
+        entropy_cost_class: str | None = None,
+        irreversible_op: bool | None = None,
+        entropy_budget_ok: bool | None = None,
+        memory_phase: str | None = None,
+        phase_weight_profile: str | None = None,
+        value_projection_fingerprint: str | None = None,
+        energy_budget_used: float | None = None,
+        energy_budget_limit: float | None = None,
+        budget_throttle_applied: bool | None = None,
+        throttle_reason_code: str | None = None,
+        output_control_profile: str | None = None,
+        phase_override_applied: bool | None = None,
+        policy_version: str | None = None,
+        entropy_model_id: str | None = None,
+    ) -> dict[str, Any]:
+        phase = memory_phase or "stabilization"
+        profile = phase_weight_profile or "default"
+        projection_fp = value_projection_fingerprint or self._fingerprint_json_payload(
+            {"memory_phase": phase, "phase_weight_profile": profile}
+        )
+        return {
+            "memory_entropy_delta": float(memory_entropy_delta if memory_entropy_delta is not None else 0.0),
+            "entropy_cost_class": entropy_cost_class or "LOW",
+            "irreversible_op": bool(irreversible_op) if irreversible_op is not None else False,
+            "entropy_budget_ok": bool(entropy_budget_ok) if entropy_budget_ok is not None else True,
+            "memory_phase": phase,
+            "phase_weight_profile": profile,
+            "value_projection_fingerprint": projection_fp,
+            "energy_budget_used": float(energy_budget_used if energy_budget_used is not None else 0.0),
+            "energy_budget_limit": float(energy_budget_limit if energy_budget_limit is not None else 0.0),
+            "budget_throttle_applied": bool(budget_throttle_applied) if budget_throttle_applied is not None else False,
+            "throttle_reason_code": str(throttle_reason_code or ""),
+            "output_control_profile": str(output_control_profile or "normal_v1"),
+            "phase_override_applied": bool(phase_override_applied) if phase_override_applied is not None else False,
+            "policy_version": policy_version or "memory-ops-v1",
+            "entropy_model_id": entropy_model_id or "entropy-model-v1",
+        }
 
     def _emit_trace_v1(
         self,
@@ -606,16 +652,30 @@ class EQNetHub:
             policy_obs = thin_entry.setdefault("trace_observations", {}).setdefault("policy", {})
             day_key = resolve_day_key_from_moment(_moment_timestamp(moment_entry))
             episode_id = get_or_create_episode_id(moment_entry)
+            thermo = dict(self._latest_memory_thermo or {})
             output_control = apply_policy_prior(
                 self.latest_policy_prior(),
                 day_key=day_key,
                 episode_id=episode_id,
                 repair_snapshot=self._repair_snapshot,
+                budget_throttle_applied=bool(thermo.get("budget_throttle_applied")),
+                output_control_profile=(
+                    str(thermo.get("output_control_profile"))
+                    if thermo.get("output_control_profile")
+                    else None
+                ),
+                throttle_reason_code=(
+                    str(thermo.get("throttle_reason_code"))
+                    if thermo.get("throttle_reason_code")
+                    else None
+                ),
             )
             output_control_payload = output_control.to_fingerprint_payload()
             output_control_fingerprint = self._fingerprint_json_payload(output_control_payload)
             policy_obs.update(
                 {
+                    "event_id": f"hub:{episode_id}:{int(_moment_timestamp(moment_entry).timestamp() * 1000)}",
+                    "trace_id": idempotency_key or f"trace:{day_key}:{episode_id}",
                     "delegate_to": delegate_to,
                     "delegation_mode": delegation_mode,
                     "delegate_status": delegate_status,
@@ -626,11 +686,42 @@ class EQNetHub:
                     "episode_id": episode_id,
                     "control_applied_at": output_control.control_applied_at,
                     "output_control_repair_state": output_control.repair_state,
+                    "output_control_profile": output_control.output_control_profile,
+                    "throttle_reason_code": output_control.throttle_reason_code,
                     "repair_state_before": repair_state_before or self._repair_snapshot.state.value,
                     "repair_state_after": repair_state_after or self._repair_snapshot.state.value,
                     "repair_event": repair_event or RepairEvent.NONE.value,
                     "repair_reason_codes": list(repair_reason_codes or self._repair_snapshot.reason_codes),
                     "repair_fingerprint": repair_snapshot_fingerprint or repair_fingerprint(self._repair_snapshot),
+                    "phase_override_applied": bool(thermo.get("phase_override_applied", False)),
+                    **self._memory_thermo_contract_fields(
+                        memory_entropy_delta=_maybe_float(thermo.get("memory_entropy_delta")),
+                        entropy_cost_class=str(thermo.get("entropy_cost_class") or "LOW"),
+                        irreversible_op=bool(thermo.get("irreversible_op")) if "irreversible_op" in thermo else None,
+                        entropy_budget_ok=bool(thermo.get("entropy_budget_ok")) if "entropy_budget_ok" in thermo else None,
+                        memory_phase=str(thermo.get("memory_phase") or "stabilization"),
+                        phase_weight_profile=str(thermo.get("phase_weight_profile") or "default"),
+                        value_projection_fingerprint=(
+                            str(thermo.get("value_projection_fingerprint"))
+                            if thermo.get("value_projection_fingerprint")
+                            else None
+                        ),
+                        energy_budget_used=_maybe_float(thermo.get("energy_budget_used")),
+                        energy_budget_limit=_maybe_float(thermo.get("energy_budget_limit")),
+                        budget_throttle_applied=(
+                            bool(thermo.get("budget_throttle_applied"))
+                            if "budget_throttle_applied" in thermo
+                            else None
+                        ),
+                        throttle_reason_code=str(thermo.get("throttle_reason_code") or ""),
+                        output_control_profile=str(
+                            thermo.get("output_control_profile")
+                            or output_control.output_control_profile
+                            or "normal_v1"
+                        ),
+                        policy_version=str(thermo.get("policy_version") or "memory-ops-v1"),
+                        entropy_model_id=str(thermo.get("entropy_model_id") or "entropy-model-v1"),
+                    ),
                 }
             )
             closed_loop_fp = self._snapshot_closed_loop_fingerprints()
@@ -717,12 +808,15 @@ class EQNetHub:
             self._latest_life_indicator = value
         elif kind == "policy_prior":
             self._latest_policy_prior = value
+        elif kind == "memory_thermo":
+            self._latest_memory_thermo = dict(value or {})
 
     def _get_latest_state(self) -> Dict[str, Any]:
         return {
             "qualia": self._latest_qualia_state,
             "life_indicator": self._latest_life_indicator,
             "policy_prior": self._latest_policy_prior,
+            "memory_thermo": dict(self._latest_memory_thermo or {}),
         }
 
     def _derive_idempotency_key(
@@ -813,7 +907,7 @@ class EQNetHub:
         ).hexdigest()
         return f"run_nightly:{digest[:24]}"
 
-    def _snapshot_nightly_fingerprints(self, day: date) -> dict[str, Optional[str]]:
+    def _snapshot_nightly_fingerprints(self, day: date) -> dict[str, Any]:
         closed_loop = self._snapshot_closed_loop_fingerprints()
         audit_fingerprint = self._load_audit_fingerprint(day)
         return {
@@ -821,6 +915,7 @@ class EQNetHub:
             "policy_prior_fingerprint": closed_loop["policy_prior_fingerprint"],
             "output_control_fingerprint": closed_loop["output_control_fingerprint"],
             "audit_fingerprint": audit_fingerprint,
+            "memory_thermo": dict(self._latest_memory_thermo or {}),
         }
 
     def _snapshot_closed_loop_fingerprints(self) -> dict[str, Optional[str]]:
@@ -885,6 +980,7 @@ class EQNetHub:
         policy_prior_fingerprint: Optional[str],
         output_control_fingerprint: Optional[str],
         audit_fingerprint: Optional[str],
+        memory_thermo: Optional[dict[str, Any]] = None,
     ) -> None:
         if not _env_truthy(TRACE_FLAG_ENV):
             return
@@ -900,7 +996,34 @@ class EQNetHub:
             TracePathConfig(base_dir=base_dir, source_loop="hub"),
             timestamp_ms=int(stamp.timestamp() * 1000),
         )
+        thermo = dict(memory_thermo or {})
+        thermo_fields = self._memory_thermo_contract_fields(
+            memory_entropy_delta=_maybe_float(thermo.get("memory_entropy_delta")),
+            entropy_cost_class=str(thermo.get("entropy_cost_class") or "MID"),
+            irreversible_op=bool(thermo.get("irreversible_op")) if "irreversible_op" in thermo else None,
+            entropy_budget_ok=bool(thermo.get("entropy_budget_ok")) if "entropy_budget_ok" in thermo else None,
+            memory_phase=str(thermo.get("memory_phase") or "stabilization"),
+            phase_weight_profile=str(thermo.get("phase_weight_profile") or "default"),
+            value_projection_fingerprint=(
+                str(thermo.get("value_projection_fingerprint"))
+                if thermo.get("value_projection_fingerprint")
+                else None
+            ),
+            energy_budget_used=_maybe_float(thermo.get("energy_budget_used")),
+            energy_budget_limit=_maybe_float(thermo.get("energy_budget_limit")),
+            budget_throttle_applied=(
+                bool(thermo.get("budget_throttle_applied"))
+                if "budget_throttle_applied" in thermo
+                else None
+            ),
+            throttle_reason_code=str(thermo.get("throttle_reason_code") or ""),
+            output_control_profile=str(thermo.get("output_control_profile") or "normal_v1"),
+            policy_version=str(thermo.get("policy_version") or "memory-ops-v1"),
+            entropy_model_id=str(thermo.get("entropy_model_id") or "defrag-observe-v1"),
+        )
         event = {
+            "event_id": f"hub:nightly:{date_obj.isoformat()}:{idempotency_key}",
+            "trace_id": idempotency_key,
             "schema_version": TRACE_SCHEMA_VERSION,
             "source_loop": "hub",
             "runtime_version": self._runtime_version,
@@ -931,6 +1054,15 @@ class EQNetHub:
                         "idempotency_status": idempotency_status,
                         "mismatch_policy": mismatch_policy,
                         "mismatch_reason_codes": mismatch_reason_codes,
+                        "event_id": f"hub:nightly:{date_obj.isoformat()}:{idempotency_key}",
+                        "trace_id": idempotency_key,
+                        "defrag_status": str(thermo.get("defrag_status") or "unknown"),
+                        "defrag_mode": str(thermo.get("defrag_mode") or "unknown"),
+                        "defrag_metrics_before": dict(thermo.get("defrag_metrics_before") or {}),
+                        "defrag_metrics_after": dict(thermo.get("defrag_metrics_after") or {}),
+                        "defrag_metrics_delta": dict(thermo.get("defrag_metrics_delta") or {}),
+                        "phase_override_applied": bool(thermo.get("phase_override_applied", False)),
+                        **thermo_fields,
                     }
                 }
             },
@@ -986,6 +1118,8 @@ class EQNetHub:
         )
         seed_source = f"query_state|{as_of}|{resolved_day_key}|{state_fingerprint}"
         event = {
+            "event_id": f"hub:query_state:{resolved_day_key}:{now_ms}",
+            "trace_id": f"query_state:{resolved_day_key}",
             "schema_version": TRACE_SCHEMA_VERSION,
             "source_loop": "hub",
             "runtime_version": self._runtime_version,
@@ -1017,6 +1151,9 @@ class EQNetHub:
                         "delegate_status": delegate_status,
                         "mismatch_policy": mismatch_policy,
                         "mismatch_reason_codes": mismatch_reason_codes,
+                        "event_id": f"hub:query_state:{resolved_day_key}:{now_ms}",
+                        "trace_id": f"query_state:{resolved_day_key}",
+                        **self._memory_thermo_contract_fields(),
                     }
                 }
             },

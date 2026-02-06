@@ -2,7 +2,7 @@
   "schema_version": "nightly_audit_v1",
   "date": "2025-12-14",
   "trace_files": [
-    "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-166\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-43804.jsonl"
+    "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-199\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-24260.jsonl"
   ],
   "invariants": {
     "summary": {},
@@ -29,7 +29,7 @@
         "jerk": 0.0,
         "temperature": 0.9,
         "accepted": false,
-        "trace_file": "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-166\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-43804.jsonl"
+        "trace_file": "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-199\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-24260.jsonl"
       }
     ],
     "top_temperature": [
@@ -40,7 +40,7 @@
         "jerk": 0.0,
         "temperature": 0.9,
         "accepted": false,
-        "trace_file": "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-166\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-43804.jsonl"
+        "trace_file": "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-199\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-24260.jsonl"
       }
     ]
   },
@@ -55,7 +55,7 @@
           "turn_id": "session-demo-turn-0005",
           "scenario_id": "session-demo",
           "timestamp_ms": 1765702800000,
-          "trace_file": "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-166\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-43804.jsonl"
+          "trace_file": "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-199\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-24260.jsonl"
         }
       ],
       "directiveness_cap": [
@@ -63,7 +63,7 @@
           "turn_id": "session-demo-turn-0005",
           "scenario_id": "session-demo",
           "timestamp_ms": 1765702800000,
-          "trace_file": "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-166\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-43804.jsonl"
+          "trace_file": "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-199\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-24260.jsonl"
         }
       ]
     }
@@ -83,7 +83,7 @@
           "jerk": 0.0,
           "temperature": 0.9,
           "accepted": false,
-          "trace_file": "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-166\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-43804.jsonl"
+          "trace_file": "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-199\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-24260.jsonl"
         }
       ],
       "top_temperature": [
@@ -94,7 +94,7 @@
           "jerk": 0.0,
           "temperature": 0.9,
           "accepted": false,
-          "trace_file": "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-166\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-43804.jsonl"
+          "trace_file": "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-199\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-24260.jsonl"
         }
       ]
     },
@@ -105,7 +105,7 @@
             "turn_id": "session-demo-turn-0005",
             "scenario_id": "session-demo",
             "timestamp_ms": 1765702800000,
-            "trace_file": "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-166\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-43804.jsonl"
+            "trace_file": "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-199\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-24260.jsonl"
           }
         ],
         "directiveness_cap": [
@@ -113,7 +113,7 @@
             "turn_id": "session-demo-turn-0005",
             "scenario_id": "session-demo",
             "timestamp_ms": 1765702800000,
-            "trace_file": "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-166\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-43804.jsonl"
+            "trace_file": "C:\\Users\\kouic\\AppData\\Local\\Temp\\pytest-of-kouic\\pytest-199\\test_day_key_consistency_acros0\\trace_dump\\2025-12-14\\hub-24260.jsonl"
           }
         ]
       }
@@ -159,6 +159,21 @@
     "next_step_count": 0,
     "stuck_suspected": false,
     "missing_keys": []
+  },
+  "memory_thermo_contract": {
+    "memory_thermo_contract_ok": true,
+    "missing_keys": [],
+    "events_checked": 2,
+    "throttle_inconsistency_count": 0,
+    "throttle_reason_missing_count": 0,
+    "throttle_profile_missing_count": 0,
+    "irreversible_without_trace_count": 0,
+    "entropy_class_inconsistency_count": 0,
+    "defrag_metrics_missing_count": 0,
+    "defrag_delta_inconsistency_count": 0,
+    "phase_transition_fp_stale_count": 0,
+    "phase_override_applied_count": 0,
+    "warnings": []
   },
   "ru_v0_summary": {
     "gate_action_counts": {},

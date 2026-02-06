@@ -43,3 +43,19 @@ def test_apply_policy_prior_repair_overlay_next_step_restores_normal_mode() -> N
     assert out.response_style_mode != "repair"
     assert out.repair_state == "NEXT_STEP"
 
+
+def test_apply_policy_prior_budget_throttle_sets_cautious_profile() -> None:
+    prior = PolicyPrior(warmth=0.6, directness=0.7, self_disclosure=0.1, calmness=0.6)
+    out = apply_policy_prior(
+        prior,
+        day_key="2026-02-06",
+        episode_id="ep-z",
+        budget_throttle_applied=True,
+        output_control_profile="cautious_budget_v1",
+        throttle_reason_code="BUDGET_EXCEEDED",
+    )
+    assert out.output_control_profile == "cautious_budget_v1"
+    assert out.throttle_reason_code == "BUDGET_EXCEEDED"
+    assert out.temperature_cap <= 0.45
+    assert out.recall_budget_override <= 1
+    assert out.safety_strictness >= 0.75

@@ -154,6 +154,27 @@ def test_log_moment_emits_trace_when_flag_enabled(
     assert isinstance(policy_obs.get("repair_reason_codes"), list)
     assert isinstance(policy_obs.get("repair_fingerprint"), str)
     assert policy_obs.get("repair_fingerprint")
+    assert isinstance(policy_obs.get("memory_entropy_delta"), (int, float))
+    assert isinstance(policy_obs.get("memory_phase"), str)
+    assert policy_obs.get("memory_phase")
+    assert isinstance(policy_obs.get("phase_weight_profile"), str)
+    assert policy_obs.get("phase_weight_profile")
+    assert isinstance(policy_obs.get("value_projection_fingerprint"), str)
+    assert policy_obs.get("value_projection_fingerprint")
+    assert isinstance(policy_obs.get("energy_budget_used"), (int, float))
+    assert isinstance(policy_obs.get("budget_throttle_applied"), bool)
+    assert isinstance(policy_obs.get("throttle_reason_code"), str)
+    assert isinstance(policy_obs.get("output_control_profile"), str)
+    assert policy_obs.get("output_control_profile")
+    assert isinstance(policy_obs.get("phase_override_applied"), bool)
+    assert isinstance(policy_obs.get("policy_version"), str)
+    assert policy_obs.get("policy_version")
+    assert isinstance(policy_obs.get("entropy_model_id"), str)
+    assert policy_obs.get("entropy_model_id")
+    assert isinstance(policy_obs.get("event_id"), str)
+    assert policy_obs.get("event_id")
+    assert isinstance(policy_obs.get("trace_id"), str)
+    assert policy_obs.get("trace_id")
     assert isinstance(qualia_obs.get("life_indicator_fingerprint"), (str, type(None)))
     assert isinstance(qualia_obs.get("policy_prior_fingerprint"), (str, type(None)))
     assert isinstance(qualia_obs.get("output_control_fingerprint"), str)
@@ -251,13 +272,27 @@ def test_log_moment_applies_policy_prior_once(
                 "control_applied_at": "response_gate_v1",
             }
 
-    def _spy_apply(policy_prior, *, day_key, episode_id, repair_snapshot=None):  # noqa: ANN001
+    def _spy_apply(
+        policy_prior,
+        *,
+        day_key,
+        episode_id,
+        repair_snapshot=None,
+        budget_throttle_applied=False,
+        output_control_profile=None,
+        throttle_reason_code=None,
+        output_control_policy=None,
+    ):  # noqa: ANN001
         calls.append(
             {
                 "day_key": day_key,
                 "episode_id": episode_id,
                 "pp": policy_prior,
                 "repair_snapshot": repair_snapshot,
+                "budget_throttle_applied": budget_throttle_applied,
+                "output_control_profile": output_control_profile,
+                "throttle_reason_code": throttle_reason_code,
+                "output_control_policy": output_control_policy,
             }
         )
         return _StubControl()
@@ -584,6 +619,27 @@ def test_query_state_emits_trace_contract_keys(
     assert isinstance(obs.get("repair_reason_codes"), list)
     assert isinstance(obs.get("repair_fingerprint"), str)
     assert obs.get("repair_fingerprint")
+    assert isinstance(obs.get("memory_entropy_delta"), (int, float))
+    assert isinstance(obs.get("memory_phase"), str)
+    assert obs.get("memory_phase")
+    assert isinstance(obs.get("phase_weight_profile"), str)
+    assert obs.get("phase_weight_profile")
+    assert isinstance(obs.get("value_projection_fingerprint"), str)
+    assert obs.get("value_projection_fingerprint")
+    assert isinstance(obs.get("energy_budget_used"), (int, float))
+    assert isinstance(obs.get("budget_throttle_applied"), bool)
+    assert isinstance(obs.get("throttle_reason_code"), str)
+    assert isinstance(obs.get("output_control_profile"), str)
+    assert obs.get("output_control_profile")
+    assert isinstance(obs.get("phase_override_applied"), bool)
+    assert isinstance(obs.get("policy_version"), str)
+    assert obs.get("policy_version")
+    assert isinstance(obs.get("entropy_model_id"), str)
+    assert obs.get("entropy_model_id")
+    assert isinstance(obs.get("event_id"), str)
+    assert obs.get("event_id")
+    assert isinstance(obs.get("trace_id"), str)
+    assert obs.get("trace_id")
     assert isinstance(obs.get("delegation_mode"), str)
     assert isinstance(obs.get("delegate_status"), str)
     qobs = data.get("qualia", {}).get("observations", {}).get("hub", {})
