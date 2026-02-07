@@ -1,0 +1,52 @@
+version: 0
+emotion_vocab_version: "v0"
+
+modes:
+  basic_emotion_5:
+    labels:
+      - joy
+      - anger
+      - sadness
+      - pleasure
+      - surprise
+  basic_emotion_plus:
+    labels:
+      - joy
+      - anger
+      - sadness
+      - pleasure
+      - surprise
+      - normal
+      - flat
+      - jitome
+  plutchik_wheel_8:
+    labels:
+      - joy
+      - trust
+      - fear
+      - surprise
+      - sadness
+      - disgust
+      - anger
+      - anticipation
+
+aliases:
+  ja:
+    joy: "喜"
+    anger: "怒"
+    sadness: "哀"
+    pleasure: "楽"
+    surprise: "驚"
+    normal: "通常"
+    flat: "無感情"
+    jitome: "ジト目"
+    trust: "信頼"
+    fear: "恐れ"
+    disgust: "嫌悪"
+    anticipation: "期待"
+
+non_diagnostic_labels:
+  - jitome
+
+display_notes:
+  jitome: "演出ラベル。診断・確定ラベルではない。"

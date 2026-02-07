@@ -606,6 +606,17 @@ class EmotionalHubRuntime:
         )
         self._default_persona_meta = self._build_default_persona_meta()
 
+    @staticmethod
+    def _ensure_interaction_gate_defaults(
+        gate_context: Optional[Mapping[str, Any]],
+    ) -> Dict[str, Any]:
+        """Phase 1: expose interaction gate fields with safe defaults."""
+        payload = dict(gate_context or {})
+        payload.setdefault("interaction_decision", "IGNORE")
+        # Keep list creation local to avoid shared mutable defaults.
+        payload.setdefault("interaction_reason_tags", [])
+        return payload
+
     def _default_self_model(self) -> SelfModel:
         return SelfModel(
             role_labels=["eqnet", "companion"],
@@ -998,7 +1009,7 @@ class EmotionalHubRuntime:
         last_gate_allow: Optional[bool] = None
         if isinstance(self._last_qualia_gate, dict) and "allow" in self._last_qualia_gate:
             last_gate_allow = bool(self._last_qualia_gate.get("allow"))
-        self._last_gate_context = {
+        self._last_gate_context = self._ensure_interaction_gate_defaults({
             "engaged": engaged,
             "face_motion": face_motion,
             "blink": blink,
@@ -1009,7 +1020,7 @@ class EmotionalHubRuntime:
             "text_input": text_input,
             "mode": self._talk_mode.name.lower(),
             "force_listen": self._force_listen,
-        }
+        })
         shadow_uncertainty = None
         shadow_mode = None
         if shadow_estimate is not None:
@@ -2234,7 +2245,7 @@ class EmotionalHubRuntime:
                 "arousal": float(getattr(affect, "arousal", 0.0)),
             },
             metrics=self._numeric_metrics_snapshot(metrics),
-            gate_context=dict(self._last_gate_context),
+            gate_context=self._ensure_interaction_gate_defaults(self._last_gate_context),
             prospective=self._serialize_prospective(prospective),
             heart_rate=float(heart_rate) if heart_rate is not None else None,
             heart_phase=float(heart_phase) if heart_phase is not None else None,

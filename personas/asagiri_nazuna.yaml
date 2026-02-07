@@ -1,4 +1,31 @@
-﻿conscious:\n  value_gradient:\n    survival_bias: 0.55\n    physiological_bias: 0.50\n    social_bias: 0.90\n    exploration_bias: 0.60\n    attachment_bias: 0.90\n  force_matrix:\n    REFLEX:\n      survival: 0.90\n      physiological: 0.70\n      social: 0.20\n      exploration: 0.10\n      attachment: 0.30\n    AFFECTIVE:\n      survival: 0.20\n      physiological: 0.40\n      social: 0.90\n      exploration: 0.30\n      attachment: 0.90\n    NARRATIVE:\n      survival: 0.30\n      physiological: 0.20\n      social: 0.50\n      exploration: 0.90\n      attachment: 0.60\n\nmeta:
+conscious:
+  value_gradient:
+    survival_bias: 0.55
+    physiological_bias: 0.50
+    social_bias: 0.90
+    exploration_bias: 0.60
+    attachment_bias: 0.90
+  force_matrix:
+    REFLEX:
+      survival: 0.90
+      physiological: 0.70
+      social: 0.20
+      exploration: 0.10
+      attachment: 0.30
+    AFFECTIVE:
+      survival: 0.20
+      physiological: 0.40
+      social: 0.90
+      exploration: 0.30
+      attachment: 0.90
+    NARRATIVE:
+      survival: 0.30
+      physiological: 0.20
+      social: 0.50
+      exploration: 0.90
+      attachment: 0.60
+
+meta:
   id: "asagiri_nazuna"
   display_name: "朝霧 なずな"
   furigana: "あさぎり なずな"

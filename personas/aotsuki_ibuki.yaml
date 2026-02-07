@@ -1,4 +1,31 @@
-﻿conscious:\n  value_gradient:\n    survival_bias: 0.85\n    physiological_bias: 0.65\n    social_bias: 0.50\n    exploration_bias: 0.25\n    attachment_bias: 0.55\n  force_matrix:\n    REFLEX:\n      survival: 0.95\n      physiological: 0.75\n      social: 0.25\n      exploration: 0.10\n      attachment: 0.35\n    AFFECTIVE:\n      survival: 0.35\n      physiological: 0.45\n      social: 0.65\n      exploration: 0.25\n      attachment: 0.55\n    NARRATIVE:\n      survival: 0.40\n      physiological: 0.30\n      social: 0.45\n      exploration: 0.85\n      attachment: 0.50\n\nmeta:
+conscious:
+  value_gradient:
+    survival_bias: 0.85
+    physiological_bias: 0.65
+    social_bias: 0.50
+    exploration_bias: 0.25
+    attachment_bias: 0.55
+  force_matrix:
+    REFLEX:
+      survival: 0.95
+      physiological: 0.75
+      social: 0.25
+      exploration: 0.10
+      attachment: 0.35
+    AFFECTIVE:
+      survival: 0.35
+      physiological: 0.45
+      social: 0.65
+      exploration: 0.25
+      attachment: 0.55
+    NARRATIVE:
+      survival: 0.40
+      physiological: 0.30
+      social: 0.45
+      exploration: 0.85
+      attachment: 0.50
+
+meta:
   id: "aotsuki_ibuki"
   display_name: "蒼月 いぶき"
   furigana: "あおつき いぶき"
@@ -185,7 +212,7 @@ voice_presets:
     tempo_bias: -0.08
     energy_bias: -0.05
     softness: 0.8
-qqfs:
+qfs:
   initial_policy_prior:
     risk_aversion: 0.55
     thrill_gain: 0.2

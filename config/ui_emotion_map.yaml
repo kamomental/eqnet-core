@@ -1,0 +1,53 @@
+version: 0
+
+source_policy:
+  allowed_sources:
+    - estimated_from_layer_b
+    - unknown
+    - disabled_by_consent
+  default_source: estimated_from_layer_b
+
+stability:
+  window_turns: 12
+  decay: 0.85
+  mixed_threshold: 0.35
+  unknown_threshold: 0.20
+  force_mixed_when_low: true
+
+mode_switch:
+  default_mode: basic_emotion_plus
+  supported_modes:
+    - basic_emotion_5
+    - basic_emotion_plus
+    - plutchik_wheel_8
+
+mapping_rules:
+  - when:
+      tokens_any:
+        - STATE_TENSE_HIGH
+      reason_tags_any:
+        - CURIOUS_PROBE
+    emit:
+      primary: surprise
+      secondary: joy
+
+  - when:
+      tokens_any:
+        - STATE_TRUST_LOW
+      reason_tags_any:
+        - BOND_PROTECT
+    emit:
+      primary: fear
+      secondary: anticipation
+
+  - when:
+      tokens_any:
+        - STATE_TENSE_LOW
+        - STATE_TRUST_HIGH
+    emit:
+      primary: pleasure
+      secondary: joy
+
+fallback:
+  primary: unknown
+  secondary: mixed

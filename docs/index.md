@@ -13,3 +13,4 @@ This page provides stable entry points without moving existing docs.
 - Roadmap / Progress: `docs/roadmap/README.md`
 - Persona / UX: `docs/persona/README.md`
 - Tools / Integration: `docs/tools/README.md`
+- Social Resilience SoT: `docs/social_resilience_principles.md`

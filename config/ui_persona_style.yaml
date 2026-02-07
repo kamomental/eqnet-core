@@ -1,0 +1,48 @@
+version: 0
+
+defaults:
+  jitome_bias: 0.30
+  jitome_sensitivity: 0.40
+  jitome_cooldown_turns: 2
+
+personas:
+  default:
+    jitome_bias: 0.30
+    jitome_sensitivity: 0.40
+    jitome_cooldown_turns: 2
+
+  asagiri_nazuna:
+    jitome_bias: 0.18
+    jitome_sensitivity: 0.30
+    jitome_cooldown_turns: 3
+
+  aotsuki_ibuki:
+    jitome_bias: 0.42
+    jitome_sensitivity: 0.48
+    jitome_cooldown_turns: 1
+
+  shiranui_reika:
+    jitome_bias: 0.72
+    jitome_sensitivity: 0.64
+    jitome_cooldown_turns: 0
+
+  tsundere_like:
+    jitome_bias: 0.75
+    jitome_sensitivity: 0.60
+    jitome_cooldown_turns: 0
+
+  calm_observer:
+    jitome_bias: 0.20
+    jitome_sensitivity: 0.30
+    jitome_cooldown_turns: 3
+
+jitome_guard:
+  require_any_tokens:
+    - STATE_TENSE_MID
+    - STATE_TENSE_HIGH
+    - STATE_TRUST_LOW
+  require_any_reason_tags:
+    - BOND_PROTECT
+    - LOW_CONFIDENCE
+    - SAFETY_GENTLE
+  allow_when_stability_below: 0.20
