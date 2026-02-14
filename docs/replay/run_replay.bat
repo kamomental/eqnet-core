@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-pushd %~dp0
+pushd %~dp0\..\..
 
 for /f "delims=" %%i in ('powershell -NoProfile -Command "Get-ChildItem ..\\..\\trace_runs -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty Name"') do set RUN_ID=%%i
 if "%RUN_ID%"=="" (
@@ -17,7 +17,7 @@ if "%DAY_DIR%"=="" (
   exit /b 1
 )
 
-python make_replay.py --trace_dir ..\..\trace_runs\%RUN_ID%\%DAY_DIR% --out replay.json
+python docs\replay\make_replay.py --trace_dir trace_runs\%RUN_ID%\%DAY_DIR% --out docs\replay\replay.json
 if errorlevel 1 (
   echo [error] failed to build replay.json
   popd
@@ -25,7 +25,7 @@ if errorlevel 1 (
 )
 
 echo [OK] replay.json built from %RUN_ID%\%DAY_DIR%
-echo [next] http://localhost:8000/replay.html
+echo [next] http://localhost:8000/docs/replay/replay.html
 python -m http.server 8000
 
 popd

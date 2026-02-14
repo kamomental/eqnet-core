@@ -1,0 +1,221 @@
+{
+  "version": 1,
+  "thresholds": {
+    "low_risk": 0.28,
+    "high_risk": 0.62,
+    "high_uncertainty": 0.56
+  },
+  "growth": {
+    "version": 0,
+    "min_value": 0.0,
+    "max_value": 1.0,
+    "max_step": 0.03,
+    "axes": {
+      "bond": {
+        "initial": 0.42,
+        "base": 0.002
+      },
+      "stability": {
+        "initial": 0.4,
+        "base": 0.0
+      },
+      "curiosity": {
+        "initial": 0.5,
+        "base": 0.001
+      }
+    },
+    "decision_delta": {
+      "PASS": {
+        "bond": 0.015,
+        "stability": 0.012,
+        "curiosity": 0.01
+      },
+      "VETO": {
+        "bond": -0.01,
+        "stability": -0.014,
+        "curiosity": -0.006
+      },
+      "HOLD": {
+        "bond": -0.002,
+        "stability": -0.004,
+        "curiosity": 0.013
+      },
+      "UNKNOWN": {
+        "bond": -0.004,
+        "stability": -0.005,
+        "curiosity": 0.002
+      }
+    },
+    "coupling": {
+      "risk": {
+        "bond": 0.02,
+        "stability": 0.035,
+        "curiosity": 0.012
+      },
+      "uncertainty": {
+        "bond": 0.01,
+        "stability": 0.018,
+        "curiosity": -0.008
+      },
+      "drive": {
+        "bond": 0.006,
+        "stability": 0.004,
+        "curiosity": 0.025
+      }
+    }
+  },
+  "stability": {
+    "initial": 0.5,
+    "ema_alpha": 0.2
+  },
+  "expression_profiles": {
+    "calm": {
+      "version": 0,
+      "face": {
+        "id": "neutral",
+        "intensity": 0.35
+      },
+      "pose": {
+        "id": "still",
+        "intensity": 0.3
+      },
+      "voice": {
+        "id": "normal",
+        "intensity": 0.35
+      }
+    },
+    "curious": {
+      "version": 0,
+      "face": {
+        "id": "surprise",
+        "intensity": 0.5
+      },
+      "pose": {
+        "id": "lean_in",
+        "intensity": 0.55
+      },
+      "voice": {
+        "id": "soft",
+        "intensity": 0.45
+      }
+    },
+    "tense": {
+      "version": 0,
+      "face": {
+        "id": "jitome",
+        "intensity": 0.72
+      },
+      "pose": {
+        "id": "guarded",
+        "intensity": 0.68
+      },
+      "voice": {
+        "id": "whisper",
+        "intensity": 0.58
+      }
+    },
+    "recover": {
+      "version": 0,
+      "face": {
+        "id": "smile",
+        "intensity": 0.65
+      },
+      "pose": {
+        "id": "bounce",
+        "intensity": 0.58
+      },
+      "voice": {
+        "id": "excited",
+        "intensity": 0.52
+      }
+    }
+  },
+  "emotion_profiles": {
+    "calm": {
+      "version": 0,
+      "mode": "basic_emotion_plus",
+      "primary": "normal",
+      "secondary": "flat"
+    },
+    "curious": {
+      "version": 0,
+      "mode": "basic_emotion_plus",
+      "primary": "surprise",
+      "secondary": "normal"
+    },
+    "tense": {
+      "version": 0,
+      "mode": "basic_emotion_plus",
+      "primary": "jitome",
+      "secondary": "fear"
+    },
+    "recover": {
+      "version": 0,
+      "mode": "basic_emotion_plus",
+      "primary": "joy",
+      "secondary": "trust"
+    }
+  },
+  "reaction_profiles": {
+    "calm": {
+      "version": 0,
+      "tokens": [
+        "STATE_TENSE_MID",
+        "ACTION_OBSERVE"
+      ]
+    },
+    "curious": {
+      "version": 0,
+      "tokens": [
+        "STATE_CURIOUS",
+        "ACTION_HOLD",
+        "ACTION_PROBE"
+      ]
+    },
+    "tense": {
+      "version": 0,
+      "tokens": [
+        "STATE_TENSE_HIGH",
+        "ACTION_GUARD",
+        "ACTION_SOFT_REPLY"
+      ]
+    },
+    "recover": {
+      "version": 0,
+      "tokens": [
+        "STATE_RELIEF",
+        "ACTION_APPROACH",
+        "ACTION_SHARE"
+      ]
+    }
+  },
+  "culture": {
+    "version": 0,
+    "min_value": 0.0,
+    "max_value": 1.0,
+    "max_step": 0.04,
+    "axes": {
+      "trust": { "initial": 0.5, "base": 0.0 },
+      "reciprocity": { "initial": 0.45, "base": 0.0 },
+      "norm_rigidity": { "initial": 0.42, "base": 0.0 },
+      "openness": { "initial": 0.5, "base": 0.0 }
+    },
+    "decision_delta": {
+      "PASS": { "trust": 0.012, "reciprocity": 0.014, "norm_rigidity": -0.004, "openness": 0.01 },
+      "VETO": { "trust": -0.014, "reciprocity": -0.01, "norm_rigidity": 0.012, "openness": -0.008 },
+      "HOLD": { "trust": -0.004, "reciprocity": 0.003, "norm_rigidity": 0.005, "openness": 0.004 },
+      "UNKNOWN": { "trust": -0.003, "reciprocity": -0.002, "norm_rigidity": 0.002, "openness": 0.0 }
+    },
+    "coupling": {
+      "risk": { "trust": 0.02, "reciprocity": 0.016, "norm_rigidity": -0.025, "openness": 0.014 },
+      "uncertainty": { "trust": 0.016, "reciprocity": 0.012, "norm_rigidity": -0.022, "openness": 0.02 },
+      "drive": { "trust": 0.008, "reciprocity": 0.012, "norm_rigidity": -0.006, "openness": 0.024 }
+    },
+    "world_coupling": {
+      "community": { "trust": 0.008, "reciprocity": 0.01, "norm_rigidity": -0.004, "openness": 0.006 },
+      "infrastructure": { "trust": 0.003, "reciprocity": 0.004, "norm_rigidity": 0.002, "openness": 0.001 },
+      "capitalism": { "trust": -0.003, "reciprocity": 0.001, "norm_rigidity": 0.005, "openness": 0.006 },
+      "survival": { "trust": -0.004, "reciprocity": -0.003, "norm_rigidity": 0.009, "openness": -0.003 }
+    }
+  }
+}

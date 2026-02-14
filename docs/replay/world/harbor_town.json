@@ -1,0 +1,150 @@
+{
+  "meta": { "id": "harbor_town", "tileSize": 40, "gridW": 32, "gridH": 18 },
+  "spawn": {
+    "hero": { "x": 10, "y": 9 },
+    "guide": { "x": 18, "y": 9 }
+  },
+  "bounds": { "min_x": 6, "max_x": 28, "min_y": 2, "max_y": 12 },
+  "palette": {
+    "ground": "#2f5a3a",
+    "ground_high": "#3b6c44",
+    "road": "#8c7a5b",
+    "water": "#2b6ca3",
+    "foam": "rgba(255,255,255,0.18)",
+    "building": "#8a3b2b",
+    "roof": "#d4b07a",
+    "shadow": "rgba(0,0,0,0.18)"
+  },
+  "layers": {
+    "ground": [
+      { "kind": "fill" }
+    ],
+    "water": [
+      { "kind": "rect", "x": 0, "y": 4, "w": 32, "h": 2 },
+      { "kind": "rect", "x": 14, "y": 4, "w": 2, "h": 2, "style": "foam" },
+      { "kind": "rect", "x": 23, "y": 2, "w": 9, "h": 13 },
+      { "kind": "rect", "x": 11, "y": 12, "w": 13, "h": 3 }
+    ],
+    "roads": [
+      { "kind": "rect", "x": 8, "y": 0, "w": 2, "h": 18 },
+      { "kind": "rect", "x": 20, "y": 0, "w": 2, "h": 18 },
+      { "kind": "rect", "x": 0, "y": 9, "w": 32, "h": 2 },
+      { "kind": "rect", "x": 6, "y": 4, "w": 20, "h": 7 }
+    ],
+    "buildings": [
+      { "id": "armory_01", "kind": "house", "name": "ARMORY", "x": 6, "y": 2, "w": 4, "h": 3 },
+      { "id": "bakery_01", "kind": "house", "name": "BAKERY", "x": 12, "y": 8, "w": 4, "h": 3 },
+      { "id": "house_01", "kind": "house", "name": "HOUSE", "x": 5, "y": 6, "w": 5, "h": 3 },
+      { "id": "farm_01", "kind": "house", "name": "FARM", "x": 5, "y": 10, "w": 5, "h": 3 },
+      { "id": "general_01", "kind": "house", "name": "GENERAL", "x": 16, "y": 2, "w": 6, "h": 3 },
+      { "id": "inn_01", "kind": "house", "name": "INN", "x": 17, "y": 6, "w": 5, "h": 3 },
+      { "id": "market_01", "kind": "house", "name": "MARKET", "x": 18, "y": 9, "w": 4, "h": 3 },
+      { "id": "boathouse_01", "kind": "house", "name": "BOAT", "x": 13, "y": 10, "w": 4, "h": 3 }
+    ],
+    "props": [
+      { "kind": "tree", "x": 5, "y": 2 }, { "kind": "tree", "x": 7, "y": 1 }, { "kind": "tree", "x": 9, "y": 1 },
+      { "kind": "tree", "x": 15, "y": 1 }, { "kind": "tree", "x": 16, "y": 1 }, { "kind": "tree", "x": 17, "y": 1 },
+      { "kind": "tree", "x": 4, "y": 4 }, { "kind": "tree", "x": 6, "y": 11 }, { "kind": "tree", "x": 14, "y": 12 },
+      { "kind": "stall", "x": 11, "y": 13, "color": "#4ca8ff" }, { "kind": "stall", "x": 12, "y": 13, "color": "#f4b84a" }, { "kind": "stall", "x": 13, "y": 13, "color": "#e46464" },
+      { "kind": "stall", "x": 19, "y": 12, "color": "#4ca8ff" }, { "kind": "stall", "x": 20, "y": 12, "color": "#f4b84a" }, { "kind": "stall", "x": 21, "y": 12, "color": "#e46464" },
+      { "kind": "crate", "x": 10, "y": 5 }, { "kind": "crate", "x": 11, "y": 4 }, { "kind": "crate", "x": 22, "y": 7 },
+      { "kind": "lamp", "x": 10, "y": 8 }, { "kind": "lamp", "x": 19, "y": 4 }, { "kind": "lamp", "x": 19, "y": 10 }
+    ],
+    "foreground": [
+      { "kind": "vignette", "strength": 0.2 }
+    ]
+  },
+  "npcs": [
+    {
+      "id": "dock_worker_01",
+      "spawn": { "x": 18, "y": 9 },
+      "route": [{ "x": 18, "y": 9 }, { "x": 22, "y": 9 }, { "x": 22, "y": 6 }, { "x": 18, "y": 6 }],
+      "speed": 0.9,
+      "color": "#6e5a53"
+    },
+    {
+      "id": "vendor_01",
+      "spawn": { "x": 20, "y": 12 },
+      "route": [{ "x": 20, "y": 12 }, { "x": 21, "y": 12 }, { "x": 21, "y": 11 }, { "x": 20, "y": 11 }],
+      "speed": 0.4,
+      "color": "#7f4a31"
+    }
+  ],
+  "constructionVisuals": {
+    "survey": {
+      "overlays": [{ "kind": "marking", "pattern": "diagonal", "alpha": 0.15 }],
+      "props": [{ "kind": "cone", "density": 0.2 }, { "kind": "fence", "edges": true }]
+    },
+    "foundation": {
+      "props": [{ "kind": "excavation", "depth": 1 }, { "kind": "pile", "count": 6 }]
+    },
+    "frame": {
+      "props": [{ "kind": "scaffold", "height": 2 }, { "kind": "crane", "anchor": "nw" }]
+    },
+    "finish": {
+      "props": [{ "kind": "worker", "count": 3 }]
+    },
+    "operational": {
+      "props": [{ "kind": "lamp", "interval": 2 }]
+    }
+  },
+  "demolitionVisuals": {
+    "closed": {
+      "props": ["fence", "warning_sign"],
+      "lighting": "off"
+    },
+    "strip": {
+      "props": ["scaffold"]
+    },
+    "demolish": {
+      "props": ["crane", "rubble"],
+      "particles": ["dust"]
+    },
+    "clear": {
+      "props": ["debris_small"]
+    },
+    "aftermath": {
+      "groundTint": "#6e6a5f",
+      "memoryMark": true
+    }
+  },
+  "projects": [
+    {
+      "id": "bridge_01",
+      "type": "bridge",
+      "site": { "x": 14, "y": 4, "w": 4, "h": 2 },
+      "startTick": 40,
+      "durationTick": 180,
+      "stages": [
+        { "at": 0.0, "visual": "survey" },
+        { "at": 0.2, "visual": "foundation" },
+        { "at": 0.55, "visual": "frame" },
+        { "at": 0.85, "visual": "finish" },
+        { "at": 1.0, "visual": "operational" }
+      ],
+      "effects": {
+        "opensPath": [{ "from": [13, 5], "to": [18, 5] }],
+        "npcBias": { "dock": 0.2, "market": 0.1 }
+      }
+    },
+    {
+      "id": "market_rebuild",
+      "type": "demolition",
+      "targetStructure": "market_01",
+      "site": { "x": 18, "y": 9, "w": 4, "h": 3 },
+      "startTick": 260,
+      "durationTick": 140,
+      "stages": [
+        { "at": 0.0, "visual": "closed" },
+        { "at": 0.25, "visual": "strip" },
+        { "at": 0.55, "visual": "demolish" },
+        { "at": 0.85, "visual": "clear" },
+        { "at": 1.0, "visual": "aftermath" }
+      ],
+      "effects": {
+        "removePath": [{ "from": [22, 10], "to": [24, 10] }],
+        "cultureDelta": { "trust": -0.05, "openness": 0.03 }
+      }
+    }
+  ]
+}

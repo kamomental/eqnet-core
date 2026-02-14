@@ -52,3 +52,10 @@ reports/exp_risk*.md
 trace_runs/
 trace_v1/
 trace_v1_test/
+
+# Replay sprite/image assets (keep configs/manifests/json)
+assets/replay/actors/**/*.png
+assets/replay/character/**/*.png
+assets/replay/masks/**/*.png
+assets/replay/src/*.png
+assets/replay/**/*.json

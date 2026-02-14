@@ -1,0 +1,141 @@
+{
+  "buttons": {
+    "play": "再生",
+    "pause": "停止",
+    "prev": "前へ",
+    "next": "次へ",
+    "faster": "速く",
+    "slower": "遅く"
+  },
+  "panel": {
+    "subtitle": "字幕",
+    "reaction": "反応トークン",
+    "growth": "成長メーター",
+    "portrait": "バストアップ",
+    "raw": "raw"
+  },
+  "canvas_panel": {
+    "status": "ステータス",
+    "reading": "読心",
+    "message": "メッセージ"
+  },
+  "label": {
+    "world": "世界",
+    "decision": "判断",
+    "face": "表情",
+    "pose": "姿勢",
+    "emotion": "感情ビュー",
+    "calm": "安心",
+    "hesitate": "迷い",
+    "tense": "緊張"
+  },
+  "status": {
+    "turn": "ターン",
+    "world": "世界",
+    "decision": "判断",
+    "no_events": "イベントなし",
+    "no_events_desc": "replay.json にイベントがありません。",
+    "load_failed": "replay.json の読み込みに失敗しました。",
+    "no_growth": "成長データなし",
+    "no_reaction": "反応トークンなし"
+  },
+  "subtitle_templates": {
+    "main": "{decision} / {world}",
+    "expression": "表情: {face}  姿勢: {pose}  感情: {emotion}"
+  },
+  "subtitle_decision": {
+    "PASS": "行動を前進させる選択をした。",
+    "VETO": "安全性を優先して見送った。",
+    "HOLD": "結論を急がず、観測を続ける。",
+    "UNKNOWN": "判断材料を確認中。"
+  },
+  "decision_labels": {
+    "PASS": "進む",
+    "VETO": "見送る",
+    "HOLD": "様子見",
+    "UNKNOWN": "不明"
+  },
+  "world_labels": {
+    "infrastructure": "街（インフラ）",
+    "community": "共同体",
+    "survival": "荒野",
+    "capitalism": "市場",
+    "commute": "通勤"
+  },
+  "axis_labels": {
+    "bond": "絆",
+    "stability": "安定",
+    "curiosity": "好奇心"
+  },
+  "face_labels": {
+    "neutral": "通常",
+    "smile": "笑顔",
+    "surprise": "驚き",
+    "tired": "疲れ",
+    "jitome": "ジト目"
+  },
+  "pose_labels": {
+    "still": "静止",
+    "lean_in": "前のめり",
+    "bounce": "弾む",
+    "guarded": "警戒"
+  },
+  "emotion_labels": {
+    "normal": "通常",
+    "flat": "フラット",
+    "jitome": "ジト目",
+    "surprise": "驚き",
+    "joy": "喜び",
+    "trust": "信頼",
+    "fear": "恐れ"
+  },
+  "reaction_tokens": {
+    "STATE_TENSE_MID": "緊張:中",
+    "ACTION_OBSERVE": "観察する",
+    "STATE_CURIOUS": "好奇心",
+    "ACTION_HOLD": "保留する",
+    "ACTION_PROBE": "探る",
+    "STATE_TENSE_HIGH": "緊張:高",
+    "ACTION_GUARD": "身構える",
+    "ACTION_SOFT_REPLY": "柔らかく返す",
+    "STATE_RELIEF": "安堵",
+    "ACTION_APPROACH": "近づく",
+    "ACTION_SHARE": "共有する"
+  },
+  "portrait": {
+    "meta": "表情:{face}  姿勢:{pose}  感情:{emotion}  口形:{viseme}  描画:{mode}"
+  },
+  "motion": {
+    "lipsync": {
+      "rate": 11.8,
+      "min_open": 0.04,
+      "scale": 0.78,
+      "voice_gain": {
+        "whisper": 0.55,
+        "soft": 0.68,
+        "normal": 0.82,
+        "excited": 1.0,
+        "default": 0.78
+      }
+    },
+    "bounce": {
+      "base_hz": 1.0,
+      "sub_hz": 2.0,
+      "sub_mix": 0.34,
+      "pulse_gain": 0.28,
+      "pulse_decay": 3.2,
+      "pose_amp": {
+        "default": 4.4,
+        "bounce": 8.5
+      }
+    },
+    "hair": {
+      "base_rate": 4.1,
+      "secondary_rate": 8.2,
+      "base_amp": 1.6,
+      "secondary_amp": 0.9,
+      "voice_amp": 3.0,
+      "tension_amp": 1.2
+    }
+  }
+}

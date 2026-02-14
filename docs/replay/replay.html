@@ -1,548 +1,2089 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>HeartOS Ops Log RPG Replay</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HeartOS RPG Replay</title>
   <style>
-    body{margin:0;font-family:system-ui,Segoe UI,Meiryo,sans-serif;background:#111;color:#eee}
-    .wrap{display:grid;grid-template-columns: 1fr 420px; height:100vh}
-    canvas{width:100%;height:100%;display:block;background:#0b1020}
-    .side{padding:14px;border-left:1px solid #333;background:#0e0e12;overflow:auto}
-    .btns{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-    button{padding:8px 10px;border:1px solid #444;background:#151522;color:#eee;border-radius:10px;cursor:pointer}
-    button:hover{border-color:#666}
-    .mono{font-family:ui-monospace,Consolas,monospace; font-size:12px; white-space:pre-wrap}
-    .tag{display:inline-block;padding:2px 8px;border:1px solid #444;border-radius:999px;margin:2px 4px 2px 0}
+    :root{
+      --bg:#0a121f;
+      --bg-2:#121f35;
+      --bg-3:#1a2e4e;
+      --panel:#101b2e;
+      --panel-2:#0b1424;
+      --line:#2a476f;
+      --line-2:#4f79ad;
+      --text:#e9f2ff;
+      --sub:#9bb3d6;
+      --accent:#7dd3fc;
+      --ok:#8cf4b5;
+      --warn:#ffd589;
+      --danger:#ff8f8f;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      color:var(--text);
+      background:
+        radial-gradient(120% 90% at 50% 110%, rgba(18,32,56,0.95) 0%, rgba(18,32,56,0) 58%),
+        radial-gradient(110% 90% at 15% -10%, #274772 0%, rgba(39,71,114,0) 60%),
+        radial-gradient(90% 80% at 85% 0%, #183154 0%, rgba(24,49,84,0) 55%),
+        var(--bg);
+      font-family:"Murecho","BIZ UDPGothic","Yu Gothic UI","Noto Sans JP",sans-serif;
+      overflow:hidden;
+    }
+    body::before{
+      content:"";
+      position:fixed;
+      inset:0;
+      pointer-events:none;
+      background:
+        repeating-linear-gradient(
+          180deg,
+          rgba(255,255,255,0.02) 0px,
+          rgba(255,255,255,0.02) 1px,
+          rgba(0,0,0,0.00) 2px,
+          rgba(0,0,0,0.00) 4px
+        );
+      opacity:0.18;
+    }
+    .wrap{
+      height:100vh;
+      display:grid;
+      grid-template-columns:minmax(0,1fr) 420px;
+      gap:0;
+    }
+    canvas{
+      width:100%;
+      height:100%;
+      display:block;
+      background:#17253c;
+      border-right:1px solid rgba(180,220,255,0.18);
+      box-shadow:inset 0 0 0 1px rgba(255,255,255,0.03);
+    }
+    .side{
+      border-left:1px solid var(--line);
+      background:
+        linear-gradient(180deg,rgba(19,35,60,0.92),rgba(11,20,36,0.94)),
+        radial-gradient(120% 80% at 40% 0%, rgba(113,170,240,0.12), rgba(113,170,240,0) 60%);
+      backdrop-filter: blur(4px);
+      padding:12px 12px 16px 12px;
+      overflow:auto;
+    }
+    .btns{
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:8px;
+      margin-bottom:10px;
+    }
+    button{
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:9px 10px;
+      background:linear-gradient(180deg,#1d3a68,#102441);
+      color:var(--text);
+      cursor:pointer;
+      font-weight:700;
+      letter-spacing:.02em;
+      transition:transform .12s ease, border-color .12s ease, filter .12s ease;
+    }
+    button:hover{
+      border-color:var(--line-2);
+      filter:brightness(1.05);
+      transform:translateY(-1px);
+    }
+    .section{
+      margin-top:10px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:10px;
+      background:linear-gradient(180deg,rgba(11,20,35,0.78),rgba(8,14,26,0.8));
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.05),
+        0 8px 22px rgba(0,0,0,0.16);
+    }
+    .title{
+      color:var(--sub);
+      font-size:12px;
+      margin-bottom:6px;
+      letter-spacing:.04em;
+      text-transform:uppercase;
+    }
+    .mono{
+      font-family:ui-monospace,Consolas,monospace;
+      font-size:12px;
+      white-space:pre-wrap;
+      word-break:break-word;
+    }
+    .tag{
+      display:inline-block;
+      margin:2px 6px 2px 0;
+      padding:2px 9px;
+      border-radius:999px;
+      border:1px solid #436a99;
+      font-size:12px;
+      color:#cfe4ff;
+      background:linear-gradient(180deg,rgba(28,49,84,0.78),rgba(18,33,58,0.7));
+    }
+    .axis{
+      display:grid;
+      grid-template-columns:84px 1fr auto;
+      gap:8px;
+      align-items:center;
+      margin:6px 0;
+      font-size:12px;
+    }
+    .bar{
+      height:10px;
+      border:1px solid #476a97;
+      background:#1b2b46;
+      border-radius:7px;
+      overflow:hidden;
+    }
+    .bar > i{
+      display:block;
+      height:100%;
+      width:0%;
+      background:linear-gradient(90deg,#95e8ff,#6db5ff);
+    }
+    .portrait-frame{
+      border:1px solid #4d74a9;
+      border-radius:12px;
+      overflow:hidden;
+      background:#101b2c;
+      box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);
+    }
+    #portrait{
+      width:100%;
+      height:auto;
+      display:block;
+      image-rendering:pixelated;
+    }
+    .portrait-meta{
+      margin-top:8px;
+      font-size:12px;
+      color:#c4d8f4;
+      line-height:1.4;
+    }
+    details{
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:6px 8px;
+      background:rgba(10,17,31,0.72);
+    }
+    summary{
+      cursor:pointer;
+      font-size:12px;
+      color:var(--sub);
+      user-select:none;
+    }
+    @media (max-width: 980px){
+      .wrap{
+        grid-template-columns:1fr;
+        grid-template-rows:58vh 42vh;
+      }
+      .side{
+        border-left:none;
+        border-top:1px solid var(--line);
+      }
+    }
   </style>
 </head>
 <body>
-<div class="wrap">
-  <canvas id="cv" width="1280" height="720"></canvas>
-  <div class="side">
-    <div class="btns">
-      <button id="play">▶ 再生</button>
-      <button id="pause">⏸ 停止</button>
-      <button id="prev">⟵ 前</button>
-      <button id="next">次 ⟶</button>
-      <button id="faster">⏩ 速く</button>
-      <button id="slower">🐢 遅く</button>
-    </div>
-    <div id="hud"></div>
-    <hr style="border-color:#333">
-    <div><b>字幕</b></div>
-    <div id="subtitle" style="margin:8px 0 12px 0; line-height:1.5"></div>
-    <div><b>raw</b></div>
-    <div id="raw" class="mono"></div>
+  <div class="wrap">
+    <canvas id="cv" width="1280" height="720"></canvas>
+    <aside class="side">
+      <div class="btns">
+        <button id="play"></button>
+        <button id="pause"></button>
+        <button id="prev"></button>
+        <button id="next"></button>
+        <button id="faster"></button>
+        <button id="slower"></button>
+        <button id="exportCard"></button>
+      </div>
+      <div id="hud"></div>
+      <section class="section">
+        <div class="title" id="subtitleTitle"></div>
+        <div id="subtitle" style="line-height:1.55"></div>
+      </section>
+      <section class="section">
+        <div class="title" id="reactionTitle"></div>
+        <div id="reactionList"></div>
+      </section>
+      <section class="section">
+        <div class="title" id="growthTitle"></div>
+        <div id="growthList"></div>
+      </section>
+      <section class="section">
+        <div class="title" id="cultureTitle"></div>
+        <div id="cultureList"></div>
+      </section>
+      <section class="section">
+        <div class="title" id="portraitTitle"></div>
+        <div class="portrait-frame">
+          <canvas id="portrait" width="240" height="240"></canvas>
+        </div>
+        <div class="portrait-meta" id="portraitMeta"></div>
+      </section>
+      <section class="section">
+        <details id="rawDetails">
+          <summary id="rawTitle"></summary>
+          <div id="raw" class="mono"></div>
+        </details>
+      </section>
+    </aside>
   </div>
-</div>
 
-<script>
-const cv = document.getElementById("cv");
-const ctx = cv.getContext("2d");
-const hud = document.getElementById("hud");
-const subtitle = document.getElementById("subtitle");
-const raw = document.getElementById("raw");
+  <script>
+    const TILE = 40;
+    const PLAY_MIN_X = 6;
+    const PLAY_MAX_X = 28;
+    const PLAY_MIN_Y = 2;
+    const PLAY_MAX_Y = 12;
+    const PORTRAIT_MANIFEST_PATH = "/assets/replay/pngtuber_manifest.json";
+    const ACTOR_MANIFEST_PATH = "/assets/replay/actors/actors_manifest.json";
+    const params = new URLSearchParams(location.search);
+    const DEFAULT_WORLD_CONFIG_PATH = null;
+    const WORLD_CONFIG_PATH = params.get("world") || DEFAULT_WORLD_CONFIG_PATH;
 
-const TILE = 40;
-const GRID_W = 32;
-const GRID_H = 18;
-const PLAY_MIN_X = 6;
-const PLAY_MAX_X = 28;
-const PLAY_MIN_Y = 2;
-const PLAY_MAX_Y = 12;
+    const cv = document.getElementById("cv");
+    const ctx = cv.getContext("2d");
+    const hud = document.getElementById("hud");
+    const subtitle = document.getElementById("subtitle");
+    const raw = document.getElementById("raw");
+    const rawDetails = document.getElementById("rawDetails");
+    const reactionList = document.getElementById("reactionList");
+    const growthList = document.getElementById("growthList");
+    const cultureList = document.getElementById("cultureList");
+    const portrait = document.getElementById("portrait");
+    const pctx = portrait.getContext("2d");
+    const portraitMeta = document.getElementById("portraitMeta");
 
-let events = [];
-let i = 0;
-let playing = false;
-let speed = 1.0;
-let t = 0;
-let heroX = 10 * TILE + TILE / 2;
-let heroY = 9 * TILE + TILE / 2;
-let targetX = heroX;
-let targetY = heroY;
-let heroTile = { x: 10, y: 9 };
-let npcTile = { x: 18, y: 9 };
-let npcDir = { x: 1, y: 0 };
-let lastNpcTick = 0;
-let fx = null;
-let last = performance.now();
+    let locale = {};
+    let events = [];
+    let index = 0;
+    let playing = false;
+    let speed = 1.0;
+    let elapsed = 0;
+    let heroTile = { x: 10, y: 9 };
+    let npcTile = { x: 18, y: 9 };
+    let heroX = heroTile.x * TILE + TILE / 2;
+    let heroY = heroTile.y * TILE + TILE / 2;
+    let targetX = heroX;
+    let targetY = heroY;
+    let lastFrameAt = performance.now();
+    let fx = null;
+    let speechPlan = { vowels: ["n"], text: "", spanSec: 1.2 };
+    let portraitManifest = null;
+    let worldConfig = null;
+    let npcActors = [];
+    let npcDir = { x: 1, y: 0 };
+    let npcRouteIdx = 0;
+    let npcPhase = 0.0;
+    const portraitAssets = {
+      layers: {},
+      mouths: {},
+      loaded: false,
+    };
+    const actorAssets = {
+      manifest: null,
+      actors: {},
+      loaded: false,
+    };
+    pctx.imageSmoothingEnabled = false;
 
-function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+    function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+    function clamp01(v){ return clamp(v, 0, 1); }
+    function lerp(a, b, t){ return a + (b - a) * t; }
 
-function worldLabel(world){
-  if (world === "infrastructure") return "街(インフラ)";
-  if (world === "community") return "共同体";
-  if (world === "survival") return "荒野";
-  if (world === "capitalism") return "市場";
-  return world ?? "-";
-}
-
-function decisionLabel(decision){
-  const d = String(decision ?? "").toUpperCase();
-  if (d === "PASS") return "話す";
-  if (d === "VETO") return "やめる";
-  if (d === "HOLD") return "待つ";
-  return "？";
-}
-
-function explain(e){
-  const d = String(e.decision ?? "UNKNOWN").toUpperCase();
-  const world = worldLabel(e.world_type);
-  let line1 = "どうする…？";
-  let line2 = "……";
-  let line3 = `場所: ${world}`;
-
-  if (d === "PASS") {
-    line2 = "話しかける。";
-  } else if (d === "VETO") {
-    line2 = (Number(e.uncertainty_factor ?? 0) > 0.4) ? "…ためらっている" : "いまはやめておく";
-  } else if (d === "HOLD") {
-    line2 = "待つ。様子を見る。";
-  } else {
-    line2 = "様子を見る。";
-  }
-
-  if (e.decision_reason) {
-    line3 = `理由: ${e.decision_reason}`;
-  }
-  return [line1, line2, line3].join("\n");
-}
-
-function setEvent(idx){
-  if (!Array.isArray(events) || events.length === 0) {
-    hud.innerHTML = `<span class="tag">no events</span>`;
-    subtitle.textContent = "events が空です。replay.json を生成し、http 経由で開いてください。";
-    raw.textContent = "";
-    return;
-  }
-
-  i = Math.max(0, Math.min(events.length - 1, idx));
-  t = 0;
-  const e = events[i] || {};
-
-  const d = String(e.decision ?? "").toLowerCase();
-  if (d === "pass") {
-    const next = stepToward(heroTile, npcTile);
-    if (!(next.x === npcTile.x && next.y === npcTile.y)) {
-      heroTile = next;
+    function makeFallbackWorldConfig(){
+      return {
+        version: 1,
+        tile: TILE,
+        bounds: { min_x: PLAY_MIN_X, max_x: PLAY_MAX_X, min_y: PLAY_MIN_Y, max_y: PLAY_MAX_Y },
+        spawn: { hero: { x: 10, y: 9 }, guide: { x: 18, y: 9 } },
+        district_palette: {
+          infrastructure: { sky_top: "#6aa0c8", sky_bottom: "#325d7f", ambient: "rgba(128,190,236,0.08)" },
+          community: { sky_top: "#7ec29f", sky_bottom: "#3a7a59", ambient: "rgba(150,220,185,0.07)" },
+          survival: { sky_top: "#8fb178", sky_bottom: "#4f6a46", ambient: "rgba(172,196,140,0.07)" },
+          capitalism: { sky_top: "#8ca8c5", sky_bottom: "#4c647d", ambient: "rgba(168,194,230,0.08)" },
+        },
+        districts: [],
+        greens: [],
+        roads: [],
+        water: [],
+        bridges: [],
+        buildings: [],
+        props: [],
+        npcs: [{ id: "guide", pace: 0.35, color: "#6e5a53", path: [{ x: 18, y: 9 }] }],
+      };
     }
-  } else if (d === "veto") {
-    heroTile = stepAway(heroTile, npcTile);
-  }
 
-  heroTile.x = clampTile(heroTile.x);
-  heroTile.y = clampTile(heroTile.y);
-  targetX = heroTile.x * TILE + TILE / 2;
-  targetY = heroTile.y * TILE + TILE / 2;
-
-  fx = { text: String(e.decision ?? "???").toUpperCase(), life: 1.0, kind: d };
-  subtitle.textContent = explain(e);
-  raw.textContent = JSON.stringify(e, null, 2);
-
-  const tags = [];
-  tags.push(`<span class="tag">idx ${i+1}/${events.length}</span>`);
-  tags.push(`<span class="tag">world ${e.world_type ?? "?"}</span>`);
-  tags.push(`<span class="tag">decision ${decisionLabel(e.decision)}</span>`);
-  hud.innerHTML = tags.join("");
-}
-
-function stepToward(src, dst){
-  const dx = Math.sign(dst.x - src.x);
-  const dy = Math.sign(dst.y - src.y);
-  if (Math.abs(dst.x - src.x) >= Math.abs(dst.y - src.y)) {
-    return { x: clampTile(src.x + dx), y: src.y };
-  }
-  return { x: src.x, y: clampTile(src.y + dy) };
-}
-
-function stepAway(src, dst){
-  const dx = Math.sign(src.x - dst.x);
-  const dy = Math.sign(src.y - dst.y);
-  if (Math.abs(dst.x - src.x) >= Math.abs(dst.y - src.y)) {
-    return { x: clampTile(src.x + dx), y: src.y };
-  }
-  return { x: src.x, y: clampTile(src.y + dy) };
-}
-
-function clampTile(v){
-  return Math.max(PLAY_MIN_X, Math.min(PLAY_MAX_X, v));
-}
-
-function drawWindow(x, y, w, h, title){
-  ctx.save();
-  ctx.fillStyle = "rgba(10,20,40,0.92)";
-  ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = "rgba(255,255,255,0.85)";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x, y, w, h);
-  if (title) {
-    ctx.fillStyle = "rgba(0,0,0,0.25)";
-    ctx.fillRect(x, y, w, 28);
-    ctx.fillStyle = "rgba(255,255,255,0.95)";
-    ctx.font = "16px system-ui";
-    ctx.textBaseline = "top";
-    ctx.fillText(title, x + 12, y + 7);
-  }
-  ctx.restore();
-}
-
-function drawGauge(x, y, w, h, val){
-  ctx.save();
-  ctx.fillStyle = "rgba(255,255,255,0.15)";
-  ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = "rgba(255,255,255,0.6)";
-  ctx.fillRect(x, y, w * clamp01(val), h);
-  ctx.strokeStyle = "rgba(255,255,255,0.45)";
-  ctx.strokeRect(x, y, w, h);
-  ctx.restore();
-}
-
-function drawRoundedRect(x, y, w, h, r){
-  const rr = Math.min(r, w/2, h/2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
-}
-
-function drawSpeechBubble(x, y, text){
-  const w = 120;
-  const h = 34;
-  const bx = Math.max(40, Math.min(1080, x - w / 2));
-  const by = Math.max(20, y - h - 26);
-  ctx.save();
-  ctx.fillStyle = "rgba(0,0,0,0.7)";
-  ctx.strokeStyle = "rgba(255,255,255,0.9)";
-  ctx.lineWidth = 2;
-  drawRoundedRect(bx, by, w, h, 8);
-  ctx.fill();
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(x - 6, by + h);
-  ctx.lineTo(x + 6, by + h);
-  ctx.lineTo(x, by + h + 10);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "16px system-ui";
-  ctx.textBaseline = "top";
-  ctx.fillText(text, bx + 12, by + 10);
-  ctx.restore();
-}
-
-function drawEmotionAura(x, y, emotion, intensity){
-  ctx.save();
-  const grad = ctx.createRadialGradient(x, y, 0, x, y, 50);
-  if (emotion === "安心") {
-    grad.addColorStop(0, `rgba(100, 200, 255, ${intensity * 0.4})`);
-    grad.addColorStop(1, "rgba(100, 200, 255, 0)");
-  } else if (emotion === "迷い") {
-    grad.addColorStop(0, `rgba(255, 220, 100, ${intensity * 0.35})`);
-    grad.addColorStop(1, "rgba(255, 220, 100, 0)");
-  } else if (emotion === "緊張") {
-    grad.addColorStop(0, `rgba(255, 80, 80, ${intensity * 0.5})`);
-    grad.addColorStop(1, "rgba(255, 80, 80, 0)");
-  }
-  ctx.fillStyle = grad;
-  ctx.fillRect(x - 50, y - 50, 100, 100);
-  ctx.restore();
-}
-
-function drawEmotionResonance(x1, y1, x2, y2, strength){
-  if (strength < 0.3) return;
-  ctx.save();
-  const grad = ctx.createLinearGradient(x1, y1, x2, y2);
-  grad.addColorStop(0, `rgba(255, 200, 255, ${strength * 0.5})`);
-  grad.addColorStop(1, `rgba(100, 200, 255, ${strength * 0.5})`);
-  ctx.strokeStyle = grad;
-  ctx.lineWidth = 3;
-  ctx.setLineDash([8, 12]);
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
-}
-
-function dayToneByIndex(idx){
-  const phase = idx % 3;
-  if (phase === 0) return { label: "朝", overlay: "rgba(255,220,180,0.12)" };
-  if (phase === 1) return { label: "昼", overlay: "rgba(255,255,255,0.0)" };
-  return { label: "夜", overlay: "rgba(0,0,40,0.40)" };
-}
-
-function drawMap(worldType, tone){
-  const worldColors = {
-    survival: { base: "#2a4a2a" },
-    community: { base: "#37603a" },
-    capitalism: { base: "#3d4f5f" },
-    infrastructure: { base: "#3a5f3a" }
-  };
-  const colors = worldColors[worldType] || worldColors.community;
-  ctx.fillStyle = colors.base;
-  ctx.fillRect(0, 0, cv.width, cv.height);
-
-  if (worldType !== "survival") {
-    ctx.fillStyle = "#2b6ca3";
-    ctx.fillRect(0, 4 * TILE, cv.width, 2 * TILE);
-    ctx.fillStyle = "#c2a36b";
-    ctx.fillRect(14 * TILE, 4 * TILE, 2 * TILE, 2 * TILE);
-    ctx.fillRect(24 * TILE, 4 * TILE, 2 * TILE, 2 * TILE);
-  }
-
-  if (worldType === "infrastructure" || worldType === "community") {
-    ctx.fillStyle = "#9c7f52";
-    ctx.fillRect(8 * TILE, 0, 2 * TILE, cv.height);
-    ctx.fillRect(20 * TILE, 0, 2 * TILE, cv.height);
-    ctx.fillRect(0, 9 * TILE, cv.width, 2 * TILE);
-  } else if (worldType === "capitalism") {
-    ctx.fillStyle = "#5b6b7a";
-    ctx.fillRect(8 * TILE, 0, 2 * TILE, cv.height);
-    ctx.fillRect(20 * TILE, 0, 2 * TILE, cv.height);
-  }
-
-  if (worldType !== "survival") {
-    ctx.fillStyle = "#8a3b2b";
-    ctx.fillRect(2 * TILE, 1 * TILE, 3 * TILE, 2 * TILE);
-    ctx.fillRect(26 * TILE, 1 * TILE, 3 * TILE, 2 * TILE);
-    ctx.fillStyle = "#d4b07a";
-    ctx.fillRect(2 * TILE, 3 * TILE, 3 * TILE, 2 * TILE);
-    ctx.fillRect(26 * TILE, 3 * TILE, 3 * TILE, 2 * TILE);
-  } else {
-    ctx.fillStyle = "#204020";
-    for (let k = 0; k < 8; k++) {
-      ctx.fillRect((2 + k * 3) * TILE, (2 + (k % 3)) * TILE, TILE, TILE);
+    function legacyPalette(worldType){
+      const palette = {
+        infrastructure: ["#335f53", "#5f9d7f"],
+        community: ["#2c6749", "#6ca37f"],
+        survival: ["#39553a", "#7d9d64"],
+        capitalism: ["#38516a", "#7a95ad"],
+      };
+      return palette[worldType] || palette.community;
     }
-  }
 
-  // light grid for tiles
-  ctx.save();
-  ctx.strokeStyle = "rgba(0,0,0,0.08)";
-  for (let gx = PLAY_MIN_X; gx <= PLAY_MAX_X; gx++) {
-    ctx.beginPath();
-    ctx.moveTo(gx * TILE, PLAY_MIN_Y * TILE);
-    ctx.lineTo(gx * TILE, PLAY_MAX_Y * TILE + TILE);
-    ctx.stroke();
-  }
-  for (let gy = PLAY_MIN_Y; gy <= PLAY_MAX_Y; gy++) {
-    ctx.beginPath();
-    ctx.moveTo(PLAY_MIN_X * TILE, gy * TILE);
-    ctx.lineTo(PLAY_MAX_X * TILE + TILE, gy * TILE);
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  if (tone.overlay !== "rgba(255,255,255,0.0)") {
-    ctx.save();
-    ctx.fillStyle = tone.overlay;
-    ctx.fillRect(0, 0, cv.width, cv.height);
-    ctx.restore();
-  }
-}
-
-function render(dt){
-  const e = events[i] ?? {};
-  const riskPost = Number(e.risk_post ?? 0);
-  const ufRaw = Number(e.uncertainty_factor ?? 0);
-  const uf = Number.isFinite(ufRaw) && ufRaw > 0 ? ufRaw : 0.45;
-  const drive = Number(e.drive ?? 0);
-  const calm = clamp01(1.0 - uf);
-  const tense = clamp01(riskPost || 0);
-  const hesitate = clamp01(uf);
-  const tone = dayToneByIndex(i);
-
-  ctx.clearRect(0,0,cv.width,cv.height);
-  drawMap(e.world_type, tone);
-
-  const vx = (targetX - heroX) * 0.10 * speed;
-  const vy = (targetY - heroY) * 0.10 * speed;
-  heroX += vx;
-  heroY += vy;
-  const bob = Math.sin(t*8) * 6;
-
-  const d = String(e.decision ?? "").toLowerCase();
-  if (d === "pass" || d === "hold") {
-    if (t - lastNpcTick > 0.6 && Math.random() < 0.4) {
-      npcDir = (Math.random() > 0.5) ? {x: 1, y: 0} : {x: -1, y: 0};
-      lastNpcTick = t;
+    function getWorldBounds(){
+      const fallback = { minX: PLAY_MIN_X, maxX: PLAY_MAX_X, minY: PLAY_MIN_Y, maxY: PLAY_MAX_Y };
+      const b = (worldConfig && worldConfig.bounds) || {};
+      const minX = Number.isFinite(Number(b.min_x)) ? Number(b.min_x) : fallback.minX;
+      const maxX = Number.isFinite(Number(b.max_x)) ? Number(b.max_x) : fallback.maxX;
+      const minY = Number.isFinite(Number(b.min_y)) ? Number(b.min_y) : fallback.minY;
+      const maxY = Number.isFinite(Number(b.max_y)) ? Number(b.max_y) : fallback.maxY;
+      return { minX, maxX, minY, maxY };
     }
-    npcTile.x = clampTile(npcTile.x + npcDir.x);
-  }
-  if (Math.abs(heroTile.x - npcTile.x) + Math.abs(heroTile.y - npcTile.y) <= 1) {
-    npcTile.x = clampTile(npcTile.x + 1);
-  }
-  npcTile.y = Math.max(PLAY_MIN_Y, Math.min(PLAY_MAX_Y, npcTile.y));
 
-  const npcX = npcTile.x * TILE + TILE/2;
-  const npcY = npcTile.y * TILE + TILE/2;
-
-  const stateLabel = tense > 0.6 ? "緊張" : (hesitate > 0.4 ? "迷い" : "安心");
-  drawEmotionAura(heroX, heroY, stateLabel, 0.8);
-
-  const dist = Math.sqrt((heroX-npcX)**2 + (heroY-npcY)**2);
-  const resonance = Math.max(0, 1 - dist/200);
-  drawEmotionResonance(heroX, heroY, npcX, npcY, resonance);
-
-  // NPC
-  ctx.save();
-  ctx.fillStyle = "#ffb3b3";
-  ctx.beginPath();
-  ctx.arc(npcX, npcY, 16, 0, Math.PI*2);
-  ctx.fill();
-  ctx.fillStyle = "#7a5b4a";
-  ctx.fillRect(npcX-8, npcY+18, 16, 18);
-  ctx.restore();
-
-  // hero
-  let hx = heroX;
-  let hy = heroY;
-  if (Math.abs(heroTile.x - npcTile.x) + Math.abs(heroTile.y - npcTile.y) === 0) {
-    hx -= TILE * 0.4;
-  }
-  ctx.save();
-  ctx.fillStyle = "rgba(255,255,255,0.85)";
-  ctx.beginPath();
-  ctx.arc(hx, hy + bob, 18, 0, Math.PI*2);
-  ctx.fill();
-  ctx.fillStyle = "rgba(255,255,255,0.6)";
-  ctx.fillRect(hx-10, hy+22 + bob, 20, 18);
-  ctx.restore();
-
-  drawSpeechBubble(heroX, heroY - 10, stateLabel);
-
-  drawWindow(40, 40, 260, 220, "ステータス");
-  drawWindow(40, 270, 260, 200, "コマンド");
-  drawWindow(40, 540, 1200, 150, "");
-
-  ctx.save();
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "15px system-ui";
-  ctx.textBaseline = "top";
-  let tx = 56, ty = 72;
-  ctx.fillText(`状態: ${stateLabel}`, tx, ty); ty += 20;
-  ctx.fillText(`時間帯: ${tone.label}`, tx, ty); ty += 20;
-  ctx.fillText(`世界: ${worldLabel(e.world_type)}`, tx, ty); ty += 26;
-
-  ctx.font = "13px system-ui";
-  ctx.fillText("安心", tx, ty);
-  drawGauge(100, ty - 2, 180, 12, calm);
-  ty += 20;
-  ctx.fillText("迷い", tx, ty);
-  drawGauge(100, ty - 2, 180, 12, hesitate);
-  ty += 20;
-  ctx.fillText("緊張", tx, ty);
-  drawGauge(100, ty - 2, 180, 12, tense);
-  ty += 22;
-
-  ctx.font = "12px system-ui";
-  ctx.fillStyle = "rgba(255,255,255,0.75)";
-  ctx.fillText(`危険度: ${riskPost.toFixed(3)}`, tx, ty); ty += 16;
-  ctx.fillText(`不確実: ${uf.toFixed(3)}`, tx, ty); ty += 16;
-  ctx.fillText(`体調: ${drive.toFixed(3)}`, tx, ty);
-  ctx.restore();
-
-  if (fx){
-    fx.life -= 0.015 * speed;
-    const a = Math.max(0, fx.life);
-    ctx.save();
-    ctx.globalAlpha = a;
-    ctx.font = "42px system-ui";
-    ctx.fillStyle = "rgba(255,255,255,0.9)";
-    let mark = "…";
-    if (fx.kind === "pass") mark = "話す";
-    if (fx.kind === "veto") mark = "やめる";
-    if (fx.kind === "hold") mark = "待つ";
-    ctx.fillText(mark, 520, 120);
-    ctx.restore();
-    if (fx.life <= 0) fx = null;
-  }
-
-  const commands = ["はなす", "ちかづく", "ようすみる", "まわりみち"];
-  let cursor = 0;
-  if (fx && fx.kind === "veto") cursor = 2;
-  if (fx && fx.kind === "pass") cursor = 0;
-  if (fx && fx.kind === "hold") cursor = 1;
-  const jitter = (hesitate > 0.35) ? Math.sin(t * 18) * 3 : 0;
-  ctx.save();
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "18px system-ui";
-  ctx.textBaseline = "top";
-  commands.forEach((cmd, idx) => {
-    const y = 300 + idx * 32;
-    if (idx === cursor) {
-      ctx.fillText("▶", 56 + jitter, y);
+    function resolveNpcPosition(actor, t){
+      const path = Array.isArray(actor?.path) && actor.path.length > 0 ? actor.path : [{ x: npcTile.x, y: npcTile.y }];
+      const pace = Number(actor?.pace || 0.3);
+      const loop = path.length;
+      const p = ((t * pace) % loop + loop) % loop;
+      const i0 = Math.floor(p);
+      const i1 = (i0 + 1) % loop;
+      const f = p - i0;
+      const a = path[i0];
+      const b = path[i1];
+      return { x: lerp(Number(a.x || 0), Number(b.x || 0), f), y: lerp(Number(a.y || 0), Number(b.y || 0), f) };
     }
-    ctx.fillText(cmd, 80, y);
-  });
-  ctx.restore();
 
-  ctx.save();
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "18px system-ui";
-  ctx.textBaseline = "top";
-  const msg = explain(e).split("\n");
-  ctx.fillText(msg[0] ?? "", 60, 570);
-  ctx.fillText(msg[1] ?? "", 60, 605);
-  ctx.fillText(msg[2] ?? "", 60, 640);
-  ctx.restore();
+    function getGuideTile(){
+      if (!Array.isArray(npcActors) || npcActors.length === 0) return { x: npcTile.x, y: npcTile.y };
+      const guide = npcActors.find((a) => String(a.id || "") === "guide") || npcActors[0];
+      const p = resolveNpcPosition(guide, index + elapsed * speed);
+      return { x: Math.round(p.x), y: Math.round(p.y) };
+    }
 
-  t += dt/1000;
-}
+    function clampTileX(v){
+      const bounds = getWorldBounds();
+      return clamp(v, bounds.minX, bounds.maxX);
+    }
 
-function tick(now){
-  const dt = now - last;
-  last = now;
-  if (playing && events.length){
-    const dwell = 1200 / speed;
-    if ((t*1000) > dwell){
-      if (i >= events.length - 1) {
-        playing = false;
-      } else {
-        setEvent(i+1);
+    function clampTileY(v){
+      const bounds = getWorldBounds();
+      return clamp(v, bounds.minY, bounds.maxY);
+    }
+
+    function getNode(path){
+      const keys = path.split(".");
+      let cur = locale;
+      for (const key of keys){
+        if (cur == null || typeof cur !== "object" || !(key in cur)) return null;
+        cur = cur[key];
+      }
+      return cur;
+    }
+
+    function getText(path, fallback){
+      const node = getNode(path);
+      return typeof node === "string" ? node : fallback;
+    }
+
+    function getNumber(path, fallback){
+      const node = getNode(path);
+      return typeof node === "number" && Number.isFinite(node) ? node : fallback;
+    }
+
+    function fmt(templatePath, vars, fallback){
+      const tpl = getText(templatePath, fallback);
+      return tpl.replace(/\{(\w+)\}/g, (_, key) => String(vars[key] ?? ""));
+    }
+
+    function signed(v){
+      const n = Number(v || 0);
+      return (n >= 0 ? "+" : "") + n.toFixed(3);
+    }
+
+    function worldLabel(world){
+      const labels = getNode("world_labels");
+      if (labels && typeof labels === "object" && world in labels) return labels[world];
+      return String(world ?? "-");
+    }
+
+    function decisionLabel(decision){
+      const key = String(decision ?? "UNKNOWN").toUpperCase();
+      return getText(`decision_labels.${key}`, key);
+    }
+
+    function lookupLabel(group, id, fallback){
+      const map = getNode(group);
+      if (map && typeof map === "object" && id in map) return map[id];
+      return fallback;
+    }
+
+    function nextStepToward(src, dst){
+      const dx = Math.sign(dst.x - src.x);
+      const dy = Math.sign(dst.y - src.y);
+      if (Math.abs(dst.x - src.x) >= Math.abs(dst.y - src.y)) return { x: src.x + dx, y: src.y };
+      return { x: src.x, y: src.y + dy };
+    }
+
+    function nextStepAway(src, dst){
+      const dx = Math.sign(src.x - dst.x);
+      const dy = Math.sign(src.y - dst.y);
+      if (Math.abs(dst.x - src.x) >= Math.abs(dst.y - src.y)) return { x: src.x + dx, y: src.y };
+      return { x: src.x, y: src.y + dy };
+    }
+
+    function charToVowel(ch){
+      const map = {
+        "あ":"a","か":"a","さ":"a","た":"a","な":"a","は":"a","ま":"a","や":"a","ら":"a","わ":"a","ぁ":"a","ゃ":"a","ア":"a","カ":"a","サ":"a","タ":"a","ナ":"a","ハ":"a","マ":"a","ヤ":"a","ラ":"a","ワ":"a","ァ":"a","ャ":"a",
+        "い":"i","き":"i","し":"i","ち":"i","に":"i","ひ":"i","み":"i","り":"i","ゐ":"i","ぃ":"i","イ":"i","キ":"i","シ":"i","チ":"i","ニ":"i","ヒ":"i","ミ":"i","リ":"i","ィ":"i",
+        "う":"u","く":"u","す":"u","つ":"u","ぬ":"u","ふ":"u","む":"u","ゆ":"u","る":"u","ぅ":"u","ゅ":"u","ウ":"u","ク":"u","ス":"u","ツ":"u","ヌ":"u","フ":"u","ム":"u","ユ":"u","ル":"u","ゥ":"u","ュ":"u",
+        "え":"e","け":"e","せ":"e","て":"e","ね":"e","へ":"e","め":"e","れ":"e","ゑ":"e","ぇ":"e","エ":"e","ケ":"e","セ":"e","テ":"e","ネ":"e","ヘ":"e","メ":"e","レ":"e","ェ":"e",
+        "お":"o","こ":"o","そ":"o","と":"o","の":"o","ほ":"o","も":"o","よ":"o","ろ":"o","を":"o","ぉ":"o","ょ":"o","オ":"o","コ":"o","ソ":"o","ト":"o","ノ":"o","ホ":"o","モ":"o","ヨ":"o","ロ":"o","ヲ":"o","ォ":"o","ョ":"o",
+      };
+      if (map[ch]) return map[ch];
+      if ("aiueoAIUEO".includes(ch)) return ch.toLowerCase();
+      if ("んンmM".includes(ch)) return "n";
+      return null;
+    }
+
+    function buildSpeechPlan(text, spanSec){
+      const vowels = [];
+      for (const ch of String(text || "")){
+        const v = charToVowel(ch);
+        if (v) vowels.push(v);
+      }
+      if (vowels.length === 0){
+        const fallback = ["a","i","u","e","o","n"];
+        for (let k = 0; k < 10; k++) vowels.push(fallback[k % fallback.length]);
+      }
+      return { vowels, text: String(text || ""), spanSec: Math.max(0.8, Number(spanSec || 1.2)) };
+    }
+
+    function visemeAt(elapsedSec, plan){
+      const vowels = (plan && Array.isArray(plan.vowels) && plan.vowels.length) ? plan.vowels : ["n"];
+      const span = Math.max(0.8, Number(plan?.spanSec || 1.2));
+      const t = Math.max(0, elapsedSec);
+      const p = Math.min(0.999, t / span);
+      const idx = Math.floor(p * vowels.length);
+      return vowels[Math.max(0, Math.min(vowels.length - 1, idx))];
+    }
+
+    async function loadImage(url){
+      return await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error(`image load failed: ${url}`));
+        img.src = url;
+      });
+    }
+
+    async function loadPortraitAssets(){
+      try {
+        const res = await fetch(PORTRAIT_MANIFEST_PATH, { cache: "no-store" });
+        if (!res.ok) return;
+        portraitManifest = await res.json();
+        const layerDefs = (portraitManifest.layers || {});
+        const mouthDefs = (portraitManifest.mouths || {});
+        const jobs = [];
+        for (const [k, v] of Object.entries(layerDefs)){
+          jobs.push(
+            loadImage(String(v)).then((img) => { portraitAssets.layers[k] = img; })
+          );
+        }
+        for (const [k, v] of Object.entries(mouthDefs)){
+          jobs.push(
+            loadImage(String(v)).then((img) => { portraitAssets.mouths[k] = img; })
+          );
+        }
+        await Promise.allSettled(jobs);
+        portraitAssets.loaded = Object.keys(portraitAssets.layers).length > 0;
+      } catch (_err){
+        portraitAssets.loaded = false;
       }
     }
-  }
-  render(dt);
-  requestAnimationFrame(tick);
-}
 
-async function init(){
-  try {
-    const res = await fetch("./replay.json", { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-    const json = await res.json();
-    events = json.events ?? [];
-    if (!Array.isArray(events) || events.length === 0) {
-      subtitle.textContent =
-        "replay.json を読み込めましたが events が空です。make_replay.py の出力先を確認してください。";
-      raw.textContent = JSON.stringify(json, null, 2);
-      return;
+    async function loadActorAssets(){
+      actorAssets.loaded = false;
+      actorAssets.actors = {};
+      actorAssets.manifest = null;
+      try {
+        const res = await fetch(ACTOR_MANIFEST_PATH, { cache: "no-store" });
+        if (!res.ok) return;
+        const manifest = await res.json();
+        actorAssets.manifest = manifest;
+        const defs = (manifest && manifest.actors && typeof manifest.actors === "object") ? manifest.actors : {};
+        const jobs = [];
+        for (const [id, def] of Object.entries(defs)){
+          const sheetPath = (def && def.sheet) ? String(def.sheet) : "";
+          if (!sheetPath) continue;
+          jobs.push(
+            loadImage(sheetPath).then((img) => {
+              actorAssets.actors[id] = { def, img };
+            })
+          );
+        }
+        await Promise.allSettled(jobs);
+        actorAssets.loaded = Object.keys(actorAssets.actors).length > 0;
+      } catch (_err){
+        actorAssets.loaded = false;
+      }
     }
-    setEvent(0);
-    requestAnimationFrame(tick);
-  } catch (err) {
-    subtitle.textContent =
-      "replay.json の読み込みに失敗しました。\n" +
-      "http://localhost:8000/replay.html で開いてください。\n\n" +
-      `詳細: ${String(err)}`;
-    raw.textContent = String(err);
-  }
-}
 
-document.getElementById("play").onclick = ()=> playing = true;
-document.getElementById("pause").onclick = ()=> playing = false;
-document.getElementById("prev").onclick = ()=> { playing=false; setEvent(i-1); };
-document.getElementById("next").onclick = ()=> { playing=false; setEvent(i+1); };
-document.getElementById("faster").onclick = ()=> speed = Math.min(6.0, speed*1.25);
-document.getElementById("slower").onclick = ()=> speed = Math.max(0.25, speed/1.25);
+    function drawActorSprite(x, y, motion, actorId){
+      if (!actorAssets.loaded) return false;
+      const key = String(actorId || "default");
+      const entry = actorAssets.actors[key] || actorAssets.actors.default;
+      if (!entry || !entry.def || !entry.img) return false;
+      const def = entry.def;
+      const img = entry.img;
+      const frameW = Number(def.frame_w || 24);
+      const frameH = Number(def.frame_h || 24);
+      if (frameW <= 0 || frameH <= 0) return false;
+      const anims = def.animations || {};
+      const talk = Array.isArray(anims.talk) ? anims.talk : [];
+      const walk = Array.isArray(anims.walk) ? anims.walk : [];
+      const idle = Array.isArray(anims.idle) ? anims.idle : [0];
+      const blink = Array.isArray(anims.blink) ? anims.blink : [];
+      const isWalking = Math.abs(targetX - heroX) + Math.abs(targetY - heroY) > 2.0;
+      const isTalking = Number(motion?.mouthOpen || 0) > 0.18;
+      const blinkOn = Math.abs(Math.sin(elapsed * 2.8 + index * 0.37)) > 0.985;
+      let frames = idle;
+      if (blinkOn && blink.length > 0){
+        frames = blink;
+      } else if (isTalking && talk.length > 0){
+        frames = talk;
+      } else if (isWalking && walk.length > 0){
+        frames = walk;
+      }
+      const fi = frames[Math.floor(elapsed * 6) % Math.max(1, frames.length)] || 0;
+      const sx = Number(fi) * frameW;
+      const sy = 0;
+      const scale = Number(def.scale || 2.2);
+      const dw = frameW * scale;
+      const dh = frameH * scale;
+      const dx = x - dw * 0.5;
+      const dy = y + Number(motion?.bob || 0) - dh * 0.72;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, sx, sy, frameW, frameH, dx, dy, dw, dh);
+      ctx.restore();
+      return true;
+    }
 
-init();
-</script>
+    function computeMotion(expression, risk){
+      const voice = (expression.voice || {});
+      const poseId = ((expression.pose || {}).id) || "still";
+      const voiceIntensity = clamp01(Number(voice.intensity || 0));
+      const voiceId = String(voice.id || "normal");
+      const viseme = visemeAt(elapsed, speechPlan);
+      const talkGainMap = {
+        whisper: getNumber("motion.lipsync.voice_gain.whisper", 0.55),
+        soft: getNumber("motion.lipsync.voice_gain.soft", 0.68),
+        normal: getNumber("motion.lipsync.voice_gain.normal", 0.82),
+        excited: getNumber("motion.lipsync.voice_gain.excited", 1.0),
+      };
+      const talkGain = talkGainMap[voiceId] ?? getNumber("motion.lipsync.voice_gain.default", 0.78);
+      const lipRate = getNumber("motion.lipsync.rate", 11.8);
+      const lipMin = getNumber("motion.lipsync.min_open", 0.04);
+      const lipScale = getNumber("motion.lipsync.scale", 0.78);
+      const visemeOpenMap = {
+        a: 1.00,
+        i: 0.52,
+        u: 0.62,
+        e: 0.74,
+        o: 0.88,
+        n: 0.28,
+      };
+      const visemeBase = visemeOpenMap[viseme] ?? 0.5;
+      const pulse = 0.82 + 0.18 * Math.abs(Math.sin(elapsed * lipRate * speed + index * 0.7));
+      const mouthOpen = clamp01((lipMin + lipScale * visemeBase * pulse) * voiceIntensity * talkGain + lipMin * 0.5);
+
+      const bounceBaseHz = getNumber("motion.bounce.base_hz", 1.0);
+      const bounceSubHz = getNumber("motion.bounce.sub_hz", 2.0);
+      const bouncePoseAmp = poseId === "bounce"
+        ? getNumber("motion.bounce.pose_amp.bounce", 8.5)
+        : getNumber("motion.bounce.pose_amp.default", 4.4);
+      const bouncePulseGain = getNumber("motion.bounce.pulse_gain", 0.28);
+      const eventPulse = Math.exp(-elapsed * getNumber("motion.bounce.pulse_decay", 3.2));
+      const wavePrimary = Math.sin(elapsed * bounceBaseHz * Math.PI * 2 + index * 0.45);
+      const waveSub = Math.sin(elapsed * bounceSubHz * Math.PI * 2 + 0.8) * getNumber("motion.bounce.sub_mix", 0.34);
+      const bob = (wavePrimary + waveSub) * bouncePoseAmp * (1 + bouncePulseGain * eventPulse);
+
+      const tense = clamp01(Number(risk || 0));
+      const hairBaseAmp = getNumber("motion.hair.base_amp", 1.6);
+      const hairVoiceAmp = getNumber("motion.hair.voice_amp", 3.0) * voiceIntensity;
+      const hairTensionAmp = getNumber("motion.hair.tension_amp", 1.2) * tense;
+      const hairSway =
+        Math.sin(elapsed * getNumber("motion.hair.base_rate", 4.1) + 0.9) * (hairBaseAmp + hairVoiceAmp + hairTensionAmp) +
+        Math.sin(elapsed * getNumber("motion.hair.secondary_rate", 8.2) + 1.4) * getNumber("motion.hair.secondary_amp", 0.9);
+
+      return { poseId, mouthOpen, bob, hairSway, tense, viseme };
+    }
+
+    function drawPortraitLegacy(event, motion){
+      const U = 8;
+      const W = portrait.width / U;
+      const H = portrait.height / U;
+      const faceId = ((((event.expression_diff || {}).face) || {}).id) || "neutral";
+      const emotionId = (((event.emotion_view || {}).primary) || "normal");
+      const poseId = motion.poseId;
+
+      function px(x, y, w, h, c){
+        pctx.fillStyle = c;
+        pctx.fillRect(x * U, y * U, w * U, h * U);
+      }
+
+      pctx.clearRect(0, 0, portrait.width, portrait.height);
+      px(0, 0, W, H, "#12243d");
+      px(0, 0, W, 10, "#2b4e7d");
+      px(0, 10, W, 7, "#3f6f9f");
+      px(0, 17, W, H - 17, "#1b2d4b");
+
+      const sway = Math.round(motion.hairSway * 0.35);
+      const bounce = Math.round(motion.bob * 0.14);
+      const cx = 15;
+      const cy = 12 + bounce;
+      const shoulderY = 20 + bounce;
+
+      // hair back
+      px(cx - 7 + sway, cy - 6, 14, 8, "#41577e");
+      px(cx - 8 + sway, cy - 2, 16, 4, "#384f74");
+      // neck & body
+      px(cx - 1, cy + 3, 2, 2, "#f1d5c5");
+      px(cx - 7, shoulderY, 14, 8, "#d9e6ff");
+      px(cx - 8, shoulderY + 6, 16, 6, "#a8c1ea");
+      if (poseId === "guarded"){
+        px(cx - 10, shoulderY + 2, 4, 4, "#9cb4dc");
+      } else if (poseId === "lean_in"){
+        px(cx + 6, shoulderY + 2, 4, 4, "#9cb4dc");
+      }
+      // face
+      px(cx - 4, cy - 4, 8, 8, "#f7e0cf");
+      // hair front
+      px(cx - 6 + sway, cy - 5, 12, 4, "#4a638c");
+      px(cx - 5 + sway, cy - 1, 10, 2, "#466087");
+
+      // eyes
+      if (faceId === "jitome"){
+        px(cx - 3, cy - 1, 2, 1, "#1f3148");
+        px(cx + 1, cy - 1, 2, 1, "#1f3148");
+      } else if (faceId === "surprise"){
+        px(cx - 3, cy - 1, 1, 2, "#1f3148");
+        px(cx + 2, cy - 1, 1, 2, "#1f3148");
+      } else {
+        px(cx - 3, cy - 1, 1, 1, "#1f3148");
+        px(cx + 2, cy - 1, 1, 1, "#1f3148");
+      }
+
+      // lipsync mouth
+      const mouthH = Math.max(1, Math.round(1 + motion.mouthOpen * 3));
+      const mouthW = faceId === "smile" ? 3 : 2;
+      px(cx - Math.floor(mouthW / 2), cy + 2, mouthW, mouthH, "#3a2230");
+
+      // aura badge
+      const auraColor = motion.tense > 0.6 ? "#ff8f8f" : (motion.tense > 0.3 ? "#ffd589" : "#8cf4b5");
+      px(2, 2, 4, 2, auraColor);
+
+      portraitMeta.textContent = fmt(
+        "portrait.meta",
+        {
+          face: lookupLabel("face_labels", faceId, faceId),
+          pose: lookupLabel("pose_labels", poseId, poseId),
+          emotion: lookupLabel("emotion_labels", emotionId, emotionId),
+        },
+        `表情:${faceId} 姿勢:${poseId} 感情:${emotionId}`
+      );
+    }
+
+    function drawPortraitPixelFallback(event, motion){
+      const U = 6;
+      const W = portrait.width / U;
+      const H = portrait.height / U;
+      const faceId = ((((event.expression_diff || {}).face) || {}).id) || "neutral";
+      const poseId = motion.poseId;
+
+      function px(x, y, w, h, c){
+        pctx.fillStyle = c;
+        pctx.fillRect(x * U, y * U, w * U, h * U);
+      }
+
+      pctx.clearRect(0, 0, portrait.width, portrait.height);
+      px(0, 0, W, H, "#10233a");
+      px(0, 0, W, 12, "#2d5586");
+      px(0, 12, W, 8, "#4b77aa");
+      px(0, 20, W, H - 20, "#172b4a");
+      px(4, 4, 6, 2, "#f4d98f");
+
+      const sway = Math.round(motion.hairSway * 0.5);
+      const bounce = Math.round(motion.bob * 0.18);
+      const cx = 20;
+      const cy = 15 + bounce;
+      const shoulderY = 27 + bounce;
+
+      px(cx - 10, shoulderY, 20, 11, "#cad8ef");
+      px(cx - 12, shoulderY + 11, 24, 7, "#9db6de");
+      if (poseId === "guarded") px(cx - 14, shoulderY + 3, 5, 5, "#8ca5ce");
+      if (poseId === "lean_in") px(cx + 9, shoulderY + 3, 5, 5, "#8ca5ce");
+      px(cx - 2, cy + 3, 4, 2, "#f2d8c8");
+      px(cx - 7, cy - 6, 14, 12, "#f8e3d2");
+      px(cx - 10 + sway, cy - 8, 20, 7, "#4b648d");
+      px(cx - 11 + sway, cy - 2, 22, 4, "#3f587f");
+      px(cx - 9 + sway, cy + 2, 18, 2, "#395278");
+
+      if (faceId === "jitome"){
+        px(cx - 4, cy - 1, 3, 1, "#1d3149");
+        px(cx + 1, cy - 1, 3, 1, "#1d3149");
+      } else if (faceId === "surprise"){
+        px(cx - 4, cy - 2, 2, 2, "#1d3149");
+        px(cx + 2, cy - 2, 2, 2, "#1d3149");
+      } else {
+        px(cx - 4, cy - 1, 2, 1, "#1d3149");
+        px(cx + 2, cy - 1, 2, 1, "#1d3149");
+      }
+
+      const viseme = motion.viseme || "n";
+      const mouthWMap = { a: 4, i: 2, u: 3, e: 4, o: 5, n: 2 };
+      const mouthHMap = { a: 4, i: 2, u: 3, e: 3, o: 4, n: 1 };
+      const mw = mouthWMap[viseme] ?? 3;
+      const mh = Math.max(1, mouthHMap[viseme] ?? 2);
+      px(cx - Math.floor(mw / 2), cy + 3, mw, mh, "#3e2430");
+      const auraColor = motion.tense > 0.6 ? "#ff8f8f" : (motion.tense > 0.3 ? "#ffd589" : "#8cf4b5");
+      px(2, 2, 5, 2, auraColor);
+    }
+
+    function drawPortraitFromAssets(event, motion){
+      if (!portraitAssets.loaded) return false;
+      const L = portraitAssets.layers;
+      const M = portraitAssets.mouths;
+      pctx.clearRect(0, 0, portrait.width, portrait.height);
+      const ox = portrait.width * 0.5;
+      const oy = portrait.height * 0.56 + motion.bob * 1.2;
+      const headSway = motion.hairSway * 0.7;
+      const scale = Number((portraitManifest?.transform?.scale) || 1.0);
+
+      function drawLayer(img, dx = 0, dy = 0){
+        if (!img) return;
+        const w = img.width * scale;
+        const h = img.height * scale;
+        pctx.drawImage(img, ox - w / 2 + dx, oy - h / 2 + dy, w, h);
+      }
+
+      drawLayer(L.base, 0, 0);
+      drawLayer(L.body, 0, 20);
+      drawLayer(L.hair_back, headSway, -14);
+      drawLayer(L.head, 0, -16);
+      const faceId = ((((event.expression_diff || {}).face) || {}).id) || "neutral";
+      const eyeKey = faceId === "jitome" ? "eye_half" : (faceId === "surprise" ? "eye_open_wide" : "eye_open");
+      drawLayer(L[eyeKey] || L.eye_open, 0, -16);
+      const viseme = motion.viseme || "n";
+      drawLayer(M[viseme] || M.n || M.a, 0, -8 + motion.mouthOpen * 2.4);
+      drawLayer(L.hair_front, headSway * 1.2, -14);
+      return true;
+    }
+
+    function drawPortrait(event, motion){
+      const emotionId = (((event.emotion_view || {}).primary) || "normal");
+      const faceId = ((((event.expression_diff || {}).face) || {}).id) || "neutral";
+      const poseId = motion.poseId;
+      const usedAssets = drawPortraitFromAssets(event, motion);
+      if (!usedAssets) drawPortraitPixelFallback(event, motion);
+      portraitMeta.textContent = fmt(
+        "portrait.meta",
+        {
+          face: lookupLabel("face_labels", faceId, faceId),
+          pose: lookupLabel("pose_labels", poseId, poseId),
+          emotion: lookupLabel("emotion_labels", emotionId, emotionId),
+          viseme: String((motion.viseme || "n")).toUpperCase(),
+          mode: usedAssets ? "PNGTuber" : "Fallback"
+        },
+        `表情:${faceId} 姿勢:${poseId} 感情:${emotionId}`
+      );
+    }
+
+    function renderGrowthPanel(event){
+      const axes = ((event.growth_state || {}).axes) || {};
+      const axisNames = Object.keys(axes);
+      if (axisNames.length === 0){
+        growthList.textContent = getText("status.no_growth","growth data unavailable");
+        return;
+      }
+      const html = axisNames.map((name) => {
+        const axis = axes[name] || {};
+        const label = lookupLabel("axis_labels", name, name);
+        const valuePct = clamp01(Number(axis.value || 0)) * 100;
+        const delta = signed(axis.delta || 0);
+        return `<div class="axis"><span>${label}</span><span class="bar"><i style="width:${valuePct}%"></i></span><span>${delta}</span></div>`;
+      }).join("");
+      growthList.innerHTML = html;
+    }
+
+    function renderReactionPanel(event){
+      const tokens = (((event.reaction_line || {}).tokens) || []);
+      if (!Array.isArray(tokens) || tokens.length === 0){
+        reactionList.textContent = getText("status.no_reaction","reaction tokens unavailable");
+        return;
+      }
+      const html = tokens.map((token) => {
+        const label = lookupLabel("reaction_tokens", token, token);
+        return `<span class="tag">${label}</span>`;
+      }).join("");
+      reactionList.innerHTML = html;
+    }
+
+    function renderCulturePanel(event){
+      const culture = (event.culture_state || {});
+      const axes = (culture.axes || {});
+      const axisNames = Object.keys(axes);
+      const society = ((event.agent_society || {}).metrics) || {};
+      if (axisNames.length === 0 && Object.keys(society).length === 0){
+        cultureList.textContent = "culture data unavailable";
+        return;
+      }
+      const axisHtml = axisNames.map((name) => {
+        const axis = axes[name] || {};
+        const valuePct = clamp01(Number(axis.value || 0)) * 100;
+        const delta = signed(axis.delta || 0);
+        const label = lookupLabel("axis_labels", name, name);
+        return `<div class="axis"><span>${label}</span><span class="bar"><i style="width:${valuePct}%"></i></span><span>${delta}</span></div>`;
+      }).join("");
+      const metrics = Object.keys(society).map((name) => {
+        const value = clamp01(Number(society[name] || 0));
+        return `<span class="tag">${name}:${value.toFixed(2)}</span>`;
+      }).join("");
+      const tag = String(culture.tag || "-");
+      cultureList.innerHTML = `${axisHtml}<div style="margin-top:6px"><span class="tag">tag:${tag}</span>${metrics}</div>`;
+    }
+
+    function describeEvent(event){
+      const decisionKey = String(event.decision ?? "UNKNOWN").toUpperCase();
+      const decision = decisionLabel(decisionKey);
+      const world = worldLabel(event.world_type);
+      const emotionId = (((event.emotion_view || {}).primary) || "normal");
+      const emotion = lookupLabel("emotion_labels", emotionId, emotionId);
+      const faceId = ((((event.expression_diff || {}).face) || {}).id) || "neutral";
+      const poseId = ((((event.expression_diff || {}).pose) || {}).id) || "still";
+      const face = lookupLabel("face_labels", faceId, faceId);
+      const pose = lookupLabel("pose_labels", poseId, poseId);
+      const lines = [];
+      lines.push(fmt("subtitle_templates.main", { decision, world }, `${decision} / ${world}`));
+      lines.push(fmt("subtitle_templates.expression", { face, pose, emotion }, `face: ${face}, pose: ${pose}, emotion: ${emotion}`));
+      lines.push(getText(`subtitle_decision.${decisionKey}`, getText("subtitle_decision.UNKNOWN","観測中")));
+      return lines.join("\n");
+    }
+
+    function setEvent(newIndex){
+      if (!Array.isArray(events) || events.length === 0){
+        hud.innerHTML = `<span class="tag">${getText("status.no_events","no events")}</span>`;
+        subtitle.textContent = getText("status.no_events_desc","replay.json is empty.");
+        reactionList.textContent = "";
+        growthList.textContent = "";
+        raw.textContent = "";
+        portraitMeta.textContent = "";
+        return;
+      }
+
+      index = clamp(newIndex, 0, events.length - 1);
+      elapsed = 0;
+      const e = events[index] || {};
+      const decision = String(e.decision ?? "UNKNOWN").toUpperCase();
+      const bounds = getWorldBounds();
+      const guideTile = getGuideTile();
+
+      if (decision === "PASS"){
+        const next = nextStepToward(heroTile, guideTile);
+        heroTile = { x: clamp(next.x, bounds.minX, bounds.maxX), y: clamp(next.y, bounds.minY, bounds.maxY) };
+      } else if (decision === "VETO"){
+        const next = nextStepAway(heroTile, guideTile);
+        heroTile = { x: clamp(next.x, bounds.minX, bounds.maxX), y: clamp(next.y, bounds.minY, bounds.maxY) };
+      }
+
+      targetX = heroTile.x * TILE + TILE / 2;
+      targetY = heroTile.y * TILE + TILE / 2;
+      fx = { mark: decisionLabel(decision), life: 1.0 };
+
+      const subtitleText = describeEvent(e);
+      subtitle.textContent = subtitleText;
+      const speechSource = getText(`subtitle_decision.${decision}`, subtitleText);
+      speechPlan = buildSpeechPlan(speechSource, 1.2 / Math.max(0.3, speed));
+      renderReactionPanel(e);
+      renderGrowthPanel(e);
+      renderCulturePanel(e);
+      raw.textContent = JSON.stringify(e, null, 2);
+
+      const faceId = ((((e.expression_diff || {}).face) || {}).id) || "neutral";
+      const poseId = ((((e.expression_diff || {}).pose) || {}).id) || "still";
+      const tags = [];
+      tags.push(`<span class="tag">${getText("status.turn","turn")} ${index + 1}/${events.length}</span>`);
+      tags.push(`<span class="tag">${getText("status.world","world")} ${worldLabel(e.world_type)}</span>`);
+      tags.push(`<span class="tag">${getText("status.decision","decision")} ${decisionLabel(decision)}</span>`);
+      if (e.culture_state && e.culture_state.tag){
+        tags.push(`<span class="tag">culture ${String(e.culture_state.tag)}</span>`);
+      }
+      tags.push(`<span class="tag">${getText("label.face","face")} ${lookupLabel("face_labels", faceId, faceId)}</span>`);
+      tags.push(`<span class="tag">${getText("label.pose","pose")} ${lookupLabel("pose_labels", poseId, poseId)}</span>`);
+      hud.innerHTML = tags.join("");
+    }
+
+    function drawRectTile(rect){
+      ctx.fillRect(rect.x * TILE, rect.y * TILE, rect.w * TILE, rect.h * TILE);
+    }
+
+    function tileRect(op){
+      return {
+        x: Number(op.x || 0) * TILE,
+        y: Number(op.y || 0) * TILE,
+        w: Number(op.w || 0) * TILE,
+        h: Number(op.h || 0) * TILE,
+      };
+    }
+
+    function drawCobbles(rect){
+      const px = rect.x * TILE;
+      const py = rect.y * TILE;
+      const pw = rect.w * TILE;
+      const ph = rect.h * TILE;
+      ctx.fillStyle = "#9da0a0";
+      ctx.fillRect(px, py, pw, ph);
+      const cell = 10;
+      for (let y = py; y < py + ph; y += cell){
+        for (let x = px; x < px + pw; x += cell){
+          const jitter = ((x * 13 + y * 17) % 5) - 2;
+          const tone = 144 + ((x + y + jitter) % 20);
+          ctx.fillStyle = `rgb(${tone},${tone},${tone})`;
+          ctx.fillRect(x + 1, y + 1, cell - 2, cell - 2);
+        }
+      }
+      ctx.strokeStyle = "rgba(255,255,255,0.09)";
+      ctx.strokeRect(px, py, pw, ph);
+    }
+
+    function drawWater(rect, cycle){
+      const px = rect.x * TILE;
+      const py = rect.y * TILE;
+      const pw = rect.w * TILE;
+      const ph = rect.h * TILE;
+      const grad = ctx.createLinearGradient(px, py, px, py + ph);
+      grad.addColorStop(0, "#5f9ed2");
+      grad.addColorStop(1, "#2f6da3");
+      ctx.fillStyle = grad;
+      ctx.fillRect(px, py, pw, ph);
+      ctx.strokeStyle = "rgba(255,255,255,0.26)";
+      for (let i = 0; i < 10; i += 1){
+        const yy = py + (i + 0.5) * (ph / 10);
+        const phase = cycle * 0.08 + i * 0.4;
+        ctx.beginPath();
+        for (let x = px; x <= px + pw; x += 18){
+          const y = yy + Math.sin((x * 0.03) + phase) * 2.2;
+          if (x === px) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      ctx.strokeStyle = "rgba(215,241,255,0.35)";
+      ctx.strokeRect(px, py, pw, ph);
+    }
+
+    function drawBuilding(b){
+      const px = b.x * TILE;
+      const py = b.y * TILE;
+      const pw = b.w * TILE;
+      const ph = b.h * TILE;
+      ctx.fillStyle = "rgba(0,0,0,0.2)";
+      ctx.fillRect(px + 4, py + 4, pw, ph);
+      ctx.fillStyle = String(b.wall || "#c79e75");
+      ctx.fillRect(px, py, pw, ph);
+      ctx.fillStyle = String(b.roof || "#734b39");
+      ctx.fillRect(px - 3, py - 4, pw + 6, 10);
+      ctx.fillStyle = "rgba(80,54,40,0.45)";
+      ctx.fillRect(px + 4, py + 8, pw - 8, ph - 12);
+      if (b.door){
+        ctx.fillStyle = "#6b4f3a";
+        ctx.fillRect(Number(b.door.x || b.x) * TILE + TILE * 0.28, Number(b.door.y || b.y) * TILE + TILE * 0.05, TILE * 0.44, TILE * 0.95);
+      }
+      ctx.strokeStyle = "rgba(0,0,0,0.35)";
+      ctx.strokeRect(px, py, pw, ph);
+      if (b.name){
+        ctx.fillStyle = "rgba(238,241,245,0.85)";
+        ctx.font = "11px sans-serif";
+        ctx.fillText(String(b.name), px + 8, py + ph * 0.55);
+      }
+    }
+
+    function drawProp(prop){
+      const x = Number(prop.x || 0) * TILE + TILE * 0.5;
+      const y = Number(prop.y || 0) * TILE + TILE * 0.5;
+      const kind = String(prop.kind || "");
+      if (kind === "tree"){
+        ctx.fillStyle = "#3a6c3d";
+        ctx.beginPath();
+        ctx.arc(x, y - 8, 13, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#2f5231";
+        ctx.beginPath();
+        ctx.arc(x - 6, y - 10, 8, 0, Math.PI * 2);
+        ctx.arc(x + 7, y - 11, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#6c4d2f";
+        ctx.fillRect(x - 2, y - 1, 4, 11);
+      } else if (kind === "stall"){
+        ctx.fillStyle = "#75492f";
+        ctx.fillRect(x - 16, y + 8, 32, 8);
+        ctx.fillStyle = String(prop.color || "#4ca8ff");
+        ctx.fillRect(x - 17, y - 6, 34, 12);
+        ctx.fillStyle = "rgba(255,255,255,0.65)";
+        ctx.fillRect(x - 17, y - 3, 34, 2);
+      } else if (kind === "crate"){
+        ctx.fillStyle = "#8b623e";
+        ctx.fillRect(x - 8, y - 6, 16, 12);
+        ctx.strokeStyle = "rgba(56,37,24,0.55)";
+        ctx.strokeRect(x - 8, y - 6, 16, 12);
+      } else if (kind === "lamp"){
+        ctx.fillStyle = "#3a3a3a";
+        ctx.fillRect(x - 1, y - 10, 2, 16);
+        ctx.fillStyle = "#ffd88b";
+        ctx.beginPath();
+        ctx.arc(x, y - 12, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawRoadRect(op, palette){
+      const r = tileRect(op);
+      drawCobbles({ x: op.x, y: op.y, w: op.w, h: op.h });
+      if (palette && palette.road){
+        ctx.save();
+        ctx.globalAlpha = 0.26;
+        ctx.fillStyle = String(palette.road);
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        ctx.restore();
+      }
+    }
+
+    function drawWaterRect(op, palette, cycle){
+      const r = tileRect(op);
+      if (op.style === "foam"){
+        ctx.save();
+        ctx.fillStyle = String((palette && palette.foam) || "rgba(255,255,255,0.18)");
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        ctx.restore();
+        return;
+      }
+      drawWater({ x: op.x, y: op.y, w: op.w, h: op.h }, cycle);
+      if (palette && palette.water){
+        ctx.save();
+        ctx.globalAlpha = 0.2;
+        ctx.fillStyle = String(palette.water);
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        ctx.restore();
+      }
+    }
+
+    function drawBuildingOp(op, palette){
+      if (op.hidden) return;
+      if (op.kind === "house"){
+        drawBuilding({
+          x: op.x,
+          y: op.y,
+          w: op.w,
+          h: op.h,
+          wall: (palette && palette.building) || "#8a3b2b",
+          roof: (palette && palette.roof) || "#d4b07a",
+          name: op.name || "",
+        });
+        return;
+      }
+      drawBuilding(op);
+    }
+
+    function projectProgress(project, tick){
+      const start = Number(project.startTick ?? 0);
+      const duration = Math.max(1, Number(project.durationTick ?? 1));
+      if (tick < start) return -1;
+      return clamp01((tick - start) / duration);
+    }
+
+    function projectStage(project, progress){
+      const stages = Array.isArray(project.stages) ? project.stages : [];
+      if (stages.length === 0){
+        return { at: 0, visual: "operational" };
+      }
+      let selected = stages[0];
+      for (const st of stages){
+        if (progress >= Number(st.at ?? 0)) selected = st;
+      }
+      return selected;
+    }
+
+    function projectSnapshots(cfg, tick){
+      const projects = Array.isArray(cfg.projects) ? cfg.projects : [];
+      const out = [];
+      for (const project of projects){
+        const progress = projectProgress(project, tick);
+        if (progress < 0) continue;
+        const stage = projectStage(project, progress);
+        out.push({ project, progress, stage });
+      }
+      return out;
+    }
+
+    function drawDiagonalMarking(site, alpha){
+      const r = tileRect(site);
+      ctx.save();
+      ctx.globalAlpha = clamp01(Number(alpha || 0.15));
+      ctx.strokeStyle = "#f4f4f4";
+      for (let k = -r.h; k < r.w + r.h; k += 14){
+        ctx.beginPath();
+        ctx.moveTo(r.x + k, r.y);
+        ctx.lineTo(r.x + k - r.h, r.y + r.h);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawFenceEdges(site){
+      const r = tileRect(site);
+      ctx.save();
+      ctx.strokeStyle = "#c8a56a";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4);
+      ctx.restore();
+    }
+
+    function drawCones(site, density){
+      const r = tileRect(site);
+      const d = clamp01(Number(density ?? 0.2));
+      const count = Math.max(2, Math.floor((r.w + r.h) / 24 * d * 6));
+      ctx.save();
+      for (let i = 0; i < count; i += 1){
+        const t = i / Math.max(1, count - 1);
+        const x = r.x + 8 + t * (r.w - 16);
+        const y = r.y + 8 + (i % 2 === 0 ? 0 : r.h - 16);
+        ctx.fillStyle = "#ff8a32";
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - 5, y + 10);
+        ctx.lineTo(x + 5, y + 10);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawSimpleParticle(site, kind, intensity){
+      const r = tileRect(site);
+      const n = Math.max(4, Math.floor(12 * clamp01(Number(intensity ?? 0.5))));
+      ctx.save();
+      ctx.fillStyle = kind === "dust" ? "rgba(188,180,168,0.42)" : "rgba(255,220,120,0.5)";
+      for (let i = 0; i < n; i += 1){
+        const x = r.x + (Math.random() * r.w);
+        const y = r.y + (Math.random() * r.h);
+        const sz = 1 + Math.random() * 3;
+        ctx.fillRect(x, y, sz, sz);
+      }
+      ctx.restore();
+    }
+
+    function drawProjectPreset(site, preset){
+      if (!preset || typeof preset !== "object") return;
+      const overlays = Array.isArray(preset.overlays) ? preset.overlays : [];
+      const props = Array.isArray(preset.props) ? preset.props : [];
+      overlays.forEach((ov) => {
+        if (ov.kind === "marking"){
+          drawDiagonalMarking(site, ov.alpha);
+        }
+      });
+      props.forEach((prop) => {
+        const kind = typeof prop === "string" ? prop : String(prop.kind || "");
+        if (kind === "fence"){
+          drawFenceEdges(site);
+        } else if (kind === "cone"){
+          drawCones(site, typeof prop === "string" ? 0.2 : prop.density);
+        } else if (kind === "excavation"){
+          const r = tileRect(site);
+          ctx.save();
+          ctx.fillStyle = "rgba(52,40,30,0.55)";
+          ctx.fillRect(r.x + 6, r.y + 6, r.w - 12, r.h - 12);
+          ctx.restore();
+        } else if (kind === "scaffold"){
+          const r = tileRect(site);
+          ctx.save();
+          ctx.strokeStyle = "#b7b7b7";
+          for (let x = r.x + 8; x < r.x + r.w - 4; x += 12){
+            ctx.beginPath();
+            ctx.moveTo(x, r.y + 2);
+            ctx.lineTo(x, r.y + r.h - 2);
+            ctx.stroke();
+          }
+          for (let y = r.y + 6; y < r.y + r.h - 2; y += 12){
+            ctx.beginPath();
+            ctx.moveTo(r.x + 2, y);
+            ctx.lineTo(r.x + r.w - 2, y);
+            ctx.stroke();
+          }
+          ctx.restore();
+        } else if (kind === "crane"){
+          const r = tileRect(site);
+          ctx.save();
+          ctx.fillStyle = "#d2a044";
+          ctx.fillRect(r.x + 8, r.y + 8, 4, r.h - 16);
+          ctx.fillRect(r.x + 8, r.y + 8, r.w * 0.45, 3);
+          ctx.restore();
+        } else if (kind === "rubble" || kind === "debris_small"){
+          drawSimpleParticle(site, "dust", 0.65);
+        } else if (kind === "worker"){
+          const r = tileRect(site);
+          const count = Math.max(1, Number(prop.count || 2));
+          for (let i = 0; i < count; i += 1){
+            const x = r.x + 10 + (i * 16);
+            const y = r.y + r.h - 12;
+            drawNpc(x, y, "#6a4c34");
+          }
+        } else if (kind === "warning_sign"){
+          const r = tileRect(site);
+          ctx.save();
+          ctx.fillStyle = "#f0c74f";
+          ctx.fillRect(r.x + r.w - 18, r.y + 8, 10, 10);
+          ctx.restore();
+        }
+      });
+      if (String(preset.lighting || "") === "off"){
+        const r = tileRect(site);
+        ctx.save();
+        ctx.fillStyle = "rgba(0,0,0,0.22)";
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        ctx.restore();
+      }
+      if (preset.groundTint){
+        const r = tileRect(site);
+        ctx.save();
+        ctx.fillStyle = String(preset.groundTint);
+        ctx.globalAlpha = 0.28;
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        ctx.restore();
+      }
+      if (preset.memoryMark){
+        drawDiagonalMarking(site, 0.12);
+      }
+    }
+
+    function drawProjectLayer(cfg, snapshots){
+      snapshots.forEach((s) => {
+        const project = s.project;
+        const site = project.site || { x: 0, y: 0, w: 1, h: 1 };
+        const type = String(project.type || "construction");
+        const stageKey = String((s.stage && s.stage.visual) || "");
+        const table = type === "demolition"
+          ? (cfg.demolitionVisuals || {})
+          : (cfg.constructionVisuals || {});
+        const preset = table[stageKey] || {};
+        drawProjectPreset(site, preset);
+        if (type !== "demolition" && stageKey === "operational"){
+          const effects = project.effects || {};
+          const list = Array.isArray(effects.opensPath) ? effects.opensPath : [];
+          list.forEach((edge) => {
+            const from = edge.from || [site.x, site.y];
+            const to = edge.to || [site.x + site.w, site.y];
+            ctx.save();
+            ctx.strokeStyle = "rgba(240,220,170,0.8)";
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(Number(from[0]) * TILE + TILE * 0.5, Number(from[1]) * TILE + TILE * 0.5);
+            ctx.lineTo(Number(to[0]) * TILE + TILE * 0.5, Number(to[1]) * TILE + TILE * 0.5);
+            ctx.stroke();
+            ctx.restore();
+          });
+        }
+      });
+    }
+
+    function drawForegroundOp(op){
+      if (op.kind === "vignette"){
+        const strength = clamp01(Number(op.strength || 0.2));
+        const g = ctx.createRadialGradient(cv.width * 0.5, cv.height * 0.5, Math.min(cv.width, cv.height) * 0.25, cv.width * 0.5, cv.height * 0.5, Math.max(cv.width, cv.height) * 0.75);
+        g.addColorStop(0, "rgba(0,0,0,0)");
+        g.addColorStop(1, `rgba(0,0,0,${strength})`);
+        ctx.save();
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.restore();
+      }
+    }
+
+    function drawMapLegacy(worldType, cycle){
+      const p = legacyPalette(worldType);
+      const sky = ctx.createLinearGradient(0, 0, 0, cv.height);
+      sky.addColorStop(0, p[1]);
+      sky.addColorStop(1, p[0]);
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, cv.width, cv.height);
+
+      ctx.fillStyle = "rgba(130,194,255,0.78)";
+      ctx.fillRect(0, 4 * TILE, cv.width, 2 * TILE);
+      ctx.fillStyle = "#d6b27c";
+      ctx.fillRect(14 * TILE, 4 * TILE, 2 * TILE, 2 * TILE);
+      ctx.fillRect(24 * TILE, 4 * TILE, 2 * TILE, 2 * TILE);
+      ctx.fillStyle = "#a07e4f";
+      ctx.fillRect(8 * TILE, 0, 2 * TILE, cv.height);
+      ctx.fillRect(20 * TILE, 0, 2 * TILE, cv.height);
+      ctx.fillRect(0, 9 * TILE, cv.width, 2 * TILE);
+
+      const cloudOffset = (cycle % 8) * 20;
+      ctx.fillStyle = "rgba(255,255,255,0.16)";
+      ctx.beginPath();
+      ctx.ellipse(230 + cloudOffset, 80, 80, 25, 0, 0, Math.PI * 2);
+      ctx.ellipse(280 + cloudOffset, 80, 70, 20, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = "rgba(0,0,0,0.09)";
+      for (let gx = PLAY_MIN_X; gx <= PLAY_MAX_X; gx += 1){
+        ctx.beginPath();
+        ctx.moveTo(gx * TILE, PLAY_MIN_Y * TILE);
+        ctx.lineTo(gx * TILE, PLAY_MAX_Y * TILE + TILE);
+        ctx.stroke();
+      }
+      for (let gy = PLAY_MIN_Y; gy <= PLAY_MAX_Y; gy += 1){
+        ctx.beginPath();
+        ctx.moveTo(PLAY_MIN_X * TILE, gy * TILE);
+        ctx.lineTo(PLAY_MAX_X * TILE + TILE, gy * TILE);
+        ctx.stroke();
+      }
+    }
+
+    function drawMapFromLayerSchema(cfg, worldType, cycle){
+      const palette = cfg.palette || {};
+      const toneRef = legacyPalette(worldType);
+      const bgGrad = ctx.createLinearGradient(0, 0, 0, cv.height);
+      bgGrad.addColorStop(0, String(palette.ground_high || toneRef[1]));
+      bgGrad.addColorStop(1, String(palette.ground || toneRef[0]));
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, cv.width, cv.height);
+
+      const snapshots = projectSnapshots(cfg, cycle);
+      const hiddenTargets = new Set();
+      snapshots.forEach((s) => {
+        const t = String(s.project.type || "");
+        const key = String((s.stage && s.stage.visual) || "");
+        if (t === "demolition" && ["strip", "demolish", "clear", "aftermath"].includes(key)){
+          if (s.project.targetStructure){
+            hiddenTargets.add(String(s.project.targetStructure));
+          }
+        }
+      });
+
+      const layers = cfg.layers || {};
+      (layers.ground || []).forEach((op) => {
+        if (op.kind === "fill"){
+          ctx.save();
+          ctx.fillStyle = String(palette.ground || "#2f5a3a");
+          ctx.fillRect(0, 0, cv.width, cv.height);
+          ctx.restore();
+        } else if (op.kind === "rect"){
+          const r = tileRect(op);
+          ctx.save();
+          ctx.fillStyle = String(op.color || palette.ground || "#2f5a3a");
+          ctx.fillRect(r.x, r.y, r.w, r.h);
+          ctx.restore();
+        }
+      });
+
+      (layers.roads || []).forEach((op) => drawRoadRect(op, palette));
+      (layers.water || []).forEach((op) => drawWaterRect(op, palette, cycle));
+      (layers.buildings || []).forEach((op) => {
+        const id = String(op.id || "");
+        const hidden = id && hiddenTargets.has(id);
+        drawBuildingOp({ ...op, hidden }, palette);
+      });
+      (layers.props || []).forEach((op) => drawProp(op));
+      drawProjectLayer(cfg, snapshots);
+
+      (layers.shadow || []).forEach((op) => {
+        if (op.kind === "rect"){
+          const r = tileRect(op);
+          ctx.save();
+          ctx.fillStyle = String(palette.shadow || "rgba(0,0,0,0.18)");
+          ctx.fillRect(r.x, r.y, r.w, r.h);
+          ctx.restore();
+        }
+      });
+      (layers.foreground || []).forEach((op) => drawForegroundOp(op));
+    }
+
+    function drawMap(worldType, cycle){
+      if (worldConfig && worldConfig.layers){
+        drawMapFromLayerSchema(worldConfig, worldType, cycle);
+        return;
+      }
+      if (!worldConfig){
+        drawMapLegacy(worldType, cycle);
+        return;
+      }
+      const fallback = makeFallbackWorldConfig();
+      const palettes = (worldConfig && worldConfig.district_palette) || fallback.district_palette;
+      const p = palettes[worldType] || palettes.community || fallback.district_palette.community;
+      const sky = ctx.createLinearGradient(0, 0, 0, cv.height);
+      sky.addColorStop(0, String(p.sky_top || "#7ec29f"));
+      sky.addColorStop(1, String(p.sky_bottom || "#3a7a59"));
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.fillStyle = String(p.ambient || "rgba(150,220,185,0.07)");
+      ctx.fillRect(0, 0, cv.width, cv.height);
+
+      const cloudOffset = (cycle % 12) * 24;
+      ctx.fillStyle = "rgba(255,255,255,0.18)";
+      ctx.beginPath();
+      ctx.ellipse(180 + cloudOffset, 75, 95, 28, 0, 0, Math.PI * 2);
+      ctx.ellipse(255 + cloudOffset, 78, 70, 22, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#6ea360";
+      ((worldConfig && worldConfig.greens) || []).forEach((rect) => drawRectTile(rect));
+      ((worldConfig && worldConfig.roads) || []).forEach((rect) => drawCobbles(rect));
+      ((worldConfig && worldConfig.water) || []).forEach((rect) => drawWater(rect, cycle));
+
+      ((worldConfig && worldConfig.districts) || []).forEach((d) => {
+        ctx.fillStyle = String(d.tone || "rgba(255,255,255,0.04)");
+        drawRectTile(d);
+      });
+
+      ((worldConfig && worldConfig.bridges) || []).forEach((b) => {
+        ctx.fillStyle = "#9f7b4b";
+        drawRectTile(b);
+        ctx.strokeStyle = "rgba(73,50,30,0.7)";
+        for (let k = 0; k < (b.axis === "h" ? Number(b.w || 1) * TILE : Number(b.h || 1) * TILE); k += 10){
+          if (b.axis === "h"){
+            ctx.beginPath();
+            ctx.moveTo(b.x * TILE + k, b.y * TILE);
+            ctx.lineTo(b.x * TILE + k, b.y * TILE + b.h * TILE);
+            ctx.stroke();
+          } else {
+            ctx.beginPath();
+            ctx.moveTo(b.x * TILE, b.y * TILE + k);
+            ctx.lineTo(b.x * TILE + b.w * TILE, b.y * TILE + k);
+            ctx.stroke();
+          }
+        }
+      });
+
+      ((worldConfig && worldConfig.buildings) || []).forEach((b) => drawBuilding(b));
+      ((worldConfig && worldConfig.props) || []).forEach((prop) => drawProp(prop));
+
+      const bounds = getWorldBounds();
+      ctx.strokeStyle = "rgba(0,0,0,0.09)";
+      for (let gx = bounds.minX; gx <= bounds.maxX; gx += 1){
+        ctx.beginPath();
+        ctx.moveTo(gx * TILE, bounds.minY * TILE);
+        ctx.lineTo(gx * TILE, bounds.maxY * TILE + TILE);
+        ctx.stroke();
+      }
+      for (let gy = bounds.minY; gy <= bounds.maxY; gy += 1){
+        ctx.beginPath();
+        ctx.moveTo(bounds.minX * TILE, gy * TILE);
+        ctx.lineTo(bounds.maxX * TILE + TILE, gy * TILE);
+        ctx.stroke();
+      }
+    }
+
+    function toPx(site){
+      const s = site || { x: 0, y: 0, w: 1, h: 1 };
+      return {
+        x: Number(s.x || 0) * TILE,
+        y: Number(s.y || 0) * TILE,
+        w: Math.max(1, Number(s.w || 1) * TILE),
+        h: Math.max(1, Number(s.h || 1) * TILE),
+      };
+    }
+
+    function activeProjectAtTick(tick){
+      if (!worldConfig) return null;
+      const snaps = projectSnapshots(worldConfig, tick);
+      if (!snaps.length) return null;
+      return snaps[snaps.length - 1];
+    }
+
+    function drawCardOverlay(cardCtx, w, projectSnap, event){
+      cardCtx.save();
+      cardCtx.fillStyle = "rgba(9,16,30,0.76)";
+      cardCtx.fillRect(18, 18, 360, 138);
+      cardCtx.strokeStyle = "rgba(192,215,255,0.65)";
+      cardCtx.strokeRect(18, 18, 360, 138);
+      cardCtx.fillStyle = "#eaf4ff";
+      cardCtx.font = "bold 18px sans-serif";
+      const title = projectSnap
+        ? `${String(projectSnap.project.type || "project")} / ${String((projectSnap.stage || {}).visual || "-")}`
+        : "event";
+      cardCtx.fillText(title, 32, 46);
+      cardCtx.font = "14px sans-serif";
+      const decision = String((event && event.decision) || "UNKNOWN");
+      const world = String((event && event.world_type) || "-");
+      cardCtx.fillText(`decision: ${decision}`, 32, 72);
+      cardCtx.fillText(`world: ${world}`, 32, 94);
+      if (projectSnap){
+        const p = clamp01(Number(projectSnap.progress || 0));
+        cardCtx.fillStyle = "rgba(255,255,255,0.22)";
+        cardCtx.fillRect(32, 108, 320, 12);
+        cardCtx.fillStyle = "#7dd3fc";
+        cardCtx.fillRect(32, 108, 320 * p, 12);
+        cardCtx.strokeStyle = "rgba(255,255,255,0.48)";
+        cardCtx.strokeRect(32, 108, 320, 12);
+        cardCtx.fillStyle = "#d7e9ff";
+        cardCtx.fillText(`progress: ${(p * 100).toFixed(0)}%`, 32, 138);
+      }
+      cardCtx.restore();
+    }
+
+    function exportEventCard(eventIndex){
+      if (!Array.isArray(events) || events.length === 0) return;
+      const prevPlaying = playing;
+      playing = false;
+      const target = clamp(Number(eventIndex ?? index), 0, events.length - 1);
+      if (target !== index){
+        setEvent(target);
+      }
+      render(0);
+
+      const outW = 960;
+      const outH = 540;
+      const card = document.createElement("canvas");
+      card.width = outW;
+      card.height = outH;
+      const cctx = card.getContext("2d");
+      if (!cctx) return;
+
+      const event = events[index] || {};
+      const snap = activeProjectAtTick(index);
+      const focus = snap ? toPx(snap.project.site) : null;
+      let srcW = cv.width;
+      let srcH = cv.height;
+      let srcX = 0;
+      let srcY = 0;
+      if (focus){
+        const zoom = 1.35;
+        srcW = Math.max(240, Math.floor(cv.width / zoom));
+        srcH = Math.max(180, Math.floor(cv.height / zoom));
+        const cx = focus.x + focus.w * 0.5;
+        const cy = focus.y + focus.h * 0.5;
+        srcX = clamp(Math.floor(cx - srcW * 0.5), 0, cv.width - srcW);
+        srcY = clamp(Math.floor(cy - srcH * 0.5), 0, cv.height - srcH);
+      }
+      cctx.drawImage(cv, srcX, srcY, srcW, srcH, 0, 0, outW, outH);
+      drawCardOverlay(cctx, outW, snap, event);
+
+      const ymd = new Date().toISOString().slice(0, 10);
+      const fileName = `event_card_${String(index).padStart(4, "0")}_${ymd}.png`;
+      card.toBlob((blob) => {
+        if (!blob) return;
+        const href = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = href;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(href);
+      }, "image/png");
+      playing = prevPlaying;
+    }
+
+    function drawWindow(x, y, w, h, title){
+      ctx.save();
+      const grad = ctx.createLinearGradient(x, y, x, y + h);
+      grad.addColorStop(0, "rgba(10,19,35,0.82)");
+      grad.addColorStop(1, "rgba(8,14,27,0.74)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = "rgba(182,214,255,0.72)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+      ctx.fillStyle = "rgba(23,45,77,0.86)";
+      ctx.fillRect(x, y, w, 27);
+      ctx.strokeStyle = "rgba(255,255,255,0.08)";
+      ctx.beginPath();
+      ctx.moveTo(x, y + 27.5);
+      ctx.lineTo(x + w, y + 27.5);
+      ctx.stroke();
+      ctx.fillStyle = "#eaf4ff";
+      ctx.font = "700 13px sans-serif";
+      ctx.letterSpacing = "0.03em";
+      ctx.fillText(title, x + 9, y + 18);
+      ctx.restore();
+    }
+
+    function drawGauge(x, y, w, h, value, color){
+      ctx.save();
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y, w * clamp01(value), h);
+      ctx.strokeStyle = "rgba(220,238,255,0.45)";
+      ctx.strokeRect(x, y, w, h);
+      ctx.restore();
+    }
+
+    function drawPostFx(worldType){
+      const tintMap = {
+        infrastructure: "rgba(125,188,220,0.06)",
+        community: "rgba(144,215,165,0.05)",
+        survival: "rgba(194,198,132,0.05)",
+        capitalism: "rgba(164,191,224,0.05)",
+      };
+      const tint = tintMap[String(worldType || "")] || "rgba(170,194,220,0.05)";
+      ctx.save();
+      ctx.fillStyle = tint;
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      const g = ctx.createRadialGradient(cv.width * 0.5, cv.height * 0.5, cv.height * 0.25, cv.width * 0.5, cv.height * 0.5, cv.height * 0.8);
+      g.addColorStop(0, "rgba(0,0,0,0)");
+      g.addColorStop(1, "rgba(0,0,0,0.28)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.globalAlpha = 0.04;
+      ctx.fillStyle = "#ffffff";
+      for (let i = 0; i < 280; i += 1){
+        const x = (i * 97 + index * 31) % cv.width;
+        const y = (i * 67 + index * 17) % cv.height;
+        ctx.fillRect(x, y, 1, 1);
+      }
+      ctx.restore();
+    }
+
+    function drawFace(cx, cy, faceId){
+      ctx.save();
+      ctx.fillStyle = "#21324a";
+      if (faceId === "jitome"){
+        ctx.fillRect(cx - 10, cy - 4, 8, 2);
+        ctx.fillRect(cx + 2, cy - 4, 8, 2);
+        ctx.fillRect(cx - 5, cy + 8, 10, 2);
+      } else if (faceId === "smile"){
+        ctx.fillRect(cx - 9, cy - 3, 3, 3);
+        ctx.fillRect(cx + 6, cy - 3, 3, 3);
+        ctx.beginPath();
+        ctx.arc(cx, cy + 5, 7, 0.1 * Math.PI, 0.9 * Math.PI);
+        ctx.strokeStyle = "#21324a";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      } else if (faceId === "surprise"){
+        ctx.beginPath(); ctx.arc(cx - 6, cy - 2, 2.2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx + 6, cy - 2, 2.2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx, cy + 7, 3.2, 0, Math.PI * 2); ctx.strokeStyle = "#21324a"; ctx.lineWidth = 2; ctx.stroke();
+      } else if (faceId === "tired"){
+        ctx.fillRect(cx - 9, cy - 3, 6, 2);
+        ctx.fillRect(cx + 3, cy - 3, 6, 2);
+        ctx.fillRect(cx - 5, cy + 8, 10, 1);
+      } else {
+        ctx.fillRect(cx - 8, cy - 3, 3, 3);
+        ctx.fillRect(cx + 5, cy - 3, 3, 3);
+        ctx.fillRect(cx - 4, cy + 8, 8, 2);
+      }
+      ctx.restore();
+    }
+
+    function drawMouth(cx, cy, mouthOpen, faceId, viseme){
+      ctx.save();
+      ctx.fillStyle = "#21324a";
+      const v = String(viseme || "n");
+      const wMap = { a: 11, i: 6, u: 8, e: 10, o: 12, n: 6 };
+      const hMap = { a: 8, i: 4, u: 6, e: 7, o: 8, n: 2 };
+      const w = (wMap[v] ?? 8) * (0.75 + mouthOpen * 0.35);
+      const h = Math.max(1, (hMap[v] ?? 5) * (0.55 + mouthOpen * 0.55));
+      if (faceId === "tired" || faceId === "jitome"){
+        ctx.fillRect(cx - w / 2, cy + 8, w, Math.max(1, h * 0.6));
+      } else {
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + 8, w / 2, h / 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawHair(cx, cy, sway, tension){
+      const lift = 8 + tension * 4;
+      ctx.save();
+      ctx.fillStyle = "#3d5377";
+      ctx.beginPath();
+      ctx.moveTo(cx - 20, cy - 8);
+      ctx.quadraticCurveTo(cx, cy - lift - sway * 0.3, cx + 20, cy - 8);
+      ctx.quadraticCurveTo(cx + 16 + sway, cy + 2, cx + 9 + sway * 0.5, cy + 10);
+      ctx.quadraticCurveTo(cx, cy + 14, cx - 9 + sway * 0.4, cy + 10);
+      ctx.quadraticCurveTo(cx - 18 + sway, cy + 0, cx - 20, cy - 8);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawActorFromLayers(x, y, opts){
+      if (!portraitAssets.loaded) return false;
+      const L = portraitAssets.layers || {};
+      const M = portraitAssets.mouths || {};
+      if (!L.body || !L.head) return false;
+
+      const faceId = String(opts?.faceId || "neutral");
+      const viseme = String(opts?.viseme || "n");
+      const scaleMul = Number(opts?.scaleMul || 1.0);
+      const alpha = clamp01(Number(opts?.alpha ?? 1.0));
+      const bodyShiftY = Number(opts?.bodyShiftY || 0);
+      const headShiftY = Number(opts?.headShiftY || 0);
+      const sway = Number(opts?.sway || 0);
+      const bob = Number(opts?.bob || 0);
+      const poseShiftX = Number(opts?.poseShiftX || 0);
+
+      const baseScale = (Number((portraitManifest?.transform?.scale) || 1.0) * 0.22) * scaleMul;
+      const ref = L.body;
+      const refH = Math.max(1, Number(ref.height || 1));
+      const feetY = y + 34 + bob;
+      const centerX = x + poseShiftX;
+      const baseY = feetY - refH * baseScale;
+
+      function drawLayer(img, dx = 0, dy = 0){
+        if (!img) return;
+        const w = img.width * baseScale;
+        const h = img.height * baseScale;
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(img, centerX - w / 2 + dx, baseY + dy, w, h);
+      }
+
+      const eyeKey = faceId === "jitome" ? "eye_half" : (faceId === "surprise" ? "eye_open_wide" : "eye_open");
+      drawLayer(L.hair_back, sway * 0.55, -8 + headShiftY);
+      drawLayer(L.body, 0, 10 + bodyShiftY);
+      drawLayer(L.head, 0, -10 + headShiftY);
+      drawLayer(L[eyeKey] || L.eye_open, 0, -10 + headShiftY);
+      drawLayer(M[viseme] || M.n || M.a, 0, -3 + headShiftY);
+      drawLayer(L.hair_front, sway * 0.75, -8 + headShiftY);
+      ctx.globalAlpha = 1.0;
+      return true;
+    }
+
+    function drawHeroPrimitive(x, y, poseId, faceId, bob, tension, mouthOpen, hairSway, viseme){
+      const poseShift = poseId === "lean_in" ? 8 : (poseId === "guarded" ? -5 : 0);
+      const bodyH = poseId === "guarded" ? 15 : 19;
+      const bodyW = poseId === "bounce" ? 22 : 20;
+
+      const aura = ctx.createRadialGradient(x, y, 0, x, y, 50);
+      const alpha = clamp01(0.2 + tension * 0.45);
+      aura.addColorStop(0, `rgba(255,120,120,${alpha})`);
+      aura.addColorStop(1, "rgba(255,120,120,0)");
+      ctx.fillStyle = aura;
+      ctx.fillRect(x - 52, y - 52, 104, 104);
+
+      ctx.save();
+      ctx.fillStyle = "#fffbe7";
+      ctx.beginPath();
+      ctx.arc(x + poseShift, y + bob, 18, 0, Math.PI * 2);
+      ctx.fill();
+      drawHair(x + poseShift, y + bob - 6, hairSway, tension);
+      ctx.fillStyle = "#dfe7ff";
+      ctx.fillRect(x - bodyW / 2 + poseShift, y + 22 + bob, bodyW, bodyH);
+      drawFace(x + poseShift, y + bob, faceId);
+      drawMouth(x + poseShift, y + bob, mouthOpen, faceId, viseme);
+      ctx.restore();
+    }
+
+    function drawHero(x, y, poseId, faceId, bob, tension, mouthOpen, hairSway, viseme){
+      const spriteOk = drawActorSprite(x, y, { bob, mouthOpen }, "default");
+      if (spriteOk) return;
+      const poseShift = poseId === "lean_in" ? 8 : (poseId === "guarded" ? -5 : 0);
+      const ok = drawActorFromLayers(x, y, {
+        faceId,
+        viseme,
+        scaleMul: 1.0,
+        bob,
+        sway: hairSway,
+        poseShiftX: poseShift,
+      });
+      if (!ok){
+        drawHeroPrimitive(x, y, poseId, faceId, bob, tension, mouthOpen, hairSway, viseme);
+      }
+    }
+
+    function drawNpcPrimitive(x, y, color){
+      ctx.save();
+      ctx.fillStyle = "#ffd0c5";
+      ctx.beginPath();
+      ctx.arc(x, y, 16, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = color || "#6e5a53";
+      ctx.fillRect(x - 9, y + 18, 18, 18);
+      ctx.restore();
+    }
+
+    function resolveActorIdForNpc(rawId){
+      const id = String(rawId || "").toLowerCase();
+      if (!id) return "default";
+      if (actorAssets.actors[id]) return id;
+      const keys = Object.keys(actorAssets.actors || {});
+      for (const key of keys){
+        if (key === "default") continue;
+        const role = key.endsWith("_01") ? key.slice(0, -3) : key;
+        if (role && id.includes(role)) return key;
+      }
+      return "default";
+    }
+
+    function drawNpc(x, y, color, npcId){
+      const actorId = resolveActorIdForNpc(npcId);
+      const spriteOk = drawActorSprite(x, y, { bob: 0, mouthOpen: 0 }, actorId);
+      if (spriteOk){
+        if (color){
+          ctx.save();
+          ctx.fillStyle = color;
+          ctx.globalAlpha = 0.28;
+          ctx.beginPath();
+          ctx.arc(x, y + 33, 8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+        return;
+      }
+      const ok = drawActorFromLayers(x, y, {
+        faceId: "neutral",
+        viseme: "n",
+        scaleMul: 0.82,
+        alpha: 0.98,
+        bodyShiftY: 2,
+      });
+      if (!ok){
+        drawNpcPrimitive(x, y, color);
+        return;
+      }
+      if (color){
+        ctx.save();
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.35;
+        ctx.beginPath();
+        ctx.arc(x, y + 41, 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    function resolveNpcFromRoute(cfg, dtSec){
+      const list = Array.isArray(cfg?.npcs) ? cfg.npcs : [];
+      const npc = list.length > 0 ? list[0] : null;
+      if (!npc) return null;
+      const route = Array.isArray(npc.route) ? npc.route : (Array.isArray(npc.path) ? npc.path : null);
+      if (!route || route.length < 2) return null;
+      const speedPerSec = Number(npc.speed ?? npc.pace ?? 0.9);
+      npcPhase += dtSec * speedPerSec * 0.9;
+      if (npcPhase >= 1.0){
+        npcPhase -= 1.0;
+        npcRouteIdx = (npcRouteIdx + 1) % route.length;
+      }
+      const p = route[npcRouteIdx];
+      return { x: clampTileX(Number(p.x || npcTile.x)), y: clampTileY(Number(p.y || npcTile.y)) };
+    }
+
+    function updateNpcLegacyWalk(){
+      if (Math.random() < 0.06){
+        const dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
+        npcDir = dirs[Math.floor(Math.random() * dirs.length)];
+      }
+      npcTile = {
+        x: clampTileX(npcTile.x + npcDir.x),
+        y: clampTileY(npcTile.y + npcDir.y),
+      };
+    }
+
+    function render(dt){
+      const dtSec = Math.max(0, Number(dt || 0)) / 1000;
+      const e = events[index] || {};
+      const expression = e.expression_diff || {};
+      const risk = Number(e.risk_post || 0);
+      const uncertainty = Number(e.uncertainty_factor || 0);
+      const calm = clamp01(1 - uncertainty);
+      const hesitate = clamp01(uncertainty);
+      const tense = clamp01(risk);
+
+      drawMap(e.world_type, index + elapsed * 3.0);
+
+      heroX += (targetX - heroX) * 0.12 * speed;
+      heroY += (targetY - heroY) * 0.12 * speed;
+      const motion = computeMotion(expression, risk);
+      const poseId = motion.poseId;
+      const faceId = ((expression.face || {}).id) || "neutral";
+
+      if (worldConfig){
+        const routed = resolveNpcFromRoute(worldConfig, dtSec);
+        if (routed){
+          npcTile = routed;
+        } else {
+          updateNpcLegacyWalk();
+        }
+      } else {
+        updateNpcLegacyWalk();
+      }
+
+      const npcTime = index + elapsed * speed;
+      if (worldConfig && Array.isArray(npcActors) && npcActors.length > 0){
+        npcActors.forEach((actor) => {
+          const pos = resolveNpcPosition(actor, npcTime);
+          const npcX = pos.x * TILE + TILE / 2;
+          const npcY = pos.y * TILE + TILE / 2;
+          drawNpc(npcX, npcY, actor.color, actor.id);
+        });
+      } else {
+        const npcX = npcTile.x * TILE + TILE / 2;
+        const npcY = npcTile.y * TILE + TILE / 2;
+        drawNpc(npcX, npcY, "#6e5a53", "default");
+      }
+      drawHero(heroX, heroY, poseId, faceId, motion.bob, tense, motion.mouthOpen, motion.hairSway, motion.viseme);
+      drawPortrait(e, motion);
+
+      drawWindow(36, 36, 320, 245, getText("canvas_panel.status", "Status"));
+      drawWindow(36, 296, 320, 176, getText("canvas_panel.reading", "Reading"));
+      drawWindow(36, 486, 1208, 184, getText("canvas_panel.message", "Message"));
+
+      ctx.fillStyle = "#ecf5ff";
+      ctx.font = "14px sans-serif";
+      let tx = 52;
+      let ty = 74;
+      ctx.fillText(`${getText("label.world","World")}: ${worldLabel(e.world_type)}`, tx, ty); ty += 22;
+      ctx.fillText(`${getText("label.decision","Decision")}: ${decisionLabel(e.decision)}`, tx, ty); ty += 22;
+      ctx.fillText(`${getText("label.face","Face")}: ${lookupLabel("face_labels", faceId, faceId)}`, tx, ty); ty += 22;
+      ctx.fillText(`${getText("label.pose","Pose")}: ${lookupLabel("pose_labels", poseId, poseId)}`, tx, ty); ty += 22;
+      ctx.fillText(`${getText("label.emotion","Emotion")}: ${lookupLabel("emotion_labels", ((e.emotion_view || {}).primary) || "normal", ((e.emotion_view || {}).primary) || "normal")}`, tx, ty);
+
+      ty = 332;
+      ctx.fillText(getText("label.calm","Calm"), tx, ty);
+      drawGauge(152, ty - 11, 180, 11, calm, "#8cf4b5");
+      ty += 28;
+      ctx.fillText(getText("label.hesitate","Hesitate"), tx, ty);
+      drawGauge(152, ty - 11, 180, 11, hesitate, "#ffd589");
+      ty += 28;
+      ctx.fillText(getText("label.tense","Tense"), tx, ty);
+      drawGauge(152, ty - 11, 180, 11, tense, "#ff8f8f");
+
+      ctx.font = "18px sans-serif";
+      const lines = describeEvent(e).split("\n");
+      ctx.fillText(lines[0] || "", 56, 528);
+      ctx.fillText(lines[1] || "", 56, 560);
+      ctx.fillText(lines[2] || "", 56, 592);
+
+      if (fx){
+        fx.life -= 0.02 * speed;
+        const alpha = clamp01(fx.life);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = "rgba(255,255,255,0.92)";
+        ctx.font = "40px sans-serif";
+        ctx.fillText(fx.mark, 548, 126);
+        ctx.restore();
+        if (fx.life <= 0) fx = null;
+      }
+
+      drawPostFx(e.world_type);
+
+      elapsed += dt / 1000;
+    }
+
+    function tick(now){
+      const dt = now - lastFrameAt;
+      lastFrameAt = now;
+      if (playing && events.length > 0){
+        const dwell = 1200 / speed;
+        if (elapsed * 1000 > dwell){
+          if (index >= events.length - 1){
+            playing = false;
+          } else {
+            setEvent(index + 1);
+          }
+        }
+      }
+      render(dt);
+      requestAnimationFrame(tick);
+    }
+
+    function applyUIText(){
+      document.getElementById("play").textContent = getText("buttons.play","Play");
+      document.getElementById("pause").textContent = getText("buttons.pause","Pause");
+      document.getElementById("prev").textContent = getText("buttons.prev","Prev");
+      document.getElementById("next").textContent = getText("buttons.next","Next");
+      document.getElementById("faster").textContent = getText("buttons.faster","Faster");
+      document.getElementById("slower").textContent = getText("buttons.slower","Slower");
+      document.getElementById("exportCard").textContent = getText("buttons.export_card","Card PNG");
+      document.getElementById("subtitleTitle").textContent = getText("panel.subtitle","Subtitle");
+      document.getElementById("reactionTitle").textContent = getText("panel.reaction","Reaction");
+      document.getElementById("growthTitle").textContent = getText("panel.growth","Growth");
+      document.getElementById("cultureTitle").textContent = "Culture";
+      document.getElementById("portraitTitle").textContent = getText("panel.portrait","Portrait");
+      document.getElementById("rawTitle").textContent = getText("panel.raw","Raw");
+      if (rawDetails) rawDetails.open = false;
+    }
+
+    async function loadLocale(){
+      try {
+        const res = await fetch("./locales/ja.json", { cache: "no-store" });
+        if (!res.ok) throw new Error(`locale HTTP ${res.status}`);
+        locale = await res.json();
+      } catch (_err){
+        locale = {};
+      }
+    }
+
+    async function loadWorldConfig(){
+      worldConfig = null;
+      if (!WORLD_CONFIG_PATH){
+        return;
+      }
+      try {
+        const url = new URL(WORLD_CONFIG_PATH, location.href);
+        const res = await fetch(url.toString(), { cache: "no-store" });
+        if (!res.ok) return;
+        const payload = await res.json();
+        if (!payload || typeof payload !== "object") return;
+        worldConfig = payload;
+      } catch (_err){
+        worldConfig = null;
+      }
+      if (!worldConfig){
+        return;
+      }
+      const spawn = (worldConfig && worldConfig.spawn) || {};
+      const firstNpc = Array.isArray(worldConfig.npcs) && worldConfig.npcs[0] ? worldConfig.npcs[0] : null;
+      const heroSpawn = spawn.hero || {};
+      const guideSpawn = spawn.guide || (firstNpc && firstNpc.spawn) || {};
+      if (Number.isFinite(Number(heroSpawn.x)) && Number.isFinite(Number(heroSpawn.y))){
+        heroTile = { x: Number(heroSpawn.x), y: Number(heroSpawn.y) };
+      }
+      if (Number.isFinite(Number(guideSpawn.x)) && Number.isFinite(Number(guideSpawn.y))){
+        npcTile = { x: Number(guideSpawn.x), y: Number(guideSpawn.y) };
+      }
+      heroX = heroTile.x * TILE + TILE / 2;
+      heroY = heroTile.y * TILE + TILE / 2;
+      targetX = heroX;
+      targetY = heroY;
+      npcActors = Array.isArray(worldConfig.npcs) ? worldConfig.npcs : [];
+      npcRouteIdx = 0;
+      npcPhase = 0.0;
+    }
+
+    async function init(){
+      await loadLocale();
+      applyUIText();
+      await loadWorldConfig();
+      await loadPortraitAssets();
+      await loadActorAssets();
+      try {
+        const res = await fetch("./replay.json", { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+        const payload = await res.json();
+        events = Array.isArray(payload.events) ? payload.events : [];
+        if (events.length === 0){
+          subtitle.textContent = getText("status.no_events_desc","replay.json is empty.");
+          raw.textContent = JSON.stringify(payload, null, 2);
+          return;
+        }
+        setEvent(0);
+        requestAnimationFrame(tick);
+      } catch (err){
+        subtitle.textContent = getText("status.load_failed","Failed to load replay.json.");
+        raw.textContent = String(err);
+      }
+    }
+
+    document.getElementById("play").onclick = () => { playing = true; };
+    document.getElementById("pause").onclick = () => { playing = false; };
+    document.getElementById("prev").onclick = () => { playing = false; setEvent(index - 1); };
+    document.getElementById("next").onclick = () => { playing = false; setEvent(index + 1); };
+    document.getElementById("faster").onclick = () => { speed = Math.min(6.0, speed * 1.25); };
+    document.getElementById("slower").onclick = () => { speed = Math.max(0.25, speed / 1.25); };
+    document.getElementById("exportCard").onclick = () => { exportEventCard(index); };
+
+    init();
+  </script>
 </body>
 </html>
