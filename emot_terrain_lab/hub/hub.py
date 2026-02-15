@@ -1935,7 +1935,7 @@ class Hub:
                     trace_meta["receipt"] = receipt
                 memory_kind = ctx_time.get("memory_kind")
                 if not memory_kind and activation_trace_payload:
-                    memory_kind = "episodic"
+                    memory_kind = "experience"
                 novelty_score = self._safe_float(ctx_time.get("novelty"))
                 social_weight = self._infer_social_weight(plan)
                 constraint_weight = self._infer_constraint_weight(ctx_time)

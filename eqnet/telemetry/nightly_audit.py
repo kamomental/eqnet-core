@@ -28,6 +28,8 @@ class NightlyAuditConfig:
     health_thresholds: Dict[str, Any] | None = None
     evidence_limit: int = EVIDENCE_DEFAULT_LIMIT
     memory_reference_log_path: Path | None = None
+    think_log_path: Path | None = Path("logs/think_log.jsonl")
+    act_log_path: Path | None = Path("logs/act_log.jsonl")
 
 
 def _iter_jsonl(path: Path) -> Iterator[Dict[str, Any]]:
@@ -751,6 +753,130 @@ def _memory_thermo_contract_coverage(records: List[Dict[str, Any]], day_key: str
         ),
     }
 
+
+def _separation_governance_audit(
+    *,
+    think_log_path: Path | None,
+    act_log_path: Path | None,
+) -> Dict[str, Any]:
+    """Assess wiring status of thought/experience separation governance.
+
+    This block is intentionally independent from health scoring.
+    """
+
+    def _connected(path: Path | None) -> bool:
+        if path is None:
+            return False
+        if path.exists():
+            return True
+        return path.parent.exists()
+
+    def _iter_rows(path: Path | None) -> Iterator[Dict[str, Any]]:
+        if path is None or not path.exists():
+            return iter(())
+        return _iter_jsonl(path)
+
+    think_connected = _connected(think_log_path)
+    act_connected = _connected(act_log_path)
+
+    # Keep allowed set explicit to avoid importing runtime module dependencies.
+    allowed = {
+        "experience",
+        "imagery",
+        "hypothesis",
+        "borrowed_idea",
+        "discussion",
+        "unknown",
+    }
+
+    memory_kind_rows = 0
+    memory_kind_bad = 0
+    promotion_events = 0
+    source_misattribution_events = 0
+    for row in _iter_rows(think_log_path):
+        kind = row.get("memory_kind")
+        if isinstance(kind, str):
+            memory_kind_rows += 1
+            if kind not in allowed:
+                memory_kind_bad += 1
+        meta = row.get("meta")
+        if isinstance(meta, dict):
+            ev = meta.get("audit_event")
+            if isinstance(ev, str) and ev in {"PROMOTION_GUARD_BLOCKED", "PROMOTION_GUARD_PASSED"}:
+                promotion_events += 1
+            if isinstance(ev, str) and ev in {"SOURCE_FUZZY", "DOUBLE_TAKE"}:
+                source_misattribution_events += 1
+        ev_top = row.get("audit_event")
+        if isinstance(ev_top, str) and ev_top in {"SOURCE_FUZZY", "DOUBLE_TAKE"}:
+            source_misattribution_events += 1
+    for row in _iter_rows(act_log_path):
+        kind = row.get("memory_kind")
+        if isinstance(kind, str):
+            memory_kind_rows += 1
+            if kind not in allowed:
+                memory_kind_bad += 1
+        meta = row.get("meta")
+        if isinstance(meta, dict) and isinstance(meta.get("promotion_evidence_event_id"), str):
+            promotion_events += 1
+
+    memory_kind_enforced = memory_kind_rows > 0 and memory_kind_bad == 0
+    promotion_guard_enforced = promotion_events > 0
+    source_misattribution_wired = think_log_path is not None
+    source_misattribution_active = source_misattribution_events > 0
+
+    checks = {
+        "think_log_connected": think_connected,
+        "act_log_connected": act_connected,
+        "memory_kind_enum_enforced": memory_kind_enforced,
+        "promotion_guard_enforced": promotion_guard_enforced,
+        "source_misattribution_events": {
+            "wired": source_misattribution_wired,
+            "active": source_misattribution_active,
+            "active_count": int(source_misattribution_events),
+        },
+        # Backward-compat key kept for existing consumers.
+        "source_misattribution_events_connected": source_misattribution_active,
+    }
+
+    core_ready = (
+        checks["think_log_connected"]
+        and checks["act_log_connected"]
+        and checks["memory_kind_enum_enforced"]
+        and checks["promotion_guard_enforced"]
+    )
+    partial_ready = (
+        checks["think_log_connected"]
+        or checks["act_log_connected"]
+        or checks["memory_kind_enum_enforced"]
+        or checks["promotion_guard_enforced"]
+    )
+
+    if core_ready:
+        status = "INSTALLED_BASELINE"
+        enabled = True
+        reason = "thought_experience_separation_baseline_connected"
+    elif partial_ready:
+        status = "PARTIALLY_INSTALLED"
+        enabled = False
+        reason = "thought_experience_separation_partially_connected"
+    else:
+        status = "NOT_INSTALLED"
+        enabled = False
+        reason = "thought_experience_separation_sensors_not_connected"
+
+    if status != "NOT_INSTALLED" and source_misattribution_wired:
+        status += "+SOURCE_RECHECK_WIRED"
+    if status != "NOT_INSTALLED" and source_misattribution_active:
+        status += "+SOURCE_RECHECK_ACTIVE"
+
+    return {
+        "enabled": enabled,
+        "status": status,
+        "reason": reason,
+        "checks": checks,
+    }
+
+
 def generate_audit(cfg: NightlyAuditConfig) -> Path:
     day_dir = cfg.trace_root / cfg.date_yyyy_mm_dd
     if not day_dir.exists():
@@ -1037,6 +1163,10 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
         "recall_cue_budget": recall_cue_budget,
         "repair_coverage": repair_coverage,
         "memory_thermo_contract": memory_thermo_contract,
+        "separation": _separation_governance_audit(
+            think_log_path=cfg.think_log_path,
+            act_log_path=cfg.act_log_path,
+        ),
         "ru_v0_summary": _ru_v0_summary(records),
         "qualia_gate_stats": qualia_gate_stats,
     }

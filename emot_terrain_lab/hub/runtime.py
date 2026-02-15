@@ -563,6 +563,7 @@ class EmotionalHubRuntime:
         )
         self._memory_ref_cfg = getattr(self._runtime_cfg, "memory_reference", None)
         self._memory_ref_log_path: Optional[Path] = None
+        self._think_log_path: Optional[Path] = None
         self.perceived_affect: Dict[str, float] = {
             "valence": 0.0,
             "arousal": 0.0,
@@ -577,6 +578,16 @@ class EmotionalHubRuntime:
                 self._memory_ref_log_path.parent.mkdir(parents=True, exist_ok=True)
             except Exception:
                 self._memory_ref_log_path = None
+        try:
+            think_path = (
+                getattr(self._memory_ref_cfg, "think_log_path", None)
+                if self._memory_ref_cfg is not None
+                else None
+            )
+            self._think_log_path = Path(think_path or "logs/think_log.jsonl")
+            self._think_log_path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            self._think_log_path = None
 
         self._fast_ack_state = FastAckState()
         self._arousal_tracker = ArousalTracker()
@@ -3041,15 +3052,20 @@ class EmotionalHubRuntime:
     ) -> None:
         if not result or not self._memory_ref_log_path:
             return
+        meta = result.get("meta") or {}
         record: Dict[str, Any] = {
             "ts": time.time(),
-            "mode": (result.get("meta") or {}).get("mode", "recall"),
+            "mode": meta.get("mode", "recall"),
             "fidelity": result.get("fidelity"),
             "reply_len": len((result.get("reply") or "")),
-            "anchor": (result.get("meta") or {}).get("anchor"),
-            "disclaimer_source": (result.get("meta") or {}).get("disclaimer_source"),
-            "recall_render_mode": (result.get("meta") or {}).get("recall_render_mode"),
-            "cue_label": (result.get("meta") or {}).get("cue_label"),
+            "anchor": meta.get("anchor"),
+            "disclaimer_source": meta.get("disclaimer_source"),
+            "recall_render_mode": meta.get("recall_render_mode"),
+            "cue_label": meta.get("cue_label"),
+            "memory_kind": meta.get("memory_kind"),
+            "source_class": meta.get("source_class"),
+            "audit_event": meta.get("audit_event"),
+            "evidence_keys": meta.get("evidence_keys"),
         }
         rarity = (result.get("meta") or {}).get("rarity_budget") or {}
         if isinstance(rarity, dict):
@@ -3072,9 +3088,33 @@ class EmotionalHubRuntime:
             user_text.strip().lower().encode("utf-8")
         ).hexdigest()[:12]
         record["topic_hash"] = topic_hash
+        record["turn_id"] = self._turn_id
+        record["memory_ref_id"] = f"memory-ref-{int(record['ts'] * 1000)}-{topic_hash}"
         try:
             with self._memory_ref_log_path.open("a", encoding="utf-8") as handle:
                 json.dump(record, handle, ensure_ascii=False)
                 handle.write("\n")
         except Exception:
             pass
+        audit_event = meta.get("audit_event")
+        if (
+            self._think_log_path is not None
+            and isinstance(audit_event, str)
+            and audit_event in {"SOURCE_FUZZY", "DOUBLE_TAKE"}
+        ):
+            think_event = {
+                "ts": record["ts"],
+                "turn_id": self._turn_id,
+                "memory_ref_id": record["memory_ref_id"],
+                "memory_kind": meta.get("memory_kind", "unknown"),
+                "source_class": meta.get("source_class", "uncertain"),
+                "audit_event": audit_event,
+                "evidence_keys": meta.get("evidence_keys") or [],
+                "trace_id": record["memory_ref_id"],
+            }
+            try:
+                with self._think_log_path.open("a", encoding="utf-8") as handle:
+                    json.dump(think_event, handle, ensure_ascii=False)
+                    handle.write("\n")
+            except Exception:
+                pass

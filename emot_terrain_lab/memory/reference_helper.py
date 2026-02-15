@@ -306,6 +306,48 @@ def handle_memory_reference(
     user_feedback: Optional[str] = None,
     max_reply_chars: Optional[int] = None,
 ) -> dict:
+    def _source_governance_meta(
+        *,
+        reference: ReferenceResolution,
+        outcome: Optional[ReplayOutcome],
+        strategy_name: str,
+    ) -> dict:
+        use_as_experience = strategy_name in {"recall", "interpret", "mend"}
+        source_class = "uncertain"
+        memory_kind = "unknown"
+        evidence_keys: List[str] = []
+        if outcome is not None:
+            if reference.who == "you":
+                source_class = "other"
+                memory_kind = "borrowed_idea"
+                evidence_keys.append("who_you")
+            elif outcome.fidelity >= 0.65 and outcome.candidate.anchor >= 0.5:
+                source_class = "self"
+                memory_kind = "experience"
+                evidence_keys.extend(["high_fidelity", "anchor_high"])
+            elif outcome.fidelity < 0.45:
+                source_class = "uncertain"
+                memory_kind = "unknown"
+                evidence_keys.append("fidelity_low")
+            else:
+                source_class = "imagery"
+                memory_kind = "imagery"
+                evidence_keys.append("fidelity_mid")
+        thought_kinds = {"imagery", "hypothesis", "borrowed_idea", "discussion", "unknown"}
+        audit_event = None
+        if use_as_experience and memory_kind in thought_kinds and source_class == "uncertain":
+            audit_event = "SOURCE_FUZZY"
+            evidence_keys.extend(["thought_kind", "uncertain_source", "experience_use"])
+        elif use_as_experience and memory_kind == "borrowed_idea":
+            audit_event = "DOUBLE_TAKE"
+            evidence_keys.extend(["borrowed_idea", "experience_use"])
+        return {
+            "source_class": source_class,
+            "memory_kind": memory_kind,
+            "audit_event": audit_event,
+            "evidence_keys": sorted(set(evidence_keys)),
+        }
+
     reference = resolve_reference(text)
     candidates = search_memory(system, reference, k=k)
     seed = reference.summary or text or "memory"
@@ -332,7 +374,11 @@ def handle_memory_reference(
             "reply": _truncate(reply, max_reply_chars),
             "fidelity": 0.0,
             "candidate": None,
-            "meta": {"mode": strategy, "disclaimer_source": "template"},
+            "meta": {
+                "mode": strategy,
+                "disclaimer_source": "template",
+                **_source_governance_meta(reference=reference, outcome=None, strategy_name=strategy),
+            },
         }
 
     outcome = run_replay(system, candidates)
@@ -349,7 +395,11 @@ def handle_memory_reference(
             "reply": _truncate(reply, max_reply_chars),
             "fidelity": 0.0,
             "candidate": None,
-            "meta": {"mode": strategy, "disclaimer_source": "fallback"},
+            "meta": {
+                "mode": strategy,
+                "disclaimer_source": "fallback",
+                **_source_governance_meta(reference=reference, outcome=None, strategy_name=strategy),
+            },
         }
 
     reply, fidelity, label, source = compose_recall_response(
@@ -374,6 +424,7 @@ def handle_memory_reference(
             "mode": strategy,
             "anchor": outcome.candidate.anchor,
             "disclaimer_source": source,
+            **_source_governance_meta(reference=reference, outcome=outcome, strategy_name=strategy),
         },
     }
 
