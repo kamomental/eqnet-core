@@ -8,3 +8,4 @@ Runbooks, audits, and operational checklists.
 - Fastpath release notes: `docs/fastpath_release.md`
 - Frontier/phase checklists: `docs/frontier_phase1_checklist.md`
 - NDCG eval: `docs/ndcg_eval.md`
+- Weekly convergence completion: `docs/ops/weekly_convergence_completion.md`

@@ -194,6 +194,101 @@ def test_run_nightly_audit_closed_loop_flags_missing_output_control(tmp_path):
     assert "output_control_fingerprint" in (closed.get("missing_keys") or [])
 
 
+def test_run_nightly_audit_includes_lazy_rag_sat_ratio_p95(tmp_path):
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {
+            "timestamp_ms": 1000,
+            "turn_id": "turn-1",
+            "scenario_id": "audit-demo",
+            "source_loop": "hub",
+            "response_meta": {"safety": {"lazy_rag_sat_ratio": 0.2}},
+        },
+        {
+            "timestamp_ms": 1001,
+            "turn_id": "turn-2",
+            "scenario_id": "audit-demo",
+            "source_loop": "hub",
+            "response_meta": {"safety": {"lazy_rag_sat_ratio": 0.8}},
+        },
+    ]
+    (day_dir / "hub-1.jsonl").write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    hub._run_nightly_audit(date(2025, 12, 14))
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    assert payload.get("lazy_rag_sat_ratio_count") == 2
+    assert payload.get("lazy_rag_sat_ratio_p95") == 0.8
+
+
+def test_run_nightly_audit_includes_uncertainty_reason_top3(tmp_path):
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {
+            "timestamp_ms": 1000,
+            "turn_id": "turn-1",
+            "response_meta": {
+                "confidence": 0.40,
+                "uncertainty_reason": ["retrieval_sparse", "score_saturation_high"],
+            },
+        },
+        {
+            "timestamp_ms": 1001,
+            "turn_id": "turn-2",
+            "response_meta": {
+                "confidence": 0.62,
+                "uncertainty_reason": ["retrieval_sparse"],
+            },
+        },
+        {
+            "timestamp_ms": 1002,
+            "turn_id": "turn-3",
+            "response_meta": {
+                "confidence": 0.85,
+                "uncertainty_reason": ["retrieval_error"],
+            },
+        },
+    ]
+    (day_dir / "hub-1.jsonl").write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    hub._run_nightly_audit(date(2025, 12, 14))
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    top3 = payload.get("uncertainty_reason_top3") or []
+    assert top3
+    assert top3[0]["reason"] == "retrieval_sparse"
+    assert top3[0]["count"] == 2
+    conf = payload.get("uncertainty_confidence") or {}
+    assert conf.get("total") == 3
+    assert conf.get("low") == 1
+    assert conf.get("mid") == 1
+    assert conf.get("high") == 1
+
+
 def test_run_nightly_shadow_delegate_writes_trace_observation(tmp_path, monkeypatch):
     trace_root = tmp_path / "trace_v1"
     monkeypatch.setenv("EQNET_TRACE_V1", "1")

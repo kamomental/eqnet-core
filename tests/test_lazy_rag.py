@@ -106,3 +106,18 @@ def test_lazy_rag_returns_none_when_no_matches(tmp_path: Path) -> None:
     cfg = LazyRAGConfig(graph_path=graph, memory_jsonl_path=mem)
     rag = LazyRAG(cfg)
     assert rag.build_context("差分検知") is None
+
+def test_lazy_rag_sanitizes_negative_score_weights(tmp_path: Path) -> None:
+    graph = tmp_path / "graph.json"
+    mem = tmp_path / "logs.jsonl"
+    _write_graph(graph, "turn-123", "memory cue")
+    _write_jsonl(mem, [{"turn_id": "turn-123", "text": "memory cue"}])
+    cfg = LazyRAGConfig(
+        graph_path=graph,
+        memory_jsonl_path=mem,
+        score_weights={"token": -1.0, "bigram": 2.0},
+        score_clamp_min=0.0,
+        score_clamp_max=1.0,
+    )
+    rag = LazyRAG(cfg)
+    assert rag.build_context("memory cue") is not None

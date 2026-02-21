@@ -46,5 +46,17 @@
   },
   "observer": {
     "no_data": "no_data"
+  },
+  "state_vector_status": {
+    "focus_with_tags": "いまは「{tags}」を重視しています",
+    "focus_balanced": "いまは全体バランスを重視しています",
+    "unresolved_high": "未解決が多めです",
+    "unresolved_mid": "未解決が少し残っています",
+    "unresolved_low": "未解決は少なめです",
+    "stability_unknown": "状態の安定度は未評価です",
+    "stability_stable": "状態変化は概ね安定です",
+    "stability_shifting": "状態はやや揺れています",
+    "stability_change_point": "状態は変化点に近い可能性があります",
+    "sat_high": "想起スコアの飽和率が高めです。"
   }
 }

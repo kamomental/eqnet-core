@@ -71,6 +71,7 @@ class EQNetConfig:
     memory_reference_log_path: Path | None = None
     audit_thresholds: Dict[str, Any] | None = None
     memory_thermo_policy: Dict[str, Any] | None = None
+    runtime_policy: Dict[str, Any] | None = None
 
 
 class EQNetHub:

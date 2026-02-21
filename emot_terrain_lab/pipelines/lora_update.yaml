@@ -51,6 +51,8 @@ bricks:
       max_regress_main: 0.5        # ΔGold ≥ -0.5pt
       max_regress_ood: 0.0         # ΔOOD ≤ 0
       min_entropy: 3.2             # H₄ ≥ 3.2
+      max_coherence_drop: 0.02
+      coherence_metric_key: "narrative_coherence"
       safety_slo:
         rho_max: 1.8
         synchrony_max: 0.78

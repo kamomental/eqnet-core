@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Anchor Editor</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #111b2d;
+      --line: #294062;
+      --text: #dce9ff;
+      --muted: #9fb5d6;
+      --accent: #5fb0ff;
+      --warn: #ff9aa2;
+    }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", sans-serif; }
+    .wrap { max-width: 1120px; margin: 16px auto; padding: 0 12px; display: grid; gap: 12px; grid-template-columns: 350px 1fr; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+    .title { font-size: 15px; font-weight: 700; margin: 0 0 10px; }
+    .muted { color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+    button, input, textarea {
+      border: 1px solid var(--line);
+      background: #0e1729;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: 13px;
+    }
+    button { cursor: pointer; }
+    button.primary { background: #143057; border-color: #2b5b99; }
+    button.warn { background: #3b1f28; border-color: #88445a; color: #ffd7dc; }
+    textarea { width: 100%; min-height: 180px; resize: vertical; font-family: Consolas, monospace; }
+    .canvas-wrap { background: #080f1d; border: 1px solid var(--line); border-radius: 10px; padding: 8px; overflow: auto; }
+    canvas { display: block; max-width: 100%; height: auto; cursor: crosshair; background: #0a1426; }
+    .dot-left { color: #7fd3ff; }
+    .dot-right { color: #8be6b2; }
+    .dot-mouth { color: #ffb3be; }
+    .active { outline: 2px solid var(--accent); }
+    .status { font-size: 12px; color: var(--muted); min-height: 18px; }
+    .wfull { width: 100%; }
+    @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="panel">
+      <h1 class="title">Anchor Editor (3点固定)</h1>
+      <p class="muted">左目中心 / 右目中心 / 口中心をクリックしてアンカーJSONを作成します。API保存を使うと、`assets/replay/masks/...` に自動配置できます。</p>
+
+      <div class="row">
+        <input id="fileInput" class="wfull" type="file" accept="image/png,image/jpeg,image/webp" />
+      </div>
+
+      <div class="row">
+        <label>キャラ</label>
+        <input id="characterId" type="text" value="default" />
+        <label>パターン</label>
+        <input id="patternId" type="text" value="base" />
+      </div>
+
+      <div class="row">
+        <label>API</label>
+        <input id="apiBase" type="text" value="http://localhost:8010" style="min-width:220px" />
+      </div>
+
+      <div class="row">
+        <button id="savePresetBtn">ブラウザ保存</button>
+        <button id="loadPresetBtn">ブラウザ読込</button>
+      </div>
+
+      <div class="row">
+        <button id="pickLeft" class="active"><span class="dot-left">●</span> 左目</button>
+        <button id="pickRight"><span class="dot-right">●</span> 右目</button>
+        <button id="pickMouth"><span class="dot-mouth">●</span> 口</button>
+      </div>
+
+      <div class="row">
+        <button id="clearBtn" class="warn">クリア</button>
+        <button id="copyBtn">JSONコピー</button>
+        <button id="saveApiBtn">API保存</button>
+        <button id="downloadBtn" class="primary">JSON保存</button>
+      </div>
+
+      <div class="status" id="status"></div>
+      <div class="status" id="pathHint"></div>
+      <textarea id="jsonOut" spellcheck="false"></textarea>
+    </section>
+
+    <section class="canvas-wrap">
+      <canvas id="cv" width="800" height="600"></canvas>
+    </section>
+  </div>
+
+  <script>
+    const KEY_ORDER = ["left_eye", "right_eye", "mouth"];
+    const COLORS = {
+      left_eye: "#7fd3ff",
+      right_eye: "#8be6b2",
+      mouth: "#ffb3be",
+    };
+
+    const cv = document.getElementById("cv");
+    const ctx = cv.getContext("2d");
+    const statusEl = document.getElementById("status");
+    const pathHintEl = document.getElementById("pathHint");
+    const jsonOut = document.getElementById("jsonOut");
+    const fileInput = document.getElementById("fileInput");
+    const characterIdInput = document.getElementById("characterId");
+    const patternIdInput = document.getElementById("patternId");
+    const apiBaseInput = document.getElementById("apiBase");
+    const pickLeft = document.getElementById("pickLeft");
+    const pickRight = document.getElementById("pickRight");
+    const pickMouth = document.getElementById("pickMouth");
+    const clearBtn = document.getElementById("clearBtn");
+    const copyBtn = document.getElementById("copyBtn");
+    const saveApiBtn = document.getElementById("saveApiBtn");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const savePresetBtn = document.getElementById("savePresetBtn");
+    const loadPresetBtn = document.getElementById("loadPresetBtn");
+
+    let image = null;
+    let activeKey = "left_eye";
+    const anchors = {};
+    const STORAGE_KEY = "replay_anchor_profiles_v1";
+
+    function setStatus(msg) { statusEl.textContent = msg; }
+
+    function normalizeName(raw, fallback) {
+      const s = String(raw || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_");
+      return s || fallback;
+    }
+    function getCharacterId() { return normalizeName(characterIdInput.value, "default"); }
+    function getPatternId() { return normalizeName(patternIdInput.value, "base"); }
+
+    function updatePathHint() {
+      const character = getCharacterId();
+      const pattern = getPatternId();
+      pathHintEl.textContent = `配置先: assets/replay/masks/${character}/anchors.${pattern}.json`;
+    }
+
+    function readProfiles() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch (_) {
+        return {};
+      }
+    }
+    function writeProfiles(obj) { localStorage.setItem(STORAGE_KEY, JSON.stringify(obj)); }
+
+    function currentAnchorObject() {
+      const out = {};
+      for (const key of KEY_ORDER) {
+        const p = anchors[key];
+        if (!p) continue;
+        out[key] = { x: Number(p.x.toFixed(2)), y: Number(p.y.toFixed(2)) };
+      }
+      return out;
+    }
+
+    function setActive(key) {
+      activeKey = key;
+      for (const btn of [pickLeft, pickRight, pickMouth]) btn.classList.remove("active");
+      if (key === "left_eye") pickLeft.classList.add("active");
+      if (key === "right_eye") pickRight.classList.add("active");
+      if (key === "mouth") pickMouth.classList.add("active");
+    }
+
+    function drawCross(x, y, color, label) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x - 8, y); ctx.lineTo(x + 8, y);
+      ctx.moveTo(x, y - 8); ctx.lineTo(x, y + 8);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.font = "12px sans-serif";
+      ctx.fillText(label, x + 10, y - 10);
+      ctx.restore();
+    }
+
+    function redraw() {
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      if (image) ctx.drawImage(image, 0, 0, cv.width, cv.height);
+      for (const key of KEY_ORDER) {
+        const p = anchors[key];
+        if (!p) continue;
+        drawCross(p.x, p.y, COLORS[key], key);
+      }
+      jsonOut.value = JSON.stringify(currentAnchorObject(), null, 2);
+    }
+
+    function allSet() { return KEY_ORDER.every((k) => anchors[k]); }
+    function nextKey(current) {
+      const idx = KEY_ORDER.indexOf(current);
+      return KEY_ORDER[(idx + 1) % KEY_ORDER.length];
+    }
+    function canvasPoint(ev) {
+      const r = cv.getBoundingClientRect();
+      const scaleX = cv.width / r.width;
+      const scaleY = cv.height / r.height;
+      return { x: (ev.clientX - r.left) * scaleX, y: (ev.clientY - r.top) * scaleY };
+    }
+
+    fileInput.addEventListener("change", () => {
+      const f = fileInput.files && fileInput.files[0];
+      if (!f) return;
+      const url = URL.createObjectURL(f);
+      const img = new Image();
+      img.onload = () => {
+        image = img;
+        cv.width = img.width;
+        cv.height = img.height;
+        for (const k of KEY_ORDER) delete anchors[k];
+        setActive("left_eye");
+        redraw();
+        setStatus("画像を読み込みました。左目→右目→口の順にクリックしてください。");
+      };
+      img.src = url;
+    });
+
+    cv.addEventListener("click", (ev) => {
+      if (!image) {
+        setStatus("先に画像を読み込んでください。");
+        return;
+      }
+      const p = canvasPoint(ev);
+      anchors[activeKey] = p;
+      redraw();
+      if (allSet()) {
+        setStatus("3点を設定しました。保存してください。");
+      } else {
+        setActive(nextKey(activeKey));
+        setStatus("次の点をクリックしてください。");
+      }
+    });
+
+    pickLeft.addEventListener("click", () => setActive("left_eye"));
+    pickRight.addEventListener("click", () => setActive("right_eye"));
+    pickMouth.addEventListener("click", () => setActive("mouth"));
+
+    clearBtn.addEventListener("click", () => {
+      for (const k of KEY_ORDER) delete anchors[k];
+      setActive("left_eye");
+      redraw();
+      setStatus("クリアしました。");
+    });
+
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(jsonOut.value || "{}");
+        setStatus("JSONをコピーしました。");
+      } catch (_) {
+        setStatus("コピーできませんでした。");
+      }
+    });
+
+    saveApiBtn.addEventListener("click", async () => {
+      const character = getCharacterId();
+      const pattern = getPatternId();
+      const out = currentAnchorObject();
+      if (!out.left_eye || !out.right_eye || !out.mouth) {
+        setStatus("3点を設定してから保存してください。");
+        return;
+      }
+      const base = String(apiBaseInput.value || "").replace(/\/+$/, "");
+      const url = `${base}/api/replay/anchors/register`;
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            character,
+            pattern,
+            anchors: out,
+            set_default: true,
+            masks_root: "assets/replay/masks"
+          })
+        });
+        if (!res.ok) {
+          const txt = await res.text();
+          throw new Error(txt || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        setStatus(`API保存しました: ${data.profile_path}`);
+      } catch (err) {
+        setStatus(`API保存に失敗: ${String(err)}`);
+      }
+    });
+
+    downloadBtn.addEventListener("click", () => {
+      const character = getCharacterId();
+      const pattern = getPatternId();
+      const blob = new Blob([jsonOut.value || "{}"], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `anchors.${character}.${pattern}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setStatus(`JSONを保存しました: anchors.${character}.${pattern}.json`);
+    });
+
+    savePresetBtn.addEventListener("click", () => {
+      const character = getCharacterId();
+      const pattern = getPatternId();
+      const out = currentAnchorObject();
+      if (!out.left_eye || !out.right_eye || !out.mouth) {
+        setStatus("3点を設定してから保存してください。");
+        return;
+      }
+      const db = readProfiles();
+      if (!db[character]) db[character] = {};
+      db[character][pattern] = out;
+      writeProfiles(db);
+      setStatus(`ブラウザ保存しました: ${character}/${pattern}`);
+    });
+
+    loadPresetBtn.addEventListener("click", () => {
+      const character = getCharacterId();
+      const pattern = getPatternId();
+      const db = readProfiles();
+      const saved = db[character] && db[character][pattern];
+      if (!saved) {
+        setStatus(`保存データがありません: ${character}/${pattern}`);
+        return;
+      }
+      for (const k of KEY_ORDER) {
+        const p = saved[k];
+        if (!p) continue;
+        anchors[k] = { x: Number(p.x), y: Number(p.y) };
+      }
+      redraw();
+      setStatus(`ブラウザ読込しました: ${character}/${pattern}`);
+    });
+
+    characterIdInput.addEventListener("input", updatePathHint);
+    patternIdInput.addEventListener("input", updatePathHint);
+
+    setStatus("画像を選択してください。");
+    updatePathHint();
+    redraw();
+  </script>
+</body>
+</html>

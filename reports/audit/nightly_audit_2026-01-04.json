@@ -674,5 +674,21 @@
       "memory_hint_pressure_delta_mean": 0.0,
       "memory_hint_blocked_pressure_mean": 0.0
     }
+  },
+  "lazy_rag_sat_ratio_p95": 0.0,
+  "lazy_rag_sat_ratio_count": 0,
+  "uncertainty_reason_top3": [],
+  "uncertainty_confidence": {
+    "total": 0,
+    "low": 0,
+    "mid": 0,
+    "high": 0,
+    "low_ratio": 0.0,
+    "mid_ratio": 0.0,
+    "high_ratio": 0.0,
+    "thresholds": {
+      "low_max": 0.54,
+      "mid_max": 0.79
+    }
   }
 }

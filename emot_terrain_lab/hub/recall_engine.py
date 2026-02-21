@@ -32,6 +32,9 @@ class RecallEngineConfig:
     chain_decay: float = 0.82
     max_chain: int = 5
     min_activation: float = 0.05
+    open_loop_gain: float = 0.12
+    change_point_gain: float = 0.15
+    max_related_per_seed: int = 2
 
 
 class RecallEngine:
@@ -110,8 +113,9 @@ class RecallEngine:
         anchor_strength: float,
     ) -> List[ActivationNode]:
         cfg = self.config
+        expanded = self._expand_chain_seeds(seeds)
         scored: List[Tuple[float, Mapping[str, Any]]] = []
-        for seed in seeds:
+        for seed in expanded:
             score = self._score_seed(seed, anchor_strength)
             if score <= 0.0:
                 continue
@@ -153,6 +157,11 @@ class RecallEngine:
         novelty = self._coerce_meta(meta, ("novelty", "novelty_score"))
         constraint = self._coerce_meta(meta, ("constraint_weight", "mobility_block"))
         social = self._coerce_meta(meta, ("social_weight", "attachment"))
+        open_loop = self._coerce_meta(meta, ("open_loops", "unresolved", "pending_ratio"))
+        change_point = self._coerce_meta(
+            meta,
+            ("coherence_shift", "change_point", "coherence_drop"),
+        )
         utility = self._coerce_meta(seed.get("value", {}), ("total",))
         score = (
             cfg.anchor_gain * max(anchor_strength, 0.1)
@@ -160,8 +169,58 @@ class RecallEngine:
             + 0.2 * novelty
             + 0.15 * constraint
             + 0.15 * social
+            + cfg.open_loop_gain * max(0.0, open_loop)
+            + cfg.change_point_gain * max(0.0, change_point)
         )
         return float(max(0.0, score))
+
+    def _expand_chain_seeds(self, seeds: Sequence[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
+        """Expand top-level seeds with lightweight causal/temporal neighbors when present."""
+        expanded: List[Mapping[str, Any]] = []
+        seen: Dict[str, None] = {}
+        for idx, seed in enumerate(seeds):
+            sid = self._seed_id(seed, idx)
+            if sid not in seen:
+                seen[sid] = None
+                expanded.append(seed)
+            added = 0
+            for related in self._iter_related(seed):
+                if added >= self.config.max_related_per_seed:
+                    break
+                rid = self._seed_id(related, idx + added + 1)
+                if rid in seen:
+                    continue
+                seen[rid] = None
+                expanded.append(related)
+                added += 1
+        return expanded
+
+    def _iter_related(self, seed: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]:
+        meta = seed.get("meta", {}) if isinstance(seed.get("meta"), Mapping) else {}
+        related = meta.get("related")
+        if isinstance(related, Mapping):
+            related = [related]
+        if isinstance(related, list):
+            for item in related:
+                if isinstance(item, Mapping):
+                    yield item
+        for key in ("prev", "next", "cause", "outcome", "counter"):
+            item = meta.get(key)
+            if isinstance(item, Mapping):
+                yield item
+
+    def _seed_id(self, seed: Mapping[str, Any], fallback_idx: int) -> str:
+        meta = seed.get("meta")
+        meta_map = meta if isinstance(meta, Mapping) else {}
+        receipt = meta_map.get("receipt")
+        receipt_map = receipt if isinstance(receipt, Mapping) else {}
+        return str(
+            seed.get("trace_id")
+            or seed.get("id")
+            or receipt_map.get("id")
+            or meta_map.get("source_id")
+            or f"seed-{fallback_idx}"
+        )
 
     def _coerce_meta(
         self,

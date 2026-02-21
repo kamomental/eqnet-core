@@ -101,6 +101,35 @@ class ModelCfg:
 
 
 @dataclass
+class RagAssocWeightsCfg:
+    semantic: float = field(default=1.0)
+    temporal: float = field(default=0.10)
+    affective: float = field(default=0.12)
+    value: float = field(default=0.15)
+    open_loop: float = field(default=0.08)
+
+
+@dataclass
+class RagAssocClampCfg:
+    min: float = field(default=-5.0)
+    max: float = field(default=5.0)
+
+
+@dataclass
+class RagAssocScoreCfg:
+    enabled: bool = field(default=False)
+    normalize_weights: bool = field(default=True)
+    weights: RagAssocWeightsCfg = field(default_factory=RagAssocWeightsCfg)
+    temporal_tau_sec: float = field(default=86400.0)
+    clamp: RagAssocClampCfg = field(default_factory=RagAssocClampCfg)
+
+
+@dataclass
+class RagCfg:
+    assoc_score: RagAssocScoreCfg = field(default_factory=RagAssocScoreCfg)
+
+
+@dataclass
 class CultureCfg:
     tag: str = field(default="default")
     politeness: float = field(default=0.5)
@@ -264,6 +293,21 @@ class ObserverDisclaimerCfg:
 @dataclass
 class UiCfg:
     community_update_ms: int = field(default=400)
+    show_uncertainty_meta: bool = field(default=True)
+    uncertainty_line_template: str = field(default="※推定信頼度: {confidence:.2f}（{confidence_label}） / 不確実要因: {reasons}")
+    uncertainty_reason_low: str = field(default="低")
+    uncertainty_reason_join: str = field(default=", ")
+    uncertainty_reason_labels: dict[str, str] = field(default_factory=dict)
+    uncertainty_confidence_low_max: float = field(default=0.54)
+    uncertainty_confidence_mid_max: float = field(default=0.79)
+    uncertainty_confidence_label_low: str = field(default="低")
+    uncertainty_confidence_label_mid: str = field(default="中")
+    uncertainty_confidence_label_high: str = field(default="高")
+    weekly_proposal_title: str = field(default="次の見直し候補")
+    weekly_evidence_label: str = field(default="根拠")
+    weekly_changed_keys_max: int = field(default=12)
+    weekly_changed_keys_more_template: str = field(default="+{count}件")
+    weekly_action_labels: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -278,6 +322,7 @@ class RuntimeCfg:
     latency: LatencyCfg = field(default_factory=LatencyCfg)
     llm: LLMCfg = field(default_factory=LLMCfg)
     model: ModelCfg = field(default_factory=ModelCfg)
+    rag: RagCfg = field(default_factory=RagCfg)
     replay: ReplayCfg = field(default_factory=ReplayCfg)
     policy: PolicyRuntimeCfg = field(default_factory=PolicyRuntimeCfg)
     guards: GuardsCfg = field(default_factory=GuardsCfg)
@@ -313,6 +358,19 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
         ModelCfg(),
         payload.get("model", {}),
         extra_factories={"assoc_kernel": AssocKernelCfg},
+    )
+    rag_cfg = _merge_dataclass(
+        RagCfg(),
+        payload.get("rag", {}),
+        extra_factories={
+            "assoc_score": (
+                RagAssocScoreCfg,
+                {
+                    "weights": RagAssocWeightsCfg,
+                    "clamp": RagAssocClampCfg,
+                },
+            )
+        },
     )
     replay = _merge_dataclass(ReplayCfg(), payload.get("replay", {}))
     policy_cfg = _merge_dataclass(PolicyRuntimeCfg(), payload.get("policy", {}))
@@ -351,6 +409,7 @@ def load_runtime_cfg(path: str | Path = "config/runtime.yaml") -> RuntimeCfg:
         latency=latency,
         llm=llm_cfg,
         model=model,
+        rag=rag_cfg,
         replay=replay,
         policy=policy_cfg,
         guards=guards_cfg,
@@ -408,6 +467,10 @@ __all__ = [
     "LatencyCfg",
     "LLMCfg",
     "ModelCfg",
+    "RagCfg",
+    "RagAssocScoreCfg",
+    "RagAssocWeightsCfg",
+    "RagAssocClampCfg",
     "ReplayCfg",
     "EmotionCfg",
     "AssocKernelCfg",

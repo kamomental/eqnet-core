@@ -4,9 +4,10 @@ import json
 import logging
 import os
 import hashlib
+import time
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Protocol
+from typing import Any, Callable, Dict, Mapping, Optional, Protocol, Tuple
 
 from eqnet.hub.runtime_contract import HubRuntime
 from eqnet.qualia_model import update_qualia_state
@@ -202,6 +203,9 @@ class ExternalRuntimeDelegateV2(HubRuntime):
         previous_thermo = self._read_latest().get("memory_thermo")
         phase_ctx = _resolve_phase_context(thermo_policy, previous_thermo)
         defrag_result = _run_defrag_observe(qualia_records, thermo_policy, phase_ctx)
+        forgetting_report = _run_forgetting_reweight(self._config)
+        if forgetting_report is not None:
+            defrag_result["forgetting"] = forgetting_report
         self._write_latest("memory_thermo", defrag_result)
         life_indicator = compute_life_indicator_for_day(
             qualia_records,
@@ -515,3 +519,224 @@ def _value_projection_fingerprint(
     }
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return float(max(low, min(high, value)))
+
+
+def _forgetting_policy(config: Any) -> Dict[str, Any]:
+    runtime_policy = getattr(config, "runtime_policy", None)
+    if not isinstance(runtime_policy, dict):
+        return {}
+    forgetting = runtime_policy.get("forgetting")
+    if not isinstance(forgetting, dict):
+        return {}
+    return dict(forgetting)
+
+
+def _resolve_replay_memory_path(config: Any, forgetting_cfg: Mapping[str, Any]) -> Path:
+    explicit = forgetting_cfg.get("replay_memory_path")
+    if isinstance(explicit, str) and explicit.strip():
+        return Path(explicit)
+    state_dir = Path(getattr(config, "state_dir", Path("state")))
+    return state_dir / "replay_memory.jsonl"
+
+
+def _load_replay_events(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            raw = line.strip()
+            if not raw:
+                continue
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                continue
+            if isinstance(payload, dict):
+                rows.append(payload)
+    return rows
+
+
+def _rewrite_replay_events(path: Path, events: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for event in events:
+            handle.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
+
+
+def _extract_seed_ids(event: Mapping[str, Any]) -> list[str]:
+    seeds: list[str] = []
+    meta = event.get("meta")
+    if isinstance(meta, Mapping):
+        replay = meta.get("replay")
+        if isinstance(replay, Mapping):
+            seeds_payload = replay.get("seeds")
+            if isinstance(seeds_payload, list):
+                for seed in seeds_payload:
+                    if not isinstance(seed, Mapping):
+                        continue
+                    trace_id = seed.get("trace_id")
+                    if trace_id:
+                        seeds.append(str(trace_id))
+    return seeds
+
+
+def _collect_recall_counts(events: list[dict[str, Any]]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for event in events:
+        for trace_id in _extract_seed_ids(event):
+            counts[trace_id] = counts.get(trace_id, 0) + 1
+    return counts
+
+
+def _load_monument_episode_ids(memory_dir: Optional[str]) -> Tuple[set[str], Optional[str]]:
+    if not memory_dir:
+        return set(), "memory_dir_missing"
+    try:
+        from eqnet.memory.store import MemoryStore
+
+        store = MemoryStore(Path(memory_dir))
+        _, monuments = store.load_all()
+        episode_ids = {str(ep_id) for mon in monuments for ep_id in (mon.episodes or []) if ep_id}
+        return episode_ids, None
+    except Exception as exc:  # pragma: no cover - defensive
+        return set(), str(exc)
+
+
+def _apply_forgetting_reweight(
+    events: list[dict[str, Any]],
+    cfg: Mapping[str, Any],
+    *,
+    now_ts: float,
+) -> Tuple[list[dict[str, Any]], Dict[str, Any]]:
+    recall_k = _safe_float(cfg.get("recall_k"), 0.0)
+    recall_weight = _safe_float(cfg.get("recall_weight"), 0.0)
+    affect_weight = _safe_float(cfg.get("affect_weight"), 0.0)
+    interference_weight = _safe_float(cfg.get("interference_weight"), 0.0)
+    interference_k = _safe_float(cfg.get("interference_k"), 0.0)
+    reconsolidation_rate = _safe_float(cfg.get("reconsolidation_rate"), 0.0)
+    base_delta = _safe_float(cfg.get("base_delta"), 0.0)
+    max_delta_w = _safe_float(cfg.get("max_delta_w"), 0.0)
+    min_w = _safe_float(cfg.get("min_w"), 0.0)
+    max_w = _safe_float(cfg.get("max_w"), 1.0)
+    monument_w_lock = bool(cfg.get("monument_w_lock", True))
+    monument_floor = cfg.get("monument_connection_floor")
+    monument_floor = _safe_float(monument_floor, -1.0) if monument_floor is not None else None
+    consent_floor = _safe_float(cfg.get("consent_floor"), min_w)
+    consent_tags = {str(tag) for tag in (cfg.get("consent_override_tags") or [])}
+    memory_dir_raw = cfg.get("memory_dir")
+    memory_dir = str(memory_dir_raw) if isinstance(memory_dir_raw, str) and memory_dir_raw.strip() else None
+
+    recall_counts = _collect_recall_counts(events)
+    monument_episode_ids, monument_err = _load_monument_episode_ids(memory_dir)
+
+    locked_applied = 0
+    floors_applied = 0
+    consent_applied = 0
+    changed = 0
+
+    for event in events:
+        trace_id = str(event.get("trace_id", ""))
+        episode_id = str(event.get("episode_id", ""))
+        memory_kind = str(event.get("memory_kind", ""))
+        w_before = _safe_float(event.get("weight"), 1.0)
+
+        tags_raw = event.get("tags")
+        tags: list[str]
+        if isinstance(tags_raw, list):
+            tags = [str(tag) for tag in tags_raw]
+        elif tags_raw is None:
+            tags = []
+        else:
+            tags = [str(tags_raw)]
+
+        consent_override = any(tag in consent_tags for tag in tags)
+        is_monument = memory_kind.lower() == "monument"
+        lock_weight = monument_w_lock and is_monument
+
+        if consent_override:
+            w_after = min(w_before, consent_floor)
+            consent_applied += 1
+        elif lock_weight:
+            w_after = w_before
+            locked_applied += 1
+        else:
+            recall_count = recall_counts.get(trace_id, 0)
+            recall_score = min(1.0, recall_k * float(recall_count)) if recall_k > 0 else 0.0
+
+            emotion_mod = abs(_safe_float(event.get("emotion_modulation"), 0.0))
+            affect_score = min(1.0, emotion_mod)
+
+            interference_score = 0.0
+            meta = event.get("meta")
+            if isinstance(meta, Mapping):
+                interference = meta.get("interference")
+                if isinstance(interference, Mapping):
+                    interference_score = _safe_float(interference.get("similarity"), 0.0)
+            interference_score = min(1.0, interference_k * interference_score)
+
+            delta = base_delta
+            delta += recall_weight * recall_score
+            delta -= affect_weight * affect_score * reconsolidation_rate
+            delta -= interference_weight * interference_score
+            if max_delta_w > 0:
+                delta = _clamp(delta, -max_delta_w, max_delta_w)
+            w_after = _clamp(w_before + delta, min_w, max_w)
+
+        if monument_floor is not None and monument_floor >= 0 and episode_id and episode_id in monument_episode_ids:
+            if w_after < monument_floor:
+                w_after = monument_floor
+                floors_applied += 1
+
+        # Keep timestamps monotonic-safe if weight is missing/corrupt.
+        _ = now_ts
+        if abs(w_after - w_before) > 1e-12:
+            changed += 1
+        event["weight"] = float(w_after)
+
+    report = {
+        "status": "applied",
+        "changed_count": int(changed),
+        "event_count": int(len(events)),
+        "monument_episode_count": int(len(monument_episode_ids)),
+        "monument_load_error": monument_err,
+        "guards": {
+            "monument_locks": int(locked_applied),
+            "monument_floors": int(floors_applied),
+            "consent_overrides": int(consent_applied),
+        },
+    }
+    return events, report
+
+
+def _run_forgetting_reweight(config: Any) -> Optional[Dict[str, Any]]:
+    forgetting_cfg = _forgetting_policy(config)
+    if not forgetting_cfg:
+        return None
+    if not bool(forgetting_cfg.get("enable", False)):
+        return {"status": "disabled"}
+
+    replay_path = _resolve_replay_memory_path(config, forgetting_cfg)
+    events = _load_replay_events(replay_path)
+    if not events:
+        return {"status": "skipped", "reason": "replay_memory_empty", "replay_memory_path": str(replay_path)}
+
+    updated, report = _apply_forgetting_reweight(events, forgetting_cfg, now_ts=time.time())
+    if int(report.get("changed_count", 0)) > 0:
+        _rewrite_replay_events(replay_path, updated)
+        report["rewrite_applied"] = True
+    else:
+        report["rewrite_applied"] = False
+    report["replay_memory_path"] = str(replay_path)
+    return report

@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mask Editor</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #111b2d;
+      --line: #294062;
+      --text: #dce9ff;
+      --muted: #9fb5d6;
+    }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", sans-serif; }
+    .wrap { max-width: 1420px; margin: 14px auto; padding: 0 12px; display: grid; grid-template-columns: 380px 1fr; gap: 12px; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+    .title { margin: 0 0 10px; font-size: 15px; font-weight: 700; }
+    .muted { color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+    label { font-size: 12px; color: var(--muted); }
+    input, button, select {
+      border: 1px solid var(--line);
+      background: #0e1729;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: 13px;
+    }
+    input.path { min-width: 280px; }
+    button { cursor: pointer; }
+    button.primary { background: #143057; border-color: #2b5b99; }
+    .canvas-grid { background: #080f1d; border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .canvas-box { border: 1px solid #1c2d49; border-radius: 8px; padding: 6px; background: #0a1426; }
+    .canvas-head { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    canvas { display: block; max-width: 100%; height: auto; cursor: crosshair; background: #091325; }
+    .status { min-height: 18px; font-size: 12px; color: var(--muted); }
+    @media (max-width: 1120px) { .wrap { grid-template-columns: 1fr; } .canvas-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="panel">
+      <h1 class="title">Mask Editor</h1>
+      <p class="muted">左で編集、右で結果プレビューを同時確認できます。赤オーバーレイで見ながら、口形状(a/i/u/e/o/n)の切替挙動も確認できます。</p>
+
+      <div class="row">
+        <label>元画像</label>
+        <input id="srcInput" type="file" accept="image/png,image/jpeg,image/webp" />
+      </div>
+      <div class="row">
+        <label>マスク画像</label>
+        <input id="maskInput" type="file" accept="image/png" />
+      </div>
+
+      <div class="row">
+        <label>元画像パス</label>
+        <input id="srcPath" class="path" type="text" value="/assets/replay/src/default.png" />
+        <button id="loadSrcPathBtn">読込</button>
+      </div>
+      <div class="row">
+        <label>マスクパス</label>
+        <input id="maskPath" class="path" type="text" value="/assets/replay/masks/default/mouth_n.png" />
+        <button id="loadMaskPathBtn">読込</button>
+      </div>
+
+      <div class="row">
+        <label>モード</label>
+        <select id="modeSel">
+          <option value="paint">描画（白）</option>
+          <option value="erase">消去（黒）</option>
+        </select>
+        <label>太さ</label>
+        <input id="sizeInput" type="range" min="2" max="80" value="18" />
+      </div>
+
+      <div class="row">
+        <label>赤オーバーレイ</label>
+        <input id="alphaInput" type="range" min="0" max="100" value="45" />
+      </div>
+
+      <div class="row">
+        <label>結果プレビュー</label>
+        <select id="previewModeSel">
+          <option value="cutout">切り抜き結果</option>
+          <option value="overlay">赤オーバーレイ合成</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label>口プレビュー</label>
+        <select id="lipsyncModeSel">
+          <option value="off">オフ</option>
+          <option value="manual">手動</option>
+          <option value="auto">自動</option>
+        </select>
+        <select id="mouthKeySel">
+          <option value="n">n</option>
+          <option value="a">a</option>
+          <option value="i">i</option>
+          <option value="u">u</option>
+          <option value="e">e</option>
+          <option value="o">o</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>切替ms</label>
+        <input id="lipsyncMsInput" type="range" min="80" max="500" value="180" />
+        <button id="reloadMouthSetBtn">口セット再読込</button>
+      </div>
+
+      <div class="row">
+        <button id="undoBtn">Undo</button>
+        <button id="clearBtn">全消去</button>
+        <button id="downloadBtn" class="primary">mask.png 保存</button>
+      </div>
+      <div id="status" class="status"></div>
+    </section>
+
+    <section class="canvas-grid">
+      <div class="canvas-box">
+        <div class="canvas-head">編集ビュー（赤オーバーレイ）</div>
+        <canvas id="editCv" width="900" height="900"></canvas>
+      </div>
+      <div class="canvas-box">
+        <div class="canvas-head">結果プレビュー</div>
+        <canvas id="previewCv" width="900" height="900"></canvas>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const RED = [255, 48, 72];
+    const MOUTH_ORDER = ["n", "a", "i", "u", "e", "o"];
+
+    const editCv = document.getElementById("editCv");
+    const previewCv = document.getElementById("previewCv");
+    const editCtx = editCv.getContext("2d");
+    const previewCtx = previewCv.getContext("2d");
+
+    const srcInput = document.getElementById("srcInput");
+    const maskInput = document.getElementById("maskInput");
+    const srcPathInput = document.getElementById("srcPath");
+    const maskPathInput = document.getElementById("maskPath");
+    const loadSrcPathBtn = document.getElementById("loadSrcPathBtn");
+    const loadMaskPathBtn = document.getElementById("loadMaskPathBtn");
+    const modeSel = document.getElementById("modeSel");
+    const sizeInput = document.getElementById("sizeInput");
+    const alphaInput = document.getElementById("alphaInput");
+    const previewModeSel = document.getElementById("previewModeSel");
+    const lipsyncModeSel = document.getElementById("lipsyncModeSel");
+    const mouthKeySel = document.getElementById("mouthKeySel");
+    const lipsyncMsInput = document.getElementById("lipsyncMsInput");
+    const reloadMouthSetBtn = document.getElementById("reloadMouthSetBtn");
+    const undoBtn = document.getElementById("undoBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const statusEl = document.getElementById("status");
+
+    let drawing = false;
+    let last = null;
+    let history = [];
+    let lipsyncTimer = null;
+    let lipsyncIdx = 0;
+    const mouthMaskMap = {};
+
+    const srcCanvas = document.createElement("canvas");
+    const srcCtx = srcCanvas.getContext("2d");
+    const maskCanvas = document.createElement("canvas");
+    const maskCtx = maskCanvas.getContext("2d");
+    const overlayCanvas = document.createElement("canvas");
+    const overlayCtx = overlayCanvas.getContext("2d");
+
+    function setStatus(msg) { statusEl.textContent = msg; }
+
+    function ensureSize(w, h) {
+      if (w < 1 || h < 1) return;
+      editCv.width = w; editCv.height = h;
+      previewCv.width = w; previewCv.height = h;
+      srcCanvas.width = w; srcCanvas.height = h;
+      maskCanvas.width = w; maskCanvas.height = h;
+      overlayCanvas.width = w; overlayCanvas.height = h;
+      for (const k of Object.keys(mouthMaskMap)) delete mouthMaskMap[k];
+    }
+
+    function pushHistory() {
+      try {
+        history.push(maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height));
+        if (history.length > 30) history.shift();
+      } catch (_) {}
+    }
+
+    function buildRedOverlay(alphaScale, srcMaskCanvas) {
+      const srcData = srcMaskCanvas.getContext("2d").getImageData(0, 0, srcMaskCanvas.width, srcMaskCanvas.height);
+      const dst = overlayCtx.createImageData(srcMaskCanvas.width, srcMaskCanvas.height);
+      const s = srcData.data;
+      const d = dst.data;
+      for (let i = 0; i < s.length; i += 4) {
+        const v = s[i];
+        if (v <= 0) {
+          d[i + 3] = 0;
+          continue;
+        }
+        d[i] = RED[0];
+        d[i + 1] = RED[1];
+        d[i + 2] = RED[2];
+        d[i + 3] = Math.min(255, Math.max(0, Math.round(v * alphaScale)));
+      }
+      overlayCtx.putImageData(dst, 0, 0);
+    }
+
+    function activePreviewMaskCanvas() {
+      const mode = lipsyncModeSel.value;
+      if (mode === "off") return maskCanvas;
+      const key = mouthKeySel.value || "n";
+      if (mouthMaskMap[key]) return mouthMaskMap[key];
+      return maskCanvas;
+    }
+
+    function drawEditView() {
+      editCtx.clearRect(0, 0, editCv.width, editCv.height);
+      if (srcCanvas.width > 0) editCtx.drawImage(srcCanvas, 0, 0);
+      const alpha = Number(alphaInput.value) / 100;
+      if (maskCanvas.width > 0) {
+        buildRedOverlay(alpha, maskCanvas);
+        editCtx.drawImage(overlayCanvas, 0, 0);
+      }
+    }
+
+    function drawCutout(maskSrc) {
+      const srcData = srcCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
+      const maskData = maskSrc.getContext("2d").getImageData(0, 0, maskSrc.width, maskSrc.height);
+      const out = previewCtx.createImageData(srcCanvas.width, srcCanvas.height);
+      const s = srcData.data;
+      const m = maskData.data;
+      const d = out.data;
+      for (let i = 0; i < s.length; i += 4) {
+        const mv = m[i] / 255;
+        d[i] = s[i];
+        d[i + 1] = s[i + 1];
+        d[i + 2] = s[i + 2];
+        d[i + 3] = Math.round((s[i + 3] || 255) * mv);
+      }
+      previewCtx.putImageData(out, 0, 0);
+    }
+
+    function drawPreviewView() {
+      previewCtx.clearRect(0, 0, previewCv.width, previewCv.height);
+      if (!srcCanvas.width || !maskCanvas.width) return;
+      const mode = previewModeSel.value;
+      const maskForPreview = activePreviewMaskCanvas();
+      if (mode === "overlay") {
+        previewCtx.drawImage(srcCanvas, 0, 0);
+        const alpha = Number(alphaInput.value) / 100;
+        buildRedOverlay(alpha, maskForPreview);
+        previewCtx.drawImage(overlayCanvas, 0, 0);
+        return;
+      }
+      drawCutout(maskForPreview);
+    }
+
+    function redrawAll() { drawEditView(); drawPreviewView(); }
+
+    function toCanvasPos(ev, targetCanvas) {
+      const r = targetCanvas.getBoundingClientRect();
+      return { x: (ev.clientX - r.left) * (targetCanvas.width / r.width), y: (ev.clientY - r.top) * (targetCanvas.height / r.height) };
+    }
+
+    function paintLine(a, b) {
+      if (!maskCanvas.width || !maskCanvas.height) return;
+      maskCtx.save();
+      maskCtx.strokeStyle = modeSel.value === "paint" ? "rgba(255,255,255,1)" : "rgba(0,0,0,1)";
+      maskCtx.lineCap = "round";
+      maskCtx.lineJoin = "round";
+      maskCtx.lineWidth = Number(sizeInput.value);
+      maskCtx.beginPath();
+      maskCtx.moveTo(a.x, a.y);
+      maskCtx.lineTo(b.x, b.y);
+      maskCtx.stroke();
+      maskCtx.restore();
+      redrawAll();
+    }
+
+    function loadImageFile(file, onReady) {
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { onReady(img); URL.revokeObjectURL(url); };
+      img.src = url;
+    }
+
+    function loadImageUrl(url, onReady) {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => onReady(img);
+      img.onerror = () => setStatus(`読み込み失敗: ${url}`);
+      img.src = url;
+    }
+
+    function applySourceImage(img) {
+      ensureSize(img.width, img.height);
+      srcCtx.clearRect(0, 0, img.width, img.height);
+      srcCtx.drawImage(img, 0, 0);
+      if (!history.length) {
+        maskCtx.fillStyle = "black";
+        maskCtx.fillRect(0, 0, img.width, img.height);
+        pushHistory();
+      }
+      redrawAll();
+      setStatus("元画像を読み込みました。");
+    }
+
+    function applyMaskImage(img) {
+      if (!srcCanvas.width) ensureSize(img.width, img.height);
+      if (img.width !== maskCanvas.width || img.height !== maskCanvas.height) {
+        const tmp = document.createElement("canvas");
+        tmp.width = maskCanvas.width;
+        tmp.height = maskCanvas.height;
+        const tctx = tmp.getContext("2d");
+        tctx.drawImage(img, 0, 0, tmp.width, tmp.height);
+        maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+        maskCtx.drawImage(tmp, 0, 0);
+      } else {
+        maskCtx.clearRect(0, 0, img.width, img.height);
+        maskCtx.drawImage(img, 0, 0);
+      }
+      pushHistory();
+      redrawAll();
+      setStatus("マスク画像を読み込みました。");
+    }
+
+    function mouthSetBase(path) {
+      const m = String(path || "").match(/^(.*\/)?mouth_([aiueon])\.png$/i);
+      if (!m) return null;
+      return (m[1] || "") + "mouth_";
+    }
+
+    function toMaskCanvasFromImage(img) {
+      const c = document.createElement("canvas");
+      c.width = maskCanvas.width;
+      c.height = maskCanvas.height;
+      const cctx = c.getContext("2d");
+      cctx.drawImage(img, 0, 0, c.width, c.height);
+      return c;
+    }
+
+    async function loadMouthSetFromPath(path) {
+      const base = mouthSetBase(path);
+      if (!base || !maskCanvas.width) {
+        setStatus("mouth_*.png のパスを指定すると口セットを読込できます。");
+        return;
+      }
+      let ok = 0;
+      for (const key of MOUTH_ORDER) {
+        const url = `${base}${key}.png`;
+        try {
+          const img = await new Promise((resolve, reject) => {
+            const im = new Image();
+            im.crossOrigin = "anonymous";
+            im.onload = () => resolve(im);
+            im.onerror = reject;
+            im.src = url;
+          });
+          mouthMaskMap[key] = toMaskCanvasFromImage(img);
+          ok += 1;
+        } catch (_) {
+          // ignore missing variants
+        }
+      }
+      redrawAll();
+      setStatus(`口セット読込: ${ok}/6`);
+    }
+
+    function startLipsyncAuto() {
+      stopLipsyncAuto();
+      lipsyncIdx = 0;
+      const tick = () => {
+        mouthKeySel.value = MOUTH_ORDER[lipsyncIdx % MOUTH_ORDER.length];
+        lipsyncIdx += 1;
+        drawPreviewView();
+      };
+      tick();
+      lipsyncTimer = setInterval(tick, Number(lipsyncMsInput.value));
+    }
+    function stopLipsyncAuto() {
+      if (lipsyncTimer) clearInterval(lipsyncTimer);
+      lipsyncTimer = null;
+    }
+
+    srcInput.addEventListener("change", () => loadImageFile(srcInput.files && srcInput.files[0], applySourceImage));
+    maskInput.addEventListener("change", () => loadImageFile(maskInput.files && maskInput.files[0], applyMaskImage));
+
+    loadSrcPathBtn.addEventListener("click", () => {
+      const p = String(srcPathInput.value || "").trim();
+      if (!p) return;
+      loadImageUrl(p, applySourceImage);
+    });
+    loadMaskPathBtn.addEventListener("click", () => {
+      const p = String(maskPathInput.value || "").trim();
+      if (!p) return;
+      loadImageUrl(p, applyMaskImage);
+    });
+
+    reloadMouthSetBtn.addEventListener("click", () => {
+      loadMouthSetFromPath(maskPathInput.value);
+    });
+
+    editCv.addEventListener("mousedown", (ev) => {
+      if (!maskCanvas.width) return;
+      drawing = true;
+      last = toCanvasPos(ev, editCv);
+      pushHistory();
+    });
+    window.addEventListener("mouseup", () => { drawing = false; last = null; });
+    editCv.addEventListener("mousemove", (ev) => {
+      if (!drawing) return;
+      const p = toCanvasPos(ev, editCv);
+      paintLine(last, p);
+      last = p;
+    });
+
+    undoBtn.addEventListener("click", () => {
+      if (history.length < 2 || !maskCanvas.width) return;
+      history.pop();
+      maskCtx.putImageData(history[history.length - 1], 0, 0);
+      redrawAll();
+      setStatus("1手戻しました。");
+    });
+    clearBtn.addEventListener("click", () => {
+      if (!maskCanvas.width) return;
+      pushHistory();
+      maskCtx.fillStyle = "black";
+      maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+      redrawAll();
+      setStatus("マスクを全消去しました。");
+    });
+
+    alphaInput.addEventListener("input", redrawAll);
+    previewModeSel.addEventListener("change", redrawAll);
+    mouthKeySel.addEventListener("change", drawPreviewView);
+    lipsyncMsInput.addEventListener("input", () => { if (lipsyncModeSel.value === "auto") startLipsyncAuto(); });
+    lipsyncModeSel.addEventListener("change", () => {
+      if (lipsyncModeSel.value === "auto") startLipsyncAuto();
+      else {
+        stopLipsyncAuto();
+        drawPreviewView();
+      }
+    });
+
+    downloadBtn.addEventListener("click", () => {
+      if (!maskCanvas.width) {
+        setStatus("先にマスクを読み込むか作成してください。");
+        return;
+      }
+      const out = document.createElement("canvas");
+      out.width = maskCanvas.width;
+      out.height = maskCanvas.height;
+      const octx = out.getContext("2d");
+      const data = maskCtx.getImageData(0, 0, out.width, out.height);
+      const d = data.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = d[i];
+        d[i] = v; d[i + 1] = v; d[i + 2] = v; d[i + 3] = 255;
+      }
+      octx.putImageData(data, 0, 0);
+      out.toBlob((blob) => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "mask.png";
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }, "image/png");
+      setStatus("mask.png を保存しました。");
+    });
+
+    setStatus("元画像とマスクを読み込んでください。");
+    redrawAll();
+  </script>
+</body>
+</html>

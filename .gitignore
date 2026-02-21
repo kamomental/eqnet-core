@@ -47,6 +47,12 @@ reports/plots/
 reports/policy_feedback_history.jsonl
 reports/nightly_audit_*.json
 reports/nightly_audit_*.md
+reports/weekly_calibration_*.json
+reports/weekly_calibration_*.md
+reports/weekly_ops_summary_*.json
+reports/weekly_ops_summary_*.md
+reports/audit/nightly_audit_*.json
+telemetry/audit/nightly_audit_*.json
 reports/exp_risk*.json
 reports/exp_risk*.md
 trace_runs/

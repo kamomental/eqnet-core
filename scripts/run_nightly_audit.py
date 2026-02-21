@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
@@ -84,6 +85,246 @@ def _percentile(values: List[float], pct: float) -> float:
     ordered = sorted(values)
     idx = int(round((len(ordered) - 1) * pct))
     return float(ordered[min(max(idx, 0), len(ordered) - 1)])
+
+
+def _extract_nightly_metrics(report_payload: Dict[str, Any]) -> Dict[str, float]:
+    nightly = report_payload.get("nightly_audit") or {}
+    if not isinstance(nightly, dict):
+        return {"sat_p95": 0.0, "low_ratio": 0.0}
+    uncertainty = nightly.get("uncertainty_confidence") or {}
+    low_ratio = 0.0
+    if isinstance(uncertainty, dict):
+        try:
+            low_ratio = float(uncertainty.get("low_ratio", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            low_ratio = 0.0
+    try:
+        sat_p95 = float(nightly.get("lazy_rag_sat_ratio_p95", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        sat_p95 = 0.0
+    return {"sat_p95": sat_p95, "low_ratio": low_ratio}
+
+
+def _load_previous_report(out_json: Path, day: date) -> Dict[str, Any]:
+    prev_day = day.fromordinal(day.toordinal() - 1)
+    prev_name = f"nightly_audit_{prev_day.strftime('%Y%m%d')}.json"
+    prev_path = out_json.parent / prev_name
+    if not prev_path.exists():
+        return {}
+    try:
+        return json.loads(prev_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _week_day_range(day: date) -> List[date]:
+    weekday = day.weekday()
+    monday = day.fromordinal(day.toordinal() - weekday)
+    return [monday.fromordinal(monday.toordinal() + offset) for offset in range(7)]
+
+
+def _weekly_metric_summary(
+    out_dir: Path,
+    day: date,
+    current_report: Dict[str, Any],
+) -> Dict[str, float]:
+    sat_values: List[float] = []
+    low_values: List[float] = []
+    current_metrics = _extract_nightly_metrics(current_report)
+    sat_values.append(current_metrics["sat_p95"])
+    low_values.append(current_metrics["low_ratio"])
+    for candidate in _week_day_range(day):
+        if candidate == day:
+            continue
+        candidate_name = f"nightly_audit_{candidate.strftime('%Y%m%d')}.json"
+        candidate_path = out_dir / candidate_name
+        if not candidate_path.exists():
+            continue
+        try:
+            payload = json.loads(candidate_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        metrics = _extract_nightly_metrics(payload)
+        sat_values.append(metrics["sat_p95"])
+        low_values.append(metrics["low_ratio"])
+    count = len(sat_values)
+    sat_avg = (sum(sat_values) / count) if count else 0.0
+    low_avg = (sum(low_values) / count) if count else 0.0
+    return {
+        "count": float(count),
+        "sat_p95_avg": round(sat_avg, 3),
+        "sat_p95_max": round(max(sat_values) if sat_values else 0.0, 3),
+        "low_ratio_avg": round(low_avg, 3),
+        "low_ratio_max": round(max(low_values) if low_values else 0.0, 3),
+    }
+
+
+def _weekly_snapshot(runtime_cfg: Any, payload: Dict[str, Any]) -> Dict[str, Any]:
+    rag_assoc = getattr(getattr(runtime_cfg, "rag", None), "assoc_score", None)
+    rag_weights = getattr(rag_assoc, "weights", None)
+    rag_clamp = getattr(rag_assoc, "clamp", None)
+    ui_cfg = getattr(runtime_cfg, "ui", None)
+    return {
+        "sat_warn_threshold": float(payload.get("lazy_rag_sat_ratio_alert_threshold", 0.6) or 0.6),
+        "confidence_low_max": float(getattr(ui_cfg, "uncertainty_confidence_low_max", 0.54) or 0.54),
+        "confidence_mid_max": float(getattr(ui_cfg, "uncertainty_confidence_mid_max", 0.79) or 0.79),
+        "assoc_enabled": bool(getattr(rag_assoc, "enabled", False)),
+        "assoc_normalize_weights": bool(getattr(rag_assoc, "normalize_weights", True)),
+        "assoc_temporal_tau_sec": float(getattr(rag_assoc, "temporal_tau_sec", 86400.0) or 86400.0),
+        "assoc_weights": {
+            "semantic": float(getattr(rag_weights, "semantic", 1.0) or 1.0),
+            "temporal": float(getattr(rag_weights, "temporal", 0.1) or 0.1),
+            "affective": float(getattr(rag_weights, "affective", 0.12) or 0.12),
+            "value": float(getattr(rag_weights, "value", 0.15) or 0.15),
+            "open_loop": float(getattr(rag_weights, "open_loop", 0.08) or 0.08),
+        },
+        "assoc_clamp": {
+            "min": float(getattr(rag_clamp, "min", -5.0) or -5.0),
+            "max": float(getattr(rag_clamp, "max", 5.0) or 5.0),
+        },
+    }
+
+
+def _flatten_snapshot(snapshot: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
+    flat: Dict[str, Any] = {}
+    for key, value in snapshot.items():
+        joined = f"{prefix}.{key}" if prefix else str(key)
+        if isinstance(value, dict):
+            flat.update(_flatten_snapshot(value, joined))
+        else:
+            flat[joined] = value
+    return flat
+
+
+def _snapshot_changed_keys(current: Dict[str, Any], previous: Dict[str, Any]) -> List[str]:
+    cur_flat = _flatten_snapshot(current)
+    prev_flat = _flatten_snapshot(previous)
+    keys = set(cur_flat.keys()) | set(prev_flat.keys())
+    changed = [key for key in sorted(keys) if cur_flat.get(key) != prev_flat.get(key)]
+    return changed
+
+
+def _recommended_action_code(
+    weekly_metrics: Dict[str, float],
+    payload: Dict[str, Any],
+) -> str:
+    sample_count_raw = weekly_metrics.get("count")
+    if sample_count_raw is not None:
+        sample_count = float(sample_count_raw or 0.0)
+        if sample_count <= 0.0:
+            return "none"
+    sat_avg = float(weekly_metrics.get("sat_p95_avg", 0.0) or 0.0)
+    sat_max = float(weekly_metrics.get("sat_p95_max", 0.0) or 0.0)
+    low_max = float(weekly_metrics.get("low_ratio_max", 0.0) or 0.0)
+    nightly = payload.get("nightly_audit") or {}
+    top3 = nightly.get("uncertainty_reason_top3") if isinstance(nightly, dict) else []
+    reasons: List[str] = []
+    if isinstance(top3, list):
+        for item in top3:
+            if isinstance(item, dict):
+                reason = item.get("reason")
+                if isinstance(reason, str):
+                    reasons.append(reason)
+    if sat_avg >= 0.6 and sat_max >= 0.7:
+        return "saturation_high"
+    if low_max >= 0.25 and "retrieval_sparse" in reasons:
+        return "retrieval_sparse"
+    if low_max >= 0.25:
+        return "uncertainty_high"
+    return "stable"
+
+
+def _load_previous_weekly_snapshot(weekly_json_path: Path, day: date) -> Dict[str, Any]:
+    prev_week_day = day.fromordinal(day.toordinal() - 7)
+    prev_year, prev_week, _ = prev_week_day.isocalendar()
+    prev_path = weekly_json_path.parent / f"weekly_calibration_{prev_year}-W{prev_week:02d}.json"
+    if not prev_path.exists():
+        return {}
+    try:
+        payload = json.loads(prev_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    snapshot = payload.get("snapshot")
+    if isinstance(snapshot, dict):
+        return snapshot
+    return {}
+
+
+def _write_weekly_calibration(
+    path: Path,
+    *,
+    day: date,
+    snapshot: Dict[str, Any],
+    weekly_metrics: Dict[str, float],
+    changed_keys: List[str],
+    recommended_action_code: str,
+    recommended_action_text: str,
+    recommendation_evidence: str,
+    proposal_title: str,
+    evidence_label: str,
+    changed_keys_max: int,
+    changed_keys_more_template: str,
+) -> None:
+    iso_year, iso_week, _ = day.isocalendar()
+    assoc_weights = snapshot.get("assoc_weights", {}) if isinstance(snapshot.get("assoc_weights"), dict) else {}
+    assoc_clamp = snapshot.get("assoc_clamp", {}) if isinstance(snapshot.get("assoc_clamp"), dict) else {}
+
+    lines: List[str] = []
+    lines.append(f"# Weekly Calibration ({iso_year}-W{iso_week:02d})")
+    lines.append("")
+    lines.append(f"- generated_at: {datetime.utcnow().isoformat()}")
+    lines.append(f"- day: {day.isoformat()}")
+    lines.append("")
+    lines.append("## Weekly Metrics")
+    lines.append(
+        f"- sat_p95 avg/max: {weekly_metrics.get('sat_p95_avg', 0.0)} / {weekly_metrics.get('sat_p95_max', 0.0)}"
+    )
+    lines.append(
+        f"- low_ratio avg/max: {weekly_metrics.get('low_ratio_avg', 0.0)} / {weekly_metrics.get('low_ratio_max', 0.0)}"
+    )
+    lines.append(f"- samples: {int(weekly_metrics.get('count', 0.0))}")
+    lines.append("")
+    lines.append("## Thresholds")
+    lines.append(f"- sat_warn_threshold: {snapshot.get('sat_warn_threshold', 0.6)}")
+    lines.append(f"- confidence_low_max: {snapshot.get('confidence_low_max', 0.54)}")
+    lines.append(f"- confidence_mid_max: {snapshot.get('confidence_mid_max', 0.79)}")
+    lines.append("")
+    lines.append("## LazyRAG / RagRetriever")
+    lines.append(f"- assoc_enabled: {bool(snapshot.get('assoc_enabled', False))}")
+    lines.append(f"- assoc_normalize_weights: {bool(snapshot.get('assoc_normalize_weights', True))}")
+    lines.append(f"- assoc_temporal_tau_sec: {float(snapshot.get('assoc_temporal_tau_sec', 86400.0) or 86400.0)}")
+    lines.append(
+        "- assoc_weights: "
+        f"semantic={float(assoc_weights.get('semantic', 1.0) or 1.0)}, "
+        f"temporal={float(assoc_weights.get('temporal', 0.1) or 0.1)}, "
+        f"affective={float(assoc_weights.get('affective', 0.12) or 0.12)}, "
+        f"value={float(assoc_weights.get('value', 0.15) or 0.15)}, "
+        f"open_loop={float(assoc_weights.get('open_loop', 0.08) or 0.08)}"
+    )
+    lines.append(
+        "- assoc_clamp: "
+        f"min={float(assoc_clamp.get('min', -5.0) or -5.0)}, "
+        f"max={float(assoc_clamp.get('max', 5.0) or 5.0)}"
+    )
+    lines.append("")
+    lines.append(f"## {proposal_title}")
+    lines.append(f"- {recommended_action_text} [{recommended_action_code}]")
+    lines.append(f"- {evidence_label}: {recommendation_evidence}")
+    lines.append("")
+    lines.append("## Changed Keys (vs previous week)")
+    if changed_keys:
+        display = changed_keys[: max(1, int(changed_keys_max))]
+        lines.append(f"- {', '.join(display)}")
+        remains = len(changed_keys) - len(display)
+        if remains > 0:
+            lines.append(f"- {changed_keys_more_template.format(count=remains)}")
+    else:
+        lines.append("- none")
+    lines.append("")
+    lines.append("## Notes")
+    lines.append("- ")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def _recovery_steps(drives: List[float], limit: float) -> Dict[str, float]:
@@ -1124,10 +1365,58 @@ def _write_markdown(path: Path, payload: Dict[str, Any]) -> None:
         health = nightly.get("health", {})
         boundary = nightly.get("boundary", {})
         prospection = nightly.get("prospection", {})
+        sat_ratio_p95 = float(nightly.get("lazy_rag_sat_ratio_p95", 0.0) or 0.0)
+        sat_ratio_count = int(nightly.get("lazy_rag_sat_ratio_count", 0) or 0)
+        uncertainty_top3 = nightly.get("uncertainty_reason_top3", [])
+        uncertainty_conf = nightly.get("uncertainty_confidence", {}) if isinstance(nightly.get("uncertainty_confidence"), dict) else {}
+        reason_labels = payload.get("uncertainty_reason_labels", {})
+        if not isinstance(reason_labels, dict):
+            reason_labels = {}
+        sat_alert_threshold = float(payload.get("lazy_rag_sat_ratio_alert_threshold", 0.6) or 0.6)
         lines.append(f"- health_status: {health.get('status', 'unknown')}")
         lines.append(f"- boundary_span_max: {boundary.get('max_length', 0)}")
         lines.append(f"- boundary_span_chain_max: {boundary.get('span_chain_max', 0)}")
         lines.append(f"- prospection_reject_rate: {prospection.get('reject_rate', 0.0)}")
+        lines.append(f"- lazy_rag_sat_ratio_p95: {sat_ratio_p95}")
+        lines.append(f"- lazy_rag_sat_ratio_count: {sat_ratio_count}")
+        if sat_ratio_count > 0 and sat_ratio_p95 >= sat_alert_threshold:
+            lines.append(
+                f"- WARNING: LazyRAG score saturation high (p95={sat_ratio_p95:.3f}, "
+                f"count={sat_ratio_count}, threshold={sat_alert_threshold:.3f})"
+            )
+        sat_delta = payload.get("lazy_rag_sat_ratio_p95_delta")
+        low_delta = payload.get("confidence_low_ratio_delta")
+        prev_sat = payload.get("prev_lazy_rag_sat_ratio_p95")
+        prev_low = payload.get("prev_confidence_low_ratio")
+        if isinstance(sat_delta, (int, float)) and isinstance(low_delta, (int, float)):
+            lines.append(
+                f"- delta: sat_p95={float(sat_delta):+0.3f} / low_ratio={float(low_delta):+0.3f} "
+                f"(prev: sat_p95={float(prev_sat or 0.0):0.3f}, low_ratio={float(prev_low or 0.0):0.3f})"
+            )
+        if isinstance(uncertainty_top3, list) and uncertainty_top3:
+            parts: List[str] = []
+            for item in uncertainty_top3:
+                if not isinstance(item, dict):
+                    continue
+                reason = str(item.get("reason", "unknown"))
+                reason_label = str(reason_labels.get(reason, reason))
+                count = int(item.get("count", 0) or 0)
+                if reason_label == reason:
+                    parts.append(f"{reason}({count})")
+                else:
+                    parts.append(f"{reason_label}[{reason}]({count})")
+            if parts:
+                lines.append(f"- uncertainty_reason_top3: {', '.join(parts)}")
+        if uncertainty_conf:
+            total = int(uncertainty_conf.get("total", 0) or 0)
+            low = int(uncertainty_conf.get("low", 0) or 0)
+            mid = int(uncertainty_conf.get("mid", 0) or 0)
+            high = int(uncertainty_conf.get("high", 0) or 0)
+            low_ratio = float(uncertainty_conf.get("low_ratio", 0.0) or 0.0)
+            lines.append(
+                f"- confidence_low_ratio: {low_ratio:.3f} "
+                f"(low={low}, mid={mid}, high={high}, total={total})"
+            )
     else:
         audit_error = payload.get("nightly_audit_error")
         if audit_error:
@@ -1221,6 +1510,10 @@ def main() -> None:
     except FileNotFoundError as exc:
         audit_error = f"trace_root missing: {exc}"
 
+    sat_alert_threshold = float(
+        os.getenv("EQNET_LAZY_RAG_SCORE_DIAG_WARN_SAT_RATIO", "0.6")
+    )
+
     payload: Dict[str, Any] = {
         "generated_at": datetime.utcnow().isoformat(),
         "day": day.isoformat(),
@@ -1254,6 +1547,7 @@ def main() -> None:
         "ru_v0_summary": _ru_v0_summary(trace_records),
         "segments": {},
         "recall_report": report.to_dict(),
+        "lazy_rag_sat_ratio_alert_threshold": sat_alert_threshold,
     }
     deviant_by_world: Dict[str, int] = {}
     for record in deviant_boundary_records:
@@ -1371,12 +1665,91 @@ def main() -> None:
     out_json = Path(args.out_json) if args.out_json else Path(f"reports/nightly_audit_{stamp}.json")
     out_md = Path(args.out_md) if args.out_md else Path(f"reports/nightly_audit_{stamp}.md")
 
+    current_metrics = _extract_nightly_metrics({"nightly_audit": audit_payload or {}})
+    prev_report = _load_previous_report(out_json, day)
+    prev_metrics = _extract_nightly_metrics(prev_report) if prev_report else {"sat_p95": 0.0, "low_ratio": 0.0}
+    payload["lazy_rag_sat_ratio_p95_delta"] = round(current_metrics["sat_p95"] - prev_metrics["sat_p95"], 3)
+    payload["confidence_low_ratio_delta"] = round(current_metrics["low_ratio"] - prev_metrics["low_ratio"], 3)
+    payload["prev_lazy_rag_sat_ratio_p95"] = round(prev_metrics["sat_p95"], 3)
+    payload["prev_confidence_low_ratio"] = round(prev_metrics["low_ratio"], 3)
+    ui_cfg = getattr(runtime_cfg, "ui", None)
+    reason_labels_cfg = getattr(ui_cfg, "uncertainty_reason_labels", {}) if ui_cfg else {}
+    payload["uncertainty_reason_labels"] = dict(reason_labels_cfg) if isinstance(reason_labels_cfg, dict) else {}
+
     out_json.parent.mkdir(parents=True, exist_ok=True)
     out_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     _write_markdown(out_md, payload)
+    iso_year, iso_week, _ = day.isocalendar()
+    weekly_path = out_json.parent / f"weekly_calibration_{iso_year}-W{iso_week:02d}.md"
+    weekly_json_path = out_json.parent / f"weekly_calibration_{iso_year}-W{iso_week:02d}.json"
+    weekly_metrics = _weekly_metric_summary(out_json.parent, day, payload)
+    snapshot = _weekly_snapshot(runtime_cfg, payload)
+    previous_snapshot = _load_previous_weekly_snapshot(weekly_json_path, day)
+    changed_keys = _snapshot_changed_keys(snapshot, previous_snapshot)
+    recommended_action_code = _recommended_action_code(weekly_metrics, payload)
+    sat_avg = float(weekly_metrics.get("sat_p95_avg", 0.0) or 0.0)
+    sat_max = float(weekly_metrics.get("sat_p95_max", 0.0) or 0.0)
+    low_avg = float(weekly_metrics.get("low_ratio_avg", 0.0) or 0.0)
+    low_max = float(weekly_metrics.get("low_ratio_max", 0.0) or 0.0)
+    recommendation_evidence = (
+        f"sat_p95_avg={sat_avg:.3f}, sat_p95_max={sat_max:.3f}, "
+        f"low_ratio_avg={low_avg:.3f}, low_ratio_max={low_max:.3f}"
+    )
+    ui_cfg = getattr(runtime_cfg, "ui", None)
+    action_labels_cfg = getattr(ui_cfg, "weekly_action_labels", {}) if ui_cfg else {}
+    if not isinstance(action_labels_cfg, dict):
+        action_labels_cfg = {}
+    default_action_labels = {
+        "none": "大きな見直しは不要そうです",
+        "saturation_high": "飽和傾向が高いため、境界幅・注意配分・時間感度の見直しを検討",
+        "retrieval_sparse": "根拠不足傾向のため、想起候補の裾野と参照条件の見直しを検討",
+        "uncertainty_high": "不確実性分布が高いため、上位理由に沿って境界条件の見直しを検討",
+        "stable": "現状は安定。設定を維持しつつ観測メモを継続",
+    }
+    action_labels = {**default_action_labels, **action_labels_cfg}
+    recommended_action_text = str(action_labels.get(recommended_action_code, action_labels["stable"]))
+    proposal_title = str(getattr(ui_cfg, "weekly_proposal_title", "次の見直し候補")) if ui_cfg else "次の見直し候補"
+    evidence_label = str(getattr(ui_cfg, "weekly_evidence_label", "根拠")) if ui_cfg else "根拠"
+    changed_keys_max = int(getattr(ui_cfg, "weekly_changed_keys_max", 12) or 12) if ui_cfg else 12
+    changed_keys_more_template = (
+        str(getattr(ui_cfg, "weekly_changed_keys_more_template", "+{count}件"))
+        if ui_cfg
+        else "+{count}件"
+    )
+    _write_weekly_calibration(
+        weekly_path,
+        day=day,
+        snapshot=snapshot,
+        weekly_metrics=weekly_metrics,
+        changed_keys=changed_keys,
+        recommended_action_code=recommended_action_code,
+        recommended_action_text=recommended_action_text,
+        recommendation_evidence=recommendation_evidence,
+        proposal_title=proposal_title,
+        evidence_label=evidence_label,
+        changed_keys_max=changed_keys_max,
+        changed_keys_more_template=changed_keys_more_template,
+    )
+    weekly_payload = {
+        "schema_version": 1,
+        "generated_at": datetime.utcnow().isoformat(),
+        "week": f"{iso_year}-W{iso_week:02d}",
+        "day": day.isoformat(),
+        "metrics": weekly_metrics,
+        "snapshot": snapshot,
+        "changed_keys": changed_keys,
+        "recommended_action_code": recommended_action_code,
+        "recommended_action": recommended_action_text,
+        "recommendation_evidence": recommendation_evidence,
+    }
+    weekly_json_path.write_text(
+        json.dumps(weekly_payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     print(f"[info] nightly report: {out_json}")
     print(f"[info] nightly markdown: {out_md}")
+    print(f"[info] weekly calibration: {weekly_path}")
 
 
 if __name__ == "__main__":

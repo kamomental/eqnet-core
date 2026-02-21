@@ -2065,6 +2065,8 @@ class EmotionalHubRuntime:
             "latency_ms": float(response.latency_ms),
             "controls_used": controls_used,
             "safety": dict(response.safety),
+            "confidence": float(response.confidence),
+            "uncertainty_reason": list(response.uncertainty_reason),
         }
 
     def _current_culture_tag(self) -> str:

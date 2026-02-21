@@ -36,7 +36,9 @@ from eqnet.heart_os.memory_hints import (
     build_place_memory_hints,
 )
 from eqnet.memory import MemoryStore, TerrainState
+from eqnet.memory.state_vector import TemporalStateVector
 from eqnet.memory.moment_knn import MomentKNNIndex
+from runtime.config import load_runtime_cfg
 from rag.indexer import IndexedDocument, RagIndex
 from rag.retriever import RagRetriever, RetrievalHit
 
@@ -169,6 +171,7 @@ class GraphMemoryRAG:
     def __init__(self, documents: Iterable[Dict[str, Any]], embed_fn: Callable[[str], Sequence[float]]) -> None:
         docs = list(documents)
         self.embed_fn = embed_fn
+        self.runtime_cfg = load_runtime_cfg()
         if not docs:
             self.index: Optional[RagIndex] = None
             self.retriever: Optional[RagRetriever] = None
@@ -206,7 +209,19 @@ class GraphMemoryRAG:
             return []
         query_vec = torch.tensor(self.embed_fn(query_text), dtype=torch.float32)
         metadata_filter = {"topic": topic} if topic else None
-        hits = self.retriever.retrieve(query_vec, top_k=top_k, metadata_filter=metadata_filter)
+        temporal_state = TemporalStateVector(
+            timestamp_ms=int(datetime.now().timestamp() * 1000),
+            value_tags={"topic": 1.0} if topic else {},
+            open_loops=0.0,
+            event_scale=0.0,
+        )
+        hits = self.retriever.retrieve_with_assoc(
+            runtime_cfg=self.runtime_cfg,
+            temporal_state=temporal_state,
+            query_embedding=query_vec,
+            top_k=top_k,
+            metadata_filter=metadata_filter,
+        )
         if persona_filter:
             target = set(persona_filter)
             filtered = []

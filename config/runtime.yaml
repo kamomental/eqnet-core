@@ -8,6 +8,20 @@ model:
     stride_s: 8
     use_kv_asymmetry: false
     use_bandwidth_gating: false
+rag:
+  assoc_score:
+    enabled: true
+    normalize_weights: true
+    weights:
+      semantic: 1.0
+      temporal: 0.10
+      affective: 0.12
+      value: 0.15
+      open_loop: 0.08
+    temporal_tau_sec: 86400
+    clamp:
+      min: -5.0
+      max: 5.0
 hub:
   mode: reflective
 
@@ -191,6 +205,22 @@ observer:
   templates_path: "config/i18n/disclaimer.yaml"
   community_bias: 0.05
   i_message_bias: 0.05
+ui:
+  uncertainty_reason_labels:
+    retrieval_sparse: "関連記憶が少ない"
+    retrieval_error: "検索処理で一時的なエラー"
+    score_saturation_high: "スコア飽和が高い"
+    score_saturation_moderate: "スコア飽和がやや高い"
+  weekly_proposal_title: "次の見直し候補"
+  weekly_evidence_label: "根拠"
+  weekly_changed_keys_max: 12
+  weekly_changed_keys_more_template: "+{count}件"
+  weekly_action_labels:
+    none: "大きな見直しは不要そうです"
+    saturation_high: "飽和傾向が高いため、境界幅・注意配分・時間感度の見直しを検討"
+    retrieval_sparse: "根拠不足傾向のため、想起候補の裾野と参照条件の見直しを検討"
+    uncertainty_high: "不確実性分布が高いため、上位理由に沿って境界条件の見直しを検討"
+    stable: "現状は安定。設定を維持しつつ観測メモを継続"
 alerts:
   max_abs_valence_mean: 0.6
   min_corr_rho_I: 0.2
@@ -300,5 +330,19 @@ defrag:
       - 0.95
 ui:
   community_update_ms: 400
+  show_uncertainty_meta: true
+  uncertainty_line_template: "※推定信頼度: {confidence:.2f}（{confidence_label}） / 不確実要因: {reasons}"
+  uncertainty_reason_low: "低"
+  uncertainty_reason_join: ", "
+  uncertainty_reason_labels:
+    retrieval_sparse: "関連記憶が少ない"
+    retrieval_error: "記憶検索で一時的なエラー"
+    score_saturation_high: "スコア飽和が高い"
+    score_saturation_moderate: "スコア飽和がやや高い"
+  uncertainty_confidence_low_max: 0.54
+  uncertainty_confidence_mid_max: 0.79
+  uncertainty_confidence_label_low: "低"
+  uncertainty_confidence_label_mid: "中"
+  uncertainty_confidence_label_high: "高"
 heartos_transition:
   post_risk_scale_default: 0.85

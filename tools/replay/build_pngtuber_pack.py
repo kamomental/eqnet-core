@@ -968,11 +968,6 @@ def make_auto_masks(
 
     layer_masks: Dict[str, Image.Image] = {}
     layer_masks["base"] = mask_rect(size, (0, 0, source.width, source.height))
-    layer_masks["body"] = mask_rect(size, rel_box(0.05, 0.58, 0.95, 1.00))
-    # Bust-up friendly head zone to keep eyes/mouth search windows on actual face.
-    layer_masks["head"] = mask_rect(size, rel_box(0.18, 0.05, 0.82, 0.72))
-    layer_masks["hair_back"] = mask_rect(size, rel_box(0.10, 0.00, 0.90, 0.52))
-    layer_masks["hair_front"] = mask_rect(size, rel_box(0.18, 0.04, 0.82, 0.58))
 
     # Build mouth masks relative to HEAD region (not full body bbox),
     # so the auto mouth does not drift to neck/chest on bust-up images.
@@ -981,7 +976,7 @@ def make_auto_masks(
     hw = max(1, hx1 - hx0)
     hh = max(1, hy1 - hy0)
     auto_debug: Dict[str, object] = {
-        "head_box": {"x0": int(hx0), "y0": int(hy0), "x1": int(hx1), "y1": int(hy1), "w": int(hw), "h": int(hh)}
+        "search_head_box": {"x0": int(hx0), "y0": int(hy0), "x1": int(hx1), "y1": int(hy1), "w": int(hw), "h": int(hh)}
     }
 
     def head_rel_box(rx0: float, ry0: float, rx1: float, ry1: float) -> Tuple[int, int, int, int]:
@@ -1591,6 +1586,79 @@ def make_auto_masks(
         "left_eye": (float(eye_lx), float(eye_ly)),
         "right_eye": (float(eye_rx), float(eye_ry)),
         "mouth": (float(mcx), float(mcy)),
+    }
+
+    # Build layer masks from anchor geometry so off-center portraits still align.
+    eye_min_y = min(float(eye_ly), float(eye_ry))
+    eye_max_y = max(float(eye_ly), float(eye_ry))
+    eye_center_x = float(eye_mid_x)
+    eye_center_y = float(eye_mid_y)
+    mouth_x = float(mcx)
+    mouth_y = float(mcy)
+    face_depth = max(eye_gap * 0.22, (mouth_x - eye_center_x) * nx + (mouth_y - eye_center_y) * ny)
+
+    head_half_w = max(eye_gap * 1.18, abs(mouth_x - eye_center_x) + eye_gap * 0.86)
+    head_top = eye_min_y - eye_gap * 0.96
+    head_bottom = mouth_y + max(eye_gap * 1.30, face_depth * 2.10)
+    head_cx = eye_center_x + face_depth * nx * 0.14
+    hx0m = int(head_cx - head_half_w)
+    hx1m = int(head_cx + head_half_w)
+    hy0m = int(head_top)
+    hy1m = int(head_bottom)
+    hx0m, hy0m, hx1m, hy1m = clamp_box((hx0m, hy0m, hx1m, hy1m), source.width, source.height)
+    if hx1m - hx0m < 8 or hy1m - hy0m < 8:
+        hx0m, hy0m, hx1m, hy1m = head_box
+
+    head_h = max(1, hy1m - hy0m)
+    head_w = max(1, hx1m - hx0m)
+    hair_front_box = clamp_box(
+        (
+            int(hx0m - head_w * 0.05),
+            int(hy0m - head_h * 0.06),
+            int(hx1m + head_w * 0.05),
+            int(hy0m + head_h * 0.82),
+        ),
+        source.width,
+        source.height,
+    )
+    hair_back_box = clamp_box(
+        (
+            int(hx0m - head_w * 0.14),
+            int(hy0m - head_h * 0.18),
+            int(hx1m + head_w * 0.14),
+            int(hy0m + head_h * 0.72),
+        ),
+        source.width,
+        source.height,
+    )
+    body_box = clamp_box(
+        (
+            int(x0 + w * 0.05),
+            int(hy0m + head_h * 0.56),
+            int(x0 + w * 0.95),
+            int(y1),
+        ),
+        source.width,
+        source.height,
+    )
+    layer_masks["head"] = mask_rect(size, (hx0m, hy0m, hx1m, hy1m))
+    layer_masks["hair_front"] = mask_rect(size, hair_front_box)
+    layer_masks["hair_back"] = mask_rect(size, hair_back_box)
+    layer_masks["body"] = mask_rect(size, body_box)
+
+    auto_debug["mask_head_box"] = {"x0": int(hx0m), "y0": int(hy0m), "x1": int(hx1m), "y1": int(hy1m), "w": int(head_w), "h": int(head_h)}
+    auto_debug["mask_body_box"] = {"x0": int(body_box[0]), "y0": int(body_box[1]), "x1": int(body_box[2]), "y1": int(body_box[3])}
+    auto_debug["mask_hair_front_box"] = {
+        "x0": int(hair_front_box[0]),
+        "y0": int(hair_front_box[1]),
+        "x1": int(hair_front_box[2]),
+        "y1": int(hair_front_box[3]),
+    }
+    auto_debug["mask_hair_back_box"] = {
+        "x0": int(hair_back_box[0]),
+        "y0": int(hair_back_box[1]),
+        "x1": int(hair_back_box[2]),
+        "y1": int(hair_back_box[3]),
     }
     auto_debug["anchors_used"] = {
         "left_eye": {"x": round(float(eye_lx), 3), "y": round(float(eye_ly), 3)},

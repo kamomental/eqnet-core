@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -212,6 +213,84 @@ def _bump_health(health: Dict[str, Any], *, level: str, reason: str) -> Dict[str
     if isinstance(reasons, list):
         reasons.append({"level": level, "reason": reason})
     return health
+
+
+def _percentile(values: List[float], pct: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    idx = int(round((len(ordered) - 1) * pct))
+    idx = min(max(idx, 0), len(ordered) - 1)
+    return float(ordered[idx])
+
+
+def _extract_lazy_rag_sat_ratio(row: Dict[str, Any]) -> float | None:
+    candidates: List[Any] = []
+    response_meta = row.get("response_meta")
+    if isinstance(response_meta, dict):
+        safety = response_meta.get("safety")
+        if isinstance(safety, dict):
+            candidates.append(safety.get("lazy_rag_sat_ratio"))
+    safety_root = row.get("safety")
+    if isinstance(safety_root, dict):
+        candidates.append(safety_root.get("lazy_rag_sat_ratio"))
+    lazy_rag = row.get("lazy_rag")
+    if isinstance(lazy_rag, dict):
+        candidates.append(lazy_rag.get("sat_ratio"))
+    for value in candidates:
+        if isinstance(value, (int, float)):
+            return float(value)
+    return None
+
+
+def _extract_uncertainty_reasons(row: Dict[str, Any]) -> List[str]:
+    candidates: List[Any] = []
+    response_meta = row.get("response_meta")
+    if isinstance(response_meta, dict):
+        candidates.append(response_meta.get("uncertainty_reason"))
+        safety = response_meta.get("safety")
+        if isinstance(safety, dict):
+            candidates.append(safety.get("uncertainty_reason"))
+    safety_root = row.get("safety")
+    if isinstance(safety_root, dict):
+        candidates.append(safety_root.get("uncertainty_reason"))
+    reasons: List[str] = []
+    for item in candidates:
+        if isinstance(item, list):
+            for value in item:
+                if isinstance(value, str) and value.strip():
+                    reasons.append(value)
+            if reasons:
+                break
+        elif isinstance(item, str) and item.strip():
+            reasons.append(item)
+            break
+    return reasons
+
+
+def _extract_confidence_value(row: Dict[str, Any]) -> float | None:
+    candidates: List[Any] = []
+    response_meta = row.get("response_meta")
+    if isinstance(response_meta, dict):
+        candidates.append(response_meta.get("confidence"))
+        safety = response_meta.get("safety")
+        if isinstance(safety, dict):
+            candidates.append(safety.get("confidence"))
+    safety_root = row.get("safety")
+    if isinstance(safety_root, dict):
+        candidates.append(safety_root.get("confidence"))
+    for value in candidates:
+        if isinstance(value, (int, float)):
+            return float(value)
+    return None
+
+
+def _confidence_label(value: float, *, low_max: float, mid_max: float) -> str:
+    if value <= low_max:
+        return "low"
+    if value <= mid_max:
+        return "mid"
+    return "high"
 
 
 def _ru_v0_summary(records: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -898,6 +977,21 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
     throttles: Dict[str, int] = {}
     throttle_examples: Dict[str, List[Dict[str, Any]]] = {}
     evidence_limit = cfg.evidence_limit or EVIDENCE_DEFAULT_LIMIT
+    lazy_rag_sat_ratios: List[float] = []
+    uncertainty_reason_counts: Counter[str] = Counter()
+    confidence_values: List[float] = []
+    confidence_label_counts: Counter[str] = Counter()
+    try:
+        conf_low_max = float(os.getenv("EQNET_UNCERTAINTY_CONFIDENCE_LOW_MAX", "0.54"))
+    except (TypeError, ValueError):
+        conf_low_max = 0.54
+    try:
+        conf_mid_max = float(os.getenv("EQNET_UNCERTAINTY_CONFIDENCE_MID_MAX", "0.79"))
+    except (TypeError, ValueError):
+        conf_mid_max = 0.79
+    if not (0.0 <= conf_low_max < conf_mid_max <= 1.0):
+        conf_low_max = 0.54
+        conf_mid_max = 0.79
 
     def record_invariant(
         severity: str,
@@ -972,6 +1066,18 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
                             },
                             evidence_limit,
                         )
+            sat_ratio = _extract_lazy_rag_sat_ratio(row)
+            if sat_ratio is not None:
+                lazy_rag_sat_ratios.append(sat_ratio)
+            reasons = _extract_uncertainty_reasons(row)
+            if reasons:
+                uncertainty_reason_counts.update(reasons)
+            confidence_val = _extract_confidence_value(row)
+            if confidence_val is not None:
+                confidence_values.append(confidence_val)
+                confidence_label_counts.update(
+                    [_confidence_label(confidence_val, low_max=conf_low_max, mid_max=conf_mid_max)]
+                )
 
     boundary_summary, boundary_evidence = _collect_boundary_spans(
         records,
@@ -1134,6 +1240,11 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
         if not qualia_gate_stats:
             qualia_gate_stats = {}
         qualia_gate_stats["memory_hint"] = memory_hint_stats
+    lazy_rag_sat_ratio_p95 = _percentile(lazy_rag_sat_ratios, 0.95)
+    confidence_total = len(confidence_values)
+    low_count = int(confidence_label_counts.get("low", 0))
+    mid_count = int(confidence_label_counts.get("mid", 0))
+    high_count = int(confidence_label_counts.get("high", 0))
 
     audit = {
         "schema_version": "nightly_audit_v1",
@@ -1169,6 +1280,22 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
         ),
         "ru_v0_summary": _ru_v0_summary(records),
         "qualia_gate_stats": qualia_gate_stats,
+        "lazy_rag_sat_ratio_p95": round(lazy_rag_sat_ratio_p95, 3),
+        "lazy_rag_sat_ratio_count": len(lazy_rag_sat_ratios),
+        "uncertainty_reason_top3": [
+            {"reason": reason, "count": int(count)}
+            for reason, count in uncertainty_reason_counts.most_common(3)
+        ],
+        "uncertainty_confidence": {
+            "total": confidence_total,
+            "low": low_count,
+            "mid": mid_count,
+            "high": high_count,
+            "low_ratio": round((low_count / confidence_total), 3) if confidence_total else 0.0,
+            "mid_ratio": round((mid_count / confidence_total), 3) if confidence_total else 0.0,
+            "high_ratio": round((high_count / confidence_total), 3) if confidence_total else 0.0,
+            "thresholds": {"low_max": conf_low_max, "mid_max": conf_mid_max},
+        },
     }
 
     cfg.out_root.mkdir(parents=True, exist_ok=True)
