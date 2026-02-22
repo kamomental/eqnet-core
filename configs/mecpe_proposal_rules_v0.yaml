@@ -1,0 +1,39 @@
+schema_version: mecpe_proposal_rules.v0
+description: >
+  Frozen rules for allowing/suppressing MECPE change proposals.
+  This file is treated as a contract for safe self-improvement.
+
+default_policy:
+  action: allow
+  allowed_requires_gate: ["shadow"]
+  max_risk_level: "MED"
+
+risk_order: ["LOW", "MED", "HIGH"]
+gate_order: ["shadow", "canary", "rollout"]
+
+rules:
+  - rule_id: suppress_on_contract_break
+    when:
+      mecpe_alert_level_in: ["WARN", "ALERT"]
+      contract_top_type_in: ["missing_required_key", "invalid_hash_len"]
+    then:
+      action: suppress
+      reason: "contract_break_top_type"
+
+  - rule_id: allow_shadow_eval_on_warn_alert
+    when:
+      mecpe_alert_level_in: ["WARN", "ALERT"]
+      contract_top_type_not_in: ["missing_required_key", "invalid_hash_len"]
+    then:
+      action: allow
+      requires_gate: "shadow"
+      max_risk_level: "MED"
+      reason: "safe_shadow_eval"
+
+  - rule_id: suppress_non_shadow
+    when:
+      requires_gate_not_in: ["shadow"]
+    then:
+      action: suppress
+      reason: "non_shadow_not_allowed_in_v0"
+

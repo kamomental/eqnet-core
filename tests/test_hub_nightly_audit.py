@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -287,6 +288,60 @@ def test_run_nightly_audit_includes_uncertainty_reason_top3(tmp_path):
     assert conf.get("low") == 1
     assert conf.get("mid") == 1
     assert conf.get("high") == 1
+
+
+def test_run_nightly_audit_mecpe_closed_loop_contract(tmp_path, monkeypatch):
+    trace_root = tmp_path / "telemetry" / "trace_v1"
+    monkeypatch.setenv("EQNET_TRACE_V1", "1")
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    stamp = datetime(2025, 12, 14, 0, 0, tzinfo=timezone.utc)
+    for idx in range(3):
+        event = SimpleNamespace(
+            timestamp=stamp,
+            session_id="mecpe-e2e",
+            turn_id=f"turn-{idx}",
+            awareness_stage=1,
+            emotion=SimpleNamespace(mask=0.1, love=0.2, stress=0.3, heart_rate_norm=0.4, breath_ratio_norm=0.5),
+            culture=SimpleNamespace(rho=0.2, politeness=0.5, intimacy=0.4),
+            mood={"arousal": 0.4, "stress": 0.2},
+            metrics={"proximity": 0.7, "stress": 0.2},
+            gate_context={"mode": "talk", "cultural_pressure": 0.1},
+            talk_mode="talk",
+            emotion_tag="neutral",
+            audio_sha256="a" * 64,
+            video_sha256="b" * 64,
+        )
+        hub.log_moment(
+            event,
+            f"user-text-{idx}",
+        )
+
+    hub._run_nightly_audit(date(2025, 12, 14))
+    mecpe_files = sorted((tmp_path / "telemetry").glob("mecpe-*.jsonl"))
+    assert len(mecpe_files) >= 1
+    mecpe_rows = [
+        line for line in mecpe_files[-1].read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
+    assert len(mecpe_rows) >= 1
+
+    day = "2025-12-14"
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    mecpe = payload.get("mecpe_audit") or {}
+    assert mecpe
+    assert int(mecpe.get("total_records") or 0) >= 1
+    contract_errors = mecpe.get("contract_errors") or {}
+    assert int(contract_errors.get("total") or 0) == 0
+    hash_integrity = mecpe.get("hash_integrity") or {}
+    assert float(hash_integrity.get("ok_rate") or 0.0) == 1.0
 
 
 def test_run_nightly_shadow_delegate_writes_trace_observation(tmp_path, monkeypatch):

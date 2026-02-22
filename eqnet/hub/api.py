@@ -41,6 +41,11 @@ from eqnet.runtime.external_runtime import (
 from eqnet.telemetry.trace_paths import TracePathConfig, trace_output_path
 from eqnet.telemetry.trace_writer import append_trace_event
 from eqnet.telemetry.nightly_audit import NightlyAuditConfig, generate_audit
+from eqnet.telemetry.mecpe_writer import (
+    MecpeWriter,
+    MecpeWriterConfig,
+    build_minimal_mecpe_payload,
+)
 from eqnet.persona.loader import PersonaConfig
 from emot_terrain_lab.ops.nightly_life_indicator import (
     load_qualia_log,
@@ -100,6 +105,7 @@ class EQNetHub:
         self._trace_safety = SafetyConfig()
         self._runtime_delegate = self._resolve_runtime_delegate(runtime_delegate)
         self._idempotency_store = idempotency_store or NoopIdempotencyStore()
+        self._mecpe_writer = MecpeWriter(MecpeWriterConfig(telemetry_dir=self.config.telemetry_dir))
         self._runtime_version = (
             runtime_version
             or os.getenv(RUNTIME_VERSION_ENV)
@@ -143,6 +149,7 @@ class EQNetHub:
             self._emit_trace_v1(
                 moment_entry,
                 raw_text,
+                raw_event=raw_event,
                 runtime_version=self._runtime_version,
                 idempotency_key=idem_key,
                 idempotency_status="skipped",
@@ -187,6 +194,7 @@ class EQNetHub:
             self._emit_trace_v1(
                 moment_entry,
                 raw_text,
+                raw_event=raw_event,
                 runtime_version=self._runtime_version,
                 idempotency_key=idem_key,
                 idempotency_status=idem_status,
@@ -613,6 +621,7 @@ class EQNetHub:
         moment_entry: Any,
         raw_text: str,
         *,
+        raw_event: Any = None,
         runtime_version: str,
         idempotency_key: str,
         idempotency_status: str,
@@ -741,6 +750,13 @@ class EQNetHub:
                 thin_entry,
                 fallback_session=getattr(self.persona, "persona_id", None),
             )
+            text_hash_hint = text_obs.get("sha256") if isinstance(text_obs, dict) else None
+            self._emit_mecpe_v0(
+                payload=payload,
+                raw_text=raw_text,
+                raw_event=raw_event if raw_event is not None else moment_entry,
+                text_hash_hint=text_hash_hint,
+            )
             root_override = os.getenv(TRACE_DIR_ENV)
             base_dir = Path(root_override) if root_override else self.config.telemetry_dir / "trace_v1"
             target = trace_output_path(
@@ -752,6 +768,39 @@ class EQNetHub:
             run_hub_turn(payload, state, self._trace_safety, target)
         except Exception as exc:  # pragma: no cover - defensive guardrail
             logger.warning("trace_v1 emit failed", exc_info=exc)
+
+    def _emit_mecpe_v0(
+        self,
+        *,
+        payload: dict[str, Any],
+        raw_text: str,
+        raw_event: Any,
+        text_hash_hint: str | None = None,
+    ) -> None:
+        try:
+            timestamp_ms = int(payload.get("timestamp_ms") or 0)
+            turn_id = str(payload.get("turn_id") or "")
+            if timestamp_ms <= 0 or not turn_id:
+                return
+            base = build_minimal_mecpe_payload(
+                timestamp_ms=timestamp_ms,
+                turn_id=turn_id,
+                raw_text=raw_text,
+                raw_event=raw_event,
+                text_hash_override=text_hash_hint,
+            )
+            self._mecpe_writer.append_turn(
+                timestamp_ms=base["timestamp_ms"],
+                turn_id=base["turn_id"],
+                prompt_hash=base["prompt_hash"],
+                model_version=base["model_version"],
+                text_hash=base["text_hash"],
+                audio_sha256=base["audio_sha256"],
+                video_sha256=base["video_sha256"],
+                extra=None,
+            )
+        except Exception:
+            logger.warning("mecpe_v0 emit failed", exc_info=True)
 
     def _delegation_mode(self) -> str:
         raw = (os.getenv(DELEGATION_MODE_ENV) or "off").strip().lower()

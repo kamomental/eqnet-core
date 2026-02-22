@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 from collections import Counter
@@ -21,6 +21,11 @@ if str(ROOT) not in sys.path:
 from runtime.nightly_report import generate_recall_report
 from runtime.config import load_runtime_cfg
 from eqnet.telemetry.nightly_audit import NightlyAuditConfig, generate_audit
+from eqnet.telemetry.change_proposal_writer import (
+    ChangeProposalWriter,
+    ChangeProposalWriterConfig,
+)
+import yaml
 
 
 def _resolve_log_path(template: str, *, day: date) -> Path:
@@ -87,10 +92,20 @@ def _percentile(values: List[float], pct: float) -> float:
     return float(ordered[min(max(idx, 0), len(ordered) - 1)])
 
 
-def _extract_nightly_metrics(report_payload: Dict[str, Any]) -> Dict[str, float]:
+def _extract_nightly_metrics(report_payload: Dict[str, Any]) -> Dict[str, Any]:
     nightly = report_payload.get("nightly_audit") or {}
     if not isinstance(nightly, dict):
-        return {"sat_p95": 0.0, "low_ratio": 0.0}
+        return {
+            "sat_p95": 0.0,
+            "low_ratio": 0.0,
+            "mecpe_hash_ok_rate": 0.0,
+            "mecpe_conflict_rate": 0.0,
+            "mecpe_staleness_ratio": 0.0,
+            "mecpe_contract_error_total": 0.0,
+            "mecpe_contract_error_ratio": 0.0,
+            "mecpe_contract_error_top_type": "",
+            "health_status": "GREEN",
+        }
     uncertainty = nightly.get("uncertainty_confidence") or {}
     low_ratio = 0.0
     if isinstance(uncertainty, dict):
@@ -102,7 +117,60 @@ def _extract_nightly_metrics(report_payload: Dict[str, Any]) -> Dict[str, float]
         sat_p95 = float(nightly.get("lazy_rag_sat_ratio_p95", 0.0) or 0.0)
     except (TypeError, ValueError):
         sat_p95 = 0.0
-    return {"sat_p95": sat_p95, "low_ratio": low_ratio}
+    mecpe = nightly.get("mecpe_audit") if isinstance(nightly.get("mecpe_audit"), dict) else {}
+    hash_integrity = mecpe.get("hash_integrity") if isinstance(mecpe.get("hash_integrity"), dict) else {}
+    conflict = mecpe.get("future_cause_conflict") if isinstance(mecpe.get("future_cause_conflict"), dict) else {}
+    staleness = mecpe.get("evidence_staleness") if isinstance(mecpe.get("evidence_staleness"), dict) else {}
+    try:
+        mecpe_hash_ok_rate = float(hash_integrity.get("ok_rate", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        mecpe_hash_ok_rate = 0.0
+    try:
+        mecpe_conflict_rate = float(conflict.get("conflict_rate", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        mecpe_conflict_rate = 0.0
+    try:
+        mecpe_staleness_ratio = float(staleness.get("missing_ratio", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        mecpe_staleness_ratio = 0.0
+    contract_errors = mecpe.get("contract_errors") if isinstance(mecpe.get("contract_errors"), dict) else {}
+    health = nightly.get("health") if isinstance(nightly.get("health"), dict) else {}
+    total_records_raw = mecpe.get("total_records", 0.0)
+    lines_total_raw = mecpe.get("mecpe_lines_total", 0.0)
+    try:
+        mecpe_records_total = float(total_records_raw or 0.0)
+    except (TypeError, ValueError):
+        mecpe_records_total = 0.0
+    try:
+        mecpe_lines_total = float(lines_total_raw or 0.0)
+    except (TypeError, ValueError):
+        mecpe_lines_total = 0.0
+    try:
+        mecpe_contract_error_total = float(contract_errors.get("total", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        mecpe_contract_error_total = 0.0
+    try:
+        mecpe_contract_error_ratio = float(contract_errors.get("ratio", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        mecpe_contract_error_ratio = 0.0
+    mecpe_contract_error_ratio_legacy = (
+        (mecpe_contract_error_total / mecpe_records_total) if mecpe_records_total > 0.0 else 0.0
+    )
+    if "ratio" not in contract_errors:
+        mecpe_contract_error_ratio = mecpe_contract_error_ratio_legacy
+    return {
+        "sat_p95": sat_p95,
+        "low_ratio": low_ratio,
+        "mecpe_hash_ok_rate": mecpe_hash_ok_rate,
+        "mecpe_conflict_rate": mecpe_conflict_rate,
+        "mecpe_staleness_ratio": mecpe_staleness_ratio,
+        "mecpe_lines_total": mecpe_lines_total,
+        "mecpe_contract_error_total": mecpe_contract_error_total,
+        "mecpe_contract_error_ratio": round(mecpe_contract_error_ratio, 3),
+        "mecpe_contract_error_ratio_legacy": round(mecpe_contract_error_ratio_legacy, 3),
+        "mecpe_contract_error_top_type": str(contract_errors.get("top_type") or ""),
+        "health_status": str(health.get("status") or "GREEN"),
+    }
 
 
 def _load_previous_report(out_json: Path, day: date) -> Dict[str, Any]:
@@ -123,16 +191,229 @@ def _week_day_range(day: date) -> List[date]:
     return [monday.fromordinal(monday.toordinal() + offset) for offset in range(7)]
 
 
+def _weekly_eval_summary(
+    telemetry_dir: Path,
+    day: date,
+    *,
+    link_type: str,
+    approval_decision: str,
+) -> Dict[str, Any]:
+    iso_year, iso_week, _ = day.isocalendar()
+    week_key = f"{iso_year}-W{iso_week:02d}"
+    linked_eval_ids: Dict[str, str] = {}
+    proposal_counts: Counter[str] = Counter()
+    approved_shadow_proposals: set[str] = set()
+    latest_approval_ts: Dict[str, int] = {}
+    for path in sorted(telemetry_dir.glob("change_decisions-*.jsonl")):
+        try:
+            rows = _read_jsonl(path)
+        except Exception:
+            rows = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("schema_version") or "") != "change_decision.v0":
+                continue
+            if str(row.get("source_week") or "") != week_key:
+                continue
+            if str(row.get("decision") or "") != approval_decision:
+                continue
+            proposal_id = str(row.get("proposal_id") or "")
+            if proposal_id:
+                approved_shadow_proposals.add(proposal_id)
+                ts = row.get("timestamp_ms")
+                if not isinstance(ts, int):
+                    try:
+                        ts = int(ts or 0)
+                    except (TypeError, ValueError):
+                        ts = 0
+                latest_approval_ts[proposal_id] = max(latest_approval_ts.get(proposal_id, 0), int(ts))
+    earliest_eval_ts: Dict[str, int] = {}
+    for path in sorted(telemetry_dir.glob("proposal_links-*.jsonl")):
+        try:
+            rows = _read_jsonl(path)
+        except Exception:
+            rows = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("schema_version") or "") != "proposal_link.v0":
+                continue
+            if str(row.get("source_week") or "") != week_key:
+                continue
+            if str(row.get("link_type") or "") != link_type:
+                continue
+            proposal_id = str(row.get("proposal_id") or "")
+            eval_report_id = str(row.get("eval_report_id") or "")
+            if not proposal_id or not eval_report_id:
+                continue
+            linked_eval_ids[eval_report_id] = proposal_id
+            proposal_counts.update([proposal_id])
+            ts = row.get("timestamp_ms")
+            if not isinstance(ts, int):
+                try:
+                    ts = int(ts or 0)
+                except (TypeError, ValueError):
+                    ts = 0
+            current = earliest_eval_ts.get(proposal_id)
+            if current is None or int(ts) < current:
+                earliest_eval_ts[proposal_id] = int(ts)
+
+    verdict_counts: Counter[str] = Counter()
+    contract_error_deltas: List[float] = []
+    hash_ok_deltas: List[float] = []
+    for path in sorted(telemetry_dir.glob("eval_reports-*.jsonl")):
+        try:
+            rows = _read_jsonl(path)
+        except Exception:
+            rows = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("schema_version") or "") != "eval_report.v0":
+                continue
+            eval_report_id = str(row.get("eval_report_id") or "")
+            if eval_report_id not in linked_eval_ids:
+                continue
+            verdict = str(row.get("verdict") or "INCONCLUSIVE").upper()
+            if verdict not in {"PASS", "FAIL", "INCONCLUSIVE"}:
+                verdict = "INCONCLUSIVE"
+            verdict_counts.update([verdict])
+            delta = row.get("delta") if isinstance(row.get("delta"), dict) else {}
+            before = row.get("metrics_before") if isinstance(row.get("metrics_before"), dict) else {}
+            after = row.get("metrics_after") if isinstance(row.get("metrics_after"), dict) else {}
+
+            def _delta_for(name: str) -> float | None:
+                value = delta.get(name)
+                if isinstance(value, (int, float)):
+                    return float(value)
+                b = before.get(name)
+                a = after.get(name)
+                if isinstance(b, (int, float)) and isinstance(a, (int, float)):
+                    return float(a) - float(b)
+                return None
+
+            contract_delta = _delta_for("contract_errors_ratio")
+            hash_delta = _delta_for("hash_integrity_ok_rate")
+            if contract_delta is not None:
+                contract_error_deltas.append(contract_delta)
+            if hash_delta is not None:
+                hash_ok_deltas.append(hash_delta)
+
+    total = int(sum(verdict_counts.values()))
+    pass_count = int(verdict_counts.get("PASS", 0))
+    fail_count = int(verdict_counts.get("FAIL", 0))
+    inconclusive_count = int(verdict_counts.get("INCONCLUSIVE", 0))
+    ratio = lambda value: round((value / total), 3) if total else 0.0
+    top_proposals = [{"proposal_id": key, "count": int(value)} for key, value in proposal_counts.most_common(3)]
+    evaluated_proposals = set(linked_eval_ids.values())
+    approved_but_no_eval = sorted(approved_shadow_proposals - evaluated_proposals)
+    latencies_ms: List[float] = []
+    for proposal_id, approval_ts in latest_approval_ts.items():
+        eval_ts = earliest_eval_ts.get(proposal_id)
+        if eval_ts is None:
+            continue
+        if eval_ts >= approval_ts:
+            latencies_ms.append(float(eval_ts - approval_ts))
+    end_of_day_ms = int(datetime(day.year, day.month, day.day, tzinfo=timezone.utc).timestamp() * 1000) + 86_400_000 - 1
+    pending_ages_ms = [
+        float(max(0, end_of_day_ms - latest_approval_ts.get(proposal_id, end_of_day_ms)))
+        for proposal_id in approved_but_no_eval
+    ]
+    latency_p50 = _percentile(latencies_ms, 0.5) if latencies_ms else 0.0
+    latency_p95 = _percentile(latencies_ms, 0.95) if latencies_ms else 0.0
+    oldest_pending_age = max(pending_ages_ms) if pending_ages_ms else 0.0
+
+    def _minmax(values: List[float]) -> Dict[str, float]:
+        if not values:
+            return {"min": 0.0, "max": 0.0}
+        return {"min": round(min(values), 3), "max": round(max(values), 3)}
+
+    return {
+        "counts": {
+            "pass": pass_count,
+            "fail": fail_count,
+            "inconclusive": inconclusive_count,
+            "approved_count": len(approved_shadow_proposals),
+            "pending_count": len(approved_but_no_eval),
+            "approved_shadow_count": len(approved_shadow_proposals),
+            "approved_but_no_eval_count": len(approved_but_no_eval),
+        },
+        "by_verdict_ratio": {
+            "pass_ratio": ratio(pass_count),
+            "fail_ratio": ratio(fail_count),
+            "inconclusive_ratio": ratio(inconclusive_count),
+        },
+        "delta_summary": {
+            "contract_errors_ratio": _minmax(contract_error_deltas),
+            "hash_integrity_ok_rate": _minmax(hash_ok_deltas),
+        },
+        "linked_proposals": top_proposals,
+        "pending_proposals": approved_but_no_eval[:3],
+        "approval_to_eval_latency_ms_p50": int(round(latency_p50)),
+        "approval_to_eval_latency_ms_p95": int(round(latency_p95)),
+        "oldest_pending_age_ms": int(round(oldest_pending_age)),
+    }
+
+
+def _eval_flow_view(eval_summary: Dict[str, Any]) -> Dict[str, Any]:
+    counts = eval_summary.get("counts") if isinstance(eval_summary.get("counts"), dict) else {}
+    approved = int(
+        counts.get(
+            "approved_count",
+            counts.get("approved_shadow_count", 0),
+        )
+        or 0
+    )
+    pending = int(
+        counts.get(
+            "pending_count",
+            counts.get("approved_but_no_eval_count", 0),
+        )
+        or 0
+    )
+    pending_ratio = (float(pending) / float(approved)) if approved > 0 else 0.0
+    return {
+        "approved_count": approved,
+        "pending_count": pending,
+        "pending_ratio": round(pending_ratio, 3),
+        "oldest_pending_age_ms": int(eval_summary.get("oldest_pending_age_ms", 0) or 0),
+        "latency_ms_p95": int(eval_summary.get("approval_to_eval_latency_ms_p95", 0) or 0),
+    }
+
+
 def _weekly_metric_summary(
     out_dir: Path,
     day: date,
     current_report: Dict[str, Any],
-) -> Dict[str, float]:
+    *,
+    telemetry_dir: Path | None = None,
+    flow_thresholds: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     sat_values: List[float] = []
     low_values: List[float] = []
+    mecpe_hash_ok_values: List[float] = []
+    mecpe_conflict_values: List[float] = []
+    mecpe_staleness_values: List[float] = []
+    mecpe_line_totals: List[float] = []
+    mecpe_contract_error_totals: List[float] = []
+    mecpe_contract_error_ratios: List[float] = []
+    mecpe_top_type_counts: Counter[str] = Counter()
+    yellow_days = 0
     current_metrics = _extract_nightly_metrics(current_report)
     sat_values.append(current_metrics["sat_p95"])
     low_values.append(current_metrics["low_ratio"])
+    mecpe_hash_ok_values.append(current_metrics["mecpe_hash_ok_rate"])
+    mecpe_conflict_values.append(current_metrics["mecpe_conflict_rate"])
+    mecpe_staleness_values.append(current_metrics["mecpe_staleness_ratio"])
+    mecpe_line_totals.append(current_metrics["mecpe_lines_total"])
+    mecpe_contract_error_totals.append(current_metrics["mecpe_contract_error_total"])
+    mecpe_contract_error_ratios.append(current_metrics["mecpe_contract_error_ratio"])
+    if str(current_metrics.get("health_status") or "").upper() in {"YELLOW", "RED"}:
+        yellow_days += 1
+    top_type = str(current_metrics.get("mecpe_contract_error_top_type") or "")
+    if top_type:
+        mecpe_top_type_counts[top_type] += 1
     for candidate in _week_day_range(day):
         if candidate == day:
             continue
@@ -147,15 +428,194 @@ def _weekly_metric_summary(
         metrics = _extract_nightly_metrics(payload)
         sat_values.append(metrics["sat_p95"])
         low_values.append(metrics["low_ratio"])
+        mecpe_hash_ok_values.append(metrics["mecpe_hash_ok_rate"])
+        mecpe_conflict_values.append(metrics["mecpe_conflict_rate"])
+        mecpe_staleness_values.append(metrics["mecpe_staleness_ratio"])
+        mecpe_line_totals.append(metrics["mecpe_lines_total"])
+        mecpe_contract_error_totals.append(metrics["mecpe_contract_error_total"])
+        mecpe_contract_error_ratios.append(metrics["mecpe_contract_error_ratio"])
+        if str(metrics.get("health_status") or "").upper() in {"YELLOW", "RED"}:
+            yellow_days += 1
+        top_type = str(metrics.get("mecpe_contract_error_top_type") or "")
+        if top_type:
+            mecpe_top_type_counts[top_type] += 1
+
+    health_flags: List[str] = []
+    if any(value > 0.0 for value in mecpe_contract_error_totals):
+        health_flags.append("mecpe_contract_errors")
+    ratio_max = max(mecpe_contract_error_ratios) if mecpe_contract_error_ratios else 0.0
+    high_priority_types = {"missing_required_key", "invalid_hash_len"}
+    has_high_priority = any((t in high_priority_types and c > 0) for t, c in mecpe_top_type_counts.items())
+
+    level_rank = {"OK": 0, "WARN": 1, "ALERT": 2}
+    level = "OK"
+    reasons: List[str] = []
+
+    def _raise(candidate: str, reason: str) -> None:
+        nonlocal level
+        if level_rank[candidate] > level_rank[level]:
+            level = candidate
+        reasons.append(reason)
+
+    if yellow_days >= 3:
+        _raise("WARN", "yellow_days>=3")
+    if yellow_days >= 5:
+        _raise("ALERT", "yellow_days>=5")
+    if ratio_max >= 0.01:
+        _raise("WARN", "ratio_max>=0.01")
+    if ratio_max >= 0.05:
+        _raise("ALERT", "ratio_max>=0.05")
+    if has_high_priority:
+        if level == "OK":
+            _raise("WARN", "high_priority_type_detected")
+        elif level == "WARN":
+            _raise("ALERT", "high_priority_type_detected")
+        else:
+            reasons.append("high_priority_type_detected")
+    top_types = [{"type": key, "count": int(value)} for key, value in mecpe_top_type_counts.most_common(3)]
     count = len(sat_values)
     sat_avg = (sum(sat_values) / count) if count else 0.0
     low_avg = (sum(low_values) / count) if count else 0.0
+    empty_eval_summary = {
+        "counts": {"pass": 0, "fail": 0, "inconclusive": 0},
+        "by_verdict_ratio": {"pass_ratio": 0.0, "fail_ratio": 0.0, "inconclusive_ratio": 0.0},
+        "delta_summary": {
+            "contract_errors_ratio": {"min": 0.0, "max": 0.0},
+            "hash_integrity_ok_rate": {"min": 0.0, "max": 0.0},
+        },
+        "linked_proposals": [],
+        "pending_proposals": [],
+        "approval_to_eval_latency_ms_p50": 0,
+        "approval_to_eval_latency_ms_p95": 0,
+        "oldest_pending_age_ms": 0,
+    }
+    shadow_eval = (
+        _weekly_eval_summary(
+            telemetry_dir,
+            day,
+            link_type="shadow_eval",
+            approval_decision="ACCEPT_SHADOW",
+        )
+        if telemetry_dir
+        else empty_eval_summary
+    )
+    canary_eval = (
+        _weekly_eval_summary(
+            telemetry_dir,
+            day,
+            link_type="canary_eval",
+            approval_decision="ACCEPT_CANARY",
+        )
+        if telemetry_dir
+        else empty_eval_summary
+    )
+    mecpe_eval_flow = {
+        "shadow": _eval_flow_view(shadow_eval),
+        "canary": _eval_flow_view(canary_eval),
+    }
+    day_ms = 86_400_000
+    cfg = flow_thresholds if isinstance(flow_thresholds, dict) else {}
+    min_approved_for_flow_alert = int(cfg.get("approved_count_min", 5) or 5)
+    warn_pending_ratio_threshold = float(cfg.get("pending_ratio_warn", 0.2) or 0.2)
+    alert_pending_ratio_threshold = float(cfg.get("pending_ratio_alert", 0.5) or 0.5)
+    warn_pending_age_days = int(cfg.get("oldest_pending_age_warn_days", 7) or 7)
+    alert_pending_age_days = int(cfg.get("oldest_pending_age_alert_days", 14) or 14)
+    warn_pending_age_ms = warn_pending_age_days * day_ms
+    alert_pending_age_ms = alert_pending_age_days * day_ms
+    flow_reasons: Dict[str, List[str]] = {"shadow": [], "canary": []}
+    for flow_name in ("shadow", "canary"):
+        flow = mecpe_eval_flow.get(flow_name, {})
+        approved_count = int(flow.get("approved_count", 0) or 0)
+        pending_ratio = float(flow.get("pending_ratio", 0.0) or 0.0)
+        oldest_pending_age_ms = int(flow.get("oldest_pending_age_ms", 0) or 0)
+        if approved_count >= min_approved_for_flow_alert and pending_ratio >= warn_pending_ratio_threshold:
+            reason = f"{flow_name}_pending_ratio>={warn_pending_ratio_threshold:.3f}".rstrip("0").rstrip(".")
+            flow_reasons[flow_name].append(reason)
+            _raise("WARN", reason)
+        if approved_count >= min_approved_for_flow_alert and pending_ratio >= alert_pending_ratio_threshold:
+            reason = f"{flow_name}_pending_ratio>={alert_pending_ratio_threshold:.3f}".rstrip("0").rstrip(".")
+            flow_reasons[flow_name].append(reason)
+            _raise("ALERT", reason)
+        if approved_count >= min_approved_for_flow_alert and oldest_pending_age_ms >= warn_pending_age_ms:
+            reason = f"{flow_name}_oldest_pending_age>={warn_pending_age_days}d"
+            flow_reasons[flow_name].append(reason)
+            _raise("WARN", reason)
+        if approved_count >= min_approved_for_flow_alert and oldest_pending_age_ms >= alert_pending_age_ms:
+            reason = f"{flow_name}_oldest_pending_age>={alert_pending_age_days}d"
+            flow_reasons[flow_name].append(reason)
+            _raise("ALERT", reason)
+    action_map = {
+        "pending_ratio>=0.5": "run_eval_queue_high_priority",
+        "pending_ratio>=0.2": "run_eval_queue",
+        "oldest_pending_age>=14d": "review_gate_decisions_urgent",
+        "oldest_pending_age>=7d": "review_gate_decisions",
+    }
+    recommended_flow_actions: List[str] = []
+    for flow_name in ("shadow", "canary"):
+        for reason in flow_reasons.get(flow_name, []):
+            for suffix, action in action_map.items():
+                if reason.endswith(suffix):
+                    recommended_flow_actions.append(f"{flow_name}:{action}")
+                    break
+    # Keep deterministic order and deduplicate.
+    recommended_flow_actions = list(dict.fromkeys(recommended_flow_actions))
+    thresholds_snapshot = {
+        "approved_count_min": min_approved_for_flow_alert,
+        "pending_ratio_warn": warn_pending_ratio_threshold,
+        "pending_ratio_alert": alert_pending_ratio_threshold,
+        "oldest_pending_age_warn_days": warn_pending_age_days,
+        "oldest_pending_age_alert_days": alert_pending_age_days,
+    }
+
     return {
         "count": float(count),
         "sat_p95_avg": round(sat_avg, 3),
         "sat_p95_max": round(max(sat_values) if sat_values else 0.0, 3),
         "low_ratio_avg": round(low_avg, 3),
         "low_ratio_max": round(max(low_values) if low_values else 0.0, 3),
+        "mecpe_hash_ok_rate_avg": round(
+            (sum(mecpe_hash_ok_values) / len(mecpe_hash_ok_values)) if mecpe_hash_ok_values else 0.0,
+            3,
+        ),
+        "mecpe_conflict_rate_max": round(max(mecpe_conflict_values) if mecpe_conflict_values else 0.0, 3),
+        "mecpe_staleness_ratio_max": round(max(mecpe_staleness_values) if mecpe_staleness_values else 0.0, 3),
+        "mecpe_audit": {
+            "hash_integrity": {
+                "ok_rate": round(
+                    (sum(mecpe_hash_ok_values) / len(mecpe_hash_ok_values)) if mecpe_hash_ok_values else 0.0,
+                    3,
+                )
+            },
+            "future_cause_conflict": {
+                "conflict_rate_max": round(max(mecpe_conflict_values) if mecpe_conflict_values else 0.0, 3)
+            },
+            "evidence_staleness": {
+                "missing_ratio_max": round(max(mecpe_staleness_values) if mecpe_staleness_values else 0.0, 3)
+            },
+            "contract_errors": {
+                "lines_total_sum": round(sum(mecpe_line_totals), 3),
+                "total_sum": round(sum(mecpe_contract_error_totals), 3),
+                "ratio_max": round(max(mecpe_contract_error_ratios) if mecpe_contract_error_ratios else 0.0, 3),
+            },
+        },
+        "health_flags": health_flags,
+        "mecpe_alert": {
+            "level": level,
+            "reasons": reasons,
+            "flow_reasons": flow_reasons,
+            "recommended_flow_actions": recommended_flow_actions,
+            "thresholds_snapshot": thresholds_snapshot,
+            "summary": {
+                "yellow_days": int(yellow_days),
+                "ratio_max": round(ratio_max, 3),
+                "total_sum": round(sum(mecpe_contract_error_totals), 3),
+                "lines_total_sum": round(sum(mecpe_line_totals), 3),
+                "top_types": top_types,
+            },
+        },
+        "mecpe_eval_flow": mecpe_eval_flow,
+        "mecpe_shadow_eval": shadow_eval,
+        "mecpe_canary_eval": canary_eval,
     }
 
 
@@ -232,6 +692,176 @@ def _recommended_action_code(
     if low_max >= 0.25:
         return "uncertainty_high"
     return "stable"
+
+
+def _iso_week_string_from_timestamp_ms(timestamp_ms: int) -> str:
+    dt = datetime.fromtimestamp(int(timestamp_ms) / 1000, tz=timezone.utc)
+    year, week, _ = dt.isocalendar()
+    return f"{year}-W{week:02d}"
+
+
+def _build_change_proposal_from_mecpe_alert(
+    *,
+    weekly_metrics: Dict[str, Any],
+    timestamp_ms: int,
+    rules: Dict[str, Any] | None = None,
+    contract_top_type: str | None = None,
+) -> Dict[str, Any] | None:
+    mecpe_alert = (weekly_metrics or {}).get("mecpe_alert") or {}
+    level = str(mecpe_alert.get("level") or "OK")
+    if level == "OK":
+        return None
+    reasons = mecpe_alert.get("reasons") or []
+    summary = mecpe_alert.get("summary") or {}
+    trigger = {
+        "kind": "mecpe_alert",
+        "level": level,
+        "reasons": reasons,
+        "summary": summary,
+    }
+    suggested_change = {
+        "action": "shadow_eval",
+        "target": "mecpe_pipeline",
+        "idea": "evaluate alternative prompt/model on replay before any rollout",
+        "hint": {"prefer": "last_known_good" if level == "ALERT" else "candidate"},
+    }
+    expected_effect = {
+        "primary": ["contract_errors_ratio_down", "health_yellow_days_down"],
+        "secondary": ["audit_reasons_stabilize"],
+    }
+    proposal = {
+        "timestamp_ms": int(timestamp_ms),
+        "trigger": trigger,
+        "suggested_change": suggested_change,
+        "expected_effect": expected_effect,
+        "risk_level": "LOW" if level == "WARN" else "MED",
+        "requires_gate": "shadow",
+        "source_week": _iso_week_string_from_timestamp_ms(int(timestamp_ms)),
+    }
+    if rules is not None:
+        allowed, reason = _proposal_allowed_by_rules(
+            rules=rules,
+            mecpe_alert_level=level,
+            contract_top_type=contract_top_type,
+            requires_gate=str(proposal.get("requires_gate") or ""),
+            risk_level=str(proposal.get("risk_level") or ""),
+        )
+        if not allowed:
+            return None
+        proposal["rule_reason"] = reason
+    return proposal
+
+
+def _load_mecpe_proposal_rules(default_path: Path) -> Dict[str, Any]:
+    path = Path(os.getenv("EQNET_MECPE_PROPOSAL_RULES", str(default_path)))
+    if not path.exists():
+        return {
+            "schema_version": "mecpe_proposal_rules.v0",
+            "default_policy": {"action": "suppress", "reason": "rules_missing"},
+            "rules": [],
+            "risk_order": ["LOW", "MED", "HIGH"],
+            "gate_order": ["shadow", "canary", "rollout"],
+        }
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            payload = yaml.safe_load(handle) or {}
+        if isinstance(payload, dict):
+            return payload
+    except Exception:
+        pass
+    return {
+        "schema_version": "mecpe_proposal_rules.v0",
+        "default_policy": {"action": "suppress", "reason": "rules_invalid"},
+        "rules": [],
+        "risk_order": ["LOW", "MED", "HIGH"],
+        "gate_order": ["shadow", "canary", "rollout"],
+    }
+
+
+def _load_mecpe_alert_thresholds(default_path: Path) -> Dict[str, Any]:
+    default_payload = {
+        "schema_version": "mecpe_alert_thresholds.v0",
+        "approved_count_min": 5,
+        "pending_ratio_warn": 0.2,
+        "pending_ratio_alert": 0.5,
+        "oldest_pending_age_warn_days": 7,
+        "oldest_pending_age_alert_days": 14,
+    }
+    path = Path(os.getenv("EQNET_MECPE_ALERT_THRESHOLDS", str(default_path)))
+    if not path.exists():
+        return default_payload
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            payload = yaml.safe_load(handle) or {}
+        if not isinstance(payload, dict):
+            return default_payload
+        return {
+            "schema_version": str(payload.get("schema_version") or default_payload["schema_version"]),
+            "approved_count_min": int(payload.get("approved_count_min", default_payload["approved_count_min"]) or default_payload["approved_count_min"]),
+            "pending_ratio_warn": float(payload.get("pending_ratio_warn", default_payload["pending_ratio_warn"]) or default_payload["pending_ratio_warn"]),
+            "pending_ratio_alert": float(payload.get("pending_ratio_alert", default_payload["pending_ratio_alert"]) or default_payload["pending_ratio_alert"]),
+            "oldest_pending_age_warn_days": int(payload.get("oldest_pending_age_warn_days", default_payload["oldest_pending_age_warn_days"]) or default_payload["oldest_pending_age_warn_days"]),
+            "oldest_pending_age_alert_days": int(payload.get("oldest_pending_age_alert_days", default_payload["oldest_pending_age_alert_days"]) or default_payload["oldest_pending_age_alert_days"]),
+        }
+    except Exception:
+        return default_payload
+
+
+def _proposal_allowed_by_rules(
+    *,
+    rules: Dict[str, Any],
+    mecpe_alert_level: str,
+    contract_top_type: str | None,
+    requires_gate: str,
+    risk_level: str,
+) -> tuple[bool, str]:
+    default = (rules.get("default_policy") or {}) if isinstance(rules, dict) else {}
+    default_action = str(default.get("action") or "suppress").lower()
+    default_reason = str(default.get("reason") or "default_policy")
+
+    def _contains(value: str, arr: Any) -> bool:
+        return isinstance(arr, list) and value in [str(v) for v in arr]
+
+    for rule in (rules.get("rules") or []):
+        if not isinstance(rule, dict):
+            continue
+        when = rule.get("when") if isinstance(rule.get("when"), dict) else {}
+        then = rule.get("then") if isinstance(rule.get("then"), dict) else {}
+        ok = True
+        if "mecpe_alert_level_in" in when:
+            ok = ok and _contains(mecpe_alert_level, when.get("mecpe_alert_level_in"))
+        if "contract_top_type_in" in when:
+            ok = ok and contract_top_type is not None and _contains(contract_top_type, when.get("contract_top_type_in"))
+        if "contract_top_type_not_in" in when:
+            ok = ok and (
+                contract_top_type is None or not _contains(contract_top_type, when.get("contract_top_type_not_in"))
+            )
+        if "requires_gate_not_in" in when:
+            ok = ok and (requires_gate not in [str(v) for v in (when.get("requires_gate_not_in") or [])])
+        if "requires_gate_in" in when:
+            ok = ok and (requires_gate in [str(v) for v in (when.get("requires_gate_in") or [])])
+        if not ok:
+            continue
+
+        action = str(then.get("action") or "suppress").lower()
+        reason = str(then.get("reason") or rule.get("rule_id") or "rule_matched")
+        if action == "suppress":
+            return False, reason
+
+        allowed_gate = str(then.get("requires_gate") or requires_gate)
+        if allowed_gate != requires_gate:
+            return False, f"{reason}:gate_mismatch"
+
+        max_risk = str(then.get("max_risk_level") or "MED")
+        risk_order = rules.get("risk_order") if isinstance(rules.get("risk_order"), list) else ["LOW", "MED", "HIGH"]
+        try:
+            if risk_order.index(risk_level) > risk_order.index(max_risk):
+                return False, f"{reason}:risk_too_high"
+        except Exception:
+            return False, f"{reason}:risk_order_invalid"
+        return True, reason
+
+    return default_action == "allow", default_reason
 
 
 def _load_previous_weekly_snapshot(weekly_json_path: Path, day: date) -> Dict[str, Any]:
@@ -1682,7 +2312,14 @@ def main() -> None:
     iso_year, iso_week, _ = day.isocalendar()
     weekly_path = out_json.parent / f"weekly_calibration_{iso_year}-W{iso_week:02d}.md"
     weekly_json_path = out_json.parent / f"weekly_calibration_{iso_year}-W{iso_week:02d}.json"
-    weekly_metrics = _weekly_metric_summary(out_json.parent, day, payload)
+    flow_thresholds = _load_mecpe_alert_thresholds(ROOT / "configs" / "mecpe_alert_thresholds_v0.yaml")
+    weekly_metrics = _weekly_metric_summary(
+        out_json.parent,
+        day,
+        payload,
+        telemetry_dir=telemetry_path.parent,
+        flow_thresholds=flow_thresholds,
+    )
     snapshot = _weekly_snapshot(runtime_cfg, payload)
     previous_snapshot = _load_previous_weekly_snapshot(weekly_json_path, day)
     changed_keys = _snapshot_changed_keys(snapshot, previous_snapshot)
@@ -1746,6 +2383,40 @@ def main() -> None:
         json.dumps(weekly_payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+    weekly_timestamp_ms = int(datetime(day.year, day.month, day.day, tzinfo=timezone.utc).timestamp() * 1000)
+    proposal_rules = _load_mecpe_proposal_rules(ROOT / "configs" / "mecpe_proposal_rules_v0.yaml")
+    top_types = (
+        (((weekly_metrics.get("mecpe_alert") or {}).get("summary") or {}).get("top_types"))
+        if isinstance((weekly_metrics.get("mecpe_alert") or {}).get("summary"), dict)
+        else []
+    )
+    contract_top_type = ""
+    if isinstance(top_types, list) and top_types:
+        first = top_types[0]
+        if isinstance(first, dict):
+            contract_top_type = str(first.get("type") or "")
+    proposal = _build_change_proposal_from_mecpe_alert(
+        weekly_metrics=weekly_metrics,
+        timestamp_ms=weekly_timestamp_ms,
+        rules=proposal_rules,
+        contract_top_type=contract_top_type or None,
+    )
+    if proposal:
+        proposal_writer = ChangeProposalWriter(
+            ChangeProposalWriterConfig(telemetry_dir=telemetry_path.parent)
+        )
+        proposal_writer.append(
+            timestamp_ms=int(proposal["timestamp_ms"]),
+            trigger=proposal["trigger"],
+            suggested_change=proposal["suggested_change"],
+            expected_effect=proposal["expected_effect"],
+            risk_level=str(proposal["risk_level"]),
+            requires_gate=str(proposal["requires_gate"]),
+            source_week=str(proposal["source_week"]),
+            proposal_id=None,
+            extra=None,
+        )
 
     print(f"[info] nightly report: {out_json}")
     print(f"[info] nightly markdown: {out_md}")

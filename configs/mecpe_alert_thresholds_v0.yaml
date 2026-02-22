@@ -1,0 +1,10 @@
+schema_version: mecpe_alert_thresholds.v0
+description: >
+  Frozen thresholds for MECPE evaluation-flow alerts in weekly summary.
+  These are operational defaults and should be tuned from observed distributions.
+
+approved_count_min: 5
+pending_ratio_warn: 0.2
+pending_ratio_alert: 0.5
+oldest_pending_age_warn_days: 7
+oldest_pending_age_alert_days: 14

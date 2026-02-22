@@ -181,6 +181,30 @@ def test_log_moment_emits_trace_when_flag_enabled(
     assert qualia_obs.get("output_control_fingerprint")
 
 
+def test_log_moment_emits_mecpe_record_v0(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    hub = _hub(tmp_path, monkeypatch)
+    moment = _dummy_moment()
+    hub.log_moment(moment, "hello user")
+    telemetry_dir = tmp_path / "telemetry"
+    mecpe_files = sorted(telemetry_dir.glob("mecpe-*.jsonl"))
+    assert len(mecpe_files) == 1
+    mecpe_file = mecpe_files[0]
+    payload = json.loads(mecpe_file.read_text(encoding="utf-8").strip().splitlines()[-1])
+    assert payload.get("schema_version") == "mecpe_record.v0"
+    assert isinstance(payload.get("prompt_hash"), str)
+    assert len(payload.get("prompt_hash") or "") == 64
+    assert isinstance((payload.get("model") or {}).get("version"), str)
+    assert isinstance(payload.get("text_hash"), str)
+    assert len(payload.get("text_hash") or "") == 64
+    assert "audio_sha256" in payload
+    assert "video_sha256" in payload
+
+
 def test_runtime_delegate_resolution_prefers_external_via_env(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -291,6 +292,191 @@ def _confidence_label(value: float, *, low_max: float, mid_max: float) -> str:
     if value <= mid_max:
         return "mid"
     return "high"
+
+
+def _is_sha256_hex(value: Any, *, allow_empty: bool = False) -> bool:
+    if value is None:
+        return allow_empty
+    text = str(value).strip().lower()
+    if not text:
+        return allow_empty
+    return len(text) == 64 and all(ch in "0123456789abcdef" for ch in text)
+
+
+def _turn_index(turn_id: Any) -> int | None:
+    text = str(turn_id or "")
+    if not text:
+        return None
+    match = re.search(r"(\d+)(?!.*\d)", text)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+def _audit_mecpe(cfg: NightlyAuditConfig) -> Dict[str, Any]:
+    day_compact = cfg.date_yyyy_mm_dd.replace("-", "")
+    candidates = [
+        cfg.trace_root.parent / f"mecpe-{day_compact}.jsonl",
+        cfg.trace_root / f"mecpe-{day_compact}.jsonl",
+    ]
+    log_files = [str(path) for path in candidates if path.exists()]
+    records: List[Dict[str, Any]] = []
+    mecpe_lines_total = 0
+    contract_error_total = 0
+    contract_error_types: Counter[str] = Counter()
+    required_keys = (
+        "schema_version",
+        "timestamp_ms",
+        "turn_id",
+        "prompt_hash",
+        "model",
+        "text_hash",
+        "audio_sha256",
+        "video_sha256",
+    )
+    for path in candidates:
+        if not path.exists():
+            continue
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                mecpe_lines_total += 1
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    contract_error_total += 1
+                    contract_error_types["json_decode"] += 1
+                    continue
+                if not isinstance(row, dict):
+                    contract_error_total += 1
+                    contract_error_types["invalid_row_type"] += 1
+                    continue
+                missing_required = [key for key in required_keys if key not in row]
+                if missing_required:
+                    contract_error_total += 1
+                    contract_error_types["missing_required_key"] += 1
+                    continue
+                if not isinstance(row.get("model"), dict) or not str((row.get("model") or {}).get("version") or "").strip():
+                    contract_error_total += 1
+                    contract_error_types["invalid_model_version"] += 1
+                    continue
+                records.append(row)
+
+    total = len(records)
+    rationale_hash_count = 0
+    missing_rationale_count = 0
+    evidence_missing_count = 0
+    missing_audio_count = 0
+    missing_video_count = 0
+    pair_total = 0
+    future_conflict_count = 0
+    future_conflict_samples: List[str] = []
+    span_missing_count = 0
+    hash_integrity_ok_count = 0
+    hash_invalid_count = 0
+
+    for row in records:
+        stage1 = row.get("stage1_emotion") if isinstance(row.get("stage1_emotion"), dict) else {}
+        stage2 = row.get("stage2_cause_pair") if isinstance(row.get("stage2_cause_pair"), dict) else {}
+        stage3 = row.get("stage3_cause_span") if isinstance(row.get("stage3_cause_span"), dict) else {}
+
+        stage1_rationale = str(stage1.get("rationale_hash") or "").strip()
+        stage2_rationale = str(stage2.get("rationale_hash") or "").strip()
+        if stage1_rationale or stage2_rationale:
+            rationale_hash_count += 1
+        else:
+            missing_rationale_count += 1
+
+        audio_sha = str(row.get("audio_sha256") or "").strip()
+        video_sha = str(row.get("video_sha256") or "").strip()
+        if not audio_sha:
+            missing_audio_count += 1
+        if not video_sha:
+            missing_video_count += 1
+        if not audio_sha or not video_sha:
+            evidence_missing_count += 1
+
+        has_pair = bool(stage2.get("cause_turn_id"))
+        if has_pair:
+            pair_total += 1
+            target_index = _turn_index(row.get("turn_id"))
+            cause_index = _turn_index(stage2.get("cause_turn_id"))
+            if target_index is not None and cause_index is not None and cause_index > target_index:
+                future_conflict_count += 1
+                if len(future_conflict_samples) < 3:
+                    future_conflict_samples.append(str(row.get("turn_id") or ""))
+            has_valid_span = isinstance(stage3.get("start_char"), int) and isinstance(stage3.get("end_char"), int)
+            if not has_valid_span:
+                span_missing_count += 1
+
+        schema_ok = row.get("schema_version") == "mecpe_record.v0"
+        model = row.get("model") if isinstance(row.get("model"), dict) else {}
+        model_ok = bool(str(model.get("version") or "").strip())
+        hash_ok = (
+            _is_sha256_hex(row.get("prompt_hash"))
+            and _is_sha256_hex(row.get("text_hash"))
+            and _is_sha256_hex(row.get("audio_sha256"), allow_empty=True)
+            and _is_sha256_hex(row.get("video_sha256"), allow_empty=True)
+        )
+        if schema_ok and model_ok and hash_ok:
+            hash_integrity_ok_count += 1
+        else:
+            hash_invalid_count += 1
+            if (
+                not _is_sha256_hex(row.get("prompt_hash"))
+                or not _is_sha256_hex(row.get("text_hash"))
+                or not _is_sha256_hex(row.get("audio_sha256"), allow_empty=True)
+                or not _is_sha256_hex(row.get("video_sha256"), allow_empty=True)
+            ):
+                contract_error_total += 1
+                contract_error_types["invalid_hash_len"] += 1
+
+    denom = float(total) if total else 0.0
+    pair_denom = float(pair_total) if pair_total else 0.0
+    line_denom = float(mecpe_lines_total) if mecpe_lines_total else 0.0
+    top_type = ""
+    if contract_error_types:
+        top_type = contract_error_types.most_common(1)[0][0]
+    return {
+        "log_files": log_files,
+        "mecpe_lines_total": mecpe_lines_total,
+        "total_records": total,
+        "rationale_hash_coverage": round((rationale_hash_count / denom), 3) if denom else 0.0,
+        "missing_rationale_count": missing_rationale_count,
+        "evidence_staleness": {
+            "missing_count": evidence_missing_count,
+            "missing_audio_count": missing_audio_count,
+            "missing_video_count": missing_video_count,
+            "missing_ratio": round((evidence_missing_count / denom), 3) if denom else 0.0,
+        },
+        "future_cause_conflict": {
+            "pair_total": pair_total,
+            "conflict_count": future_conflict_count,
+            "conflict_rate": round((future_conflict_count / pair_denom), 3) if pair_denom else 0.0,
+            "sample_ids": future_conflict_samples,
+        },
+        "span_missing": {
+            "pair_total": pair_total,
+            "missing_count": span_missing_count,
+            "missing_rate": round((span_missing_count / pair_denom), 3) if pair_denom else 0.0,
+        },
+        "hash_integrity": {
+            "ok_count": hash_integrity_ok_count,
+            "invalid_count": hash_invalid_count,
+            "ok_rate": round((hash_integrity_ok_count / denom), 3) if denom else 0.0,
+        },
+        "contract_errors": {
+            "total": contract_error_total,
+            "ratio": round((contract_error_total / line_denom), 3) if line_denom else 0.0,
+            "top_type": top_type,
+            "by_type": dict(contract_error_types),
+        },
+    }
 
 
 def _ru_v0_summary(records: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -1130,6 +1316,8 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
     if cfg.health_thresholds:
         thresholds.update(cfg.health_thresholds)
 
+    mecpe_audit = _audit_mecpe(cfg)
+
     health = _evaluate_health(
         len(fatal_evidence),
         warn_fail_rate,
@@ -1228,6 +1416,14 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
             level="YELLOW",
             reason="phase transition without projection fingerprint update detected",
         )
+    mecpe_contract_errors = (mecpe_audit.get("contract_errors") or {})
+    if int(mecpe_contract_errors.get("total") or 0) > 0:
+        top_type = str(mecpe_contract_errors.get("top_type") or "unknown")
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason=f"mecpe contract errors detected (top={top_type})",
+        )
 
     qualia_gate_stats = _qualia_gate_boundary_stats(records)
     presence_stats = _qualia_gate_presence_stats(records)
@@ -1296,6 +1492,7 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
             "high_ratio": round((high_count / confidence_total), 3) if confidence_total else 0.0,
             "thresholds": {"low_max": conf_low_max, "mid_max": conf_mid_max},
         },
+        "mecpe_audit": mecpe_audit,
     }
 
     cfg.out_root.mkdir(parents=True, exist_ok=True)
