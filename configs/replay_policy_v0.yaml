@@ -1,0 +1,20 @@
+schema_version: replay_policy_v0
+default_eval_time_utc: "23:59:00"
+config_set_search_paths:
+  - "configs/config_sets/{name}"
+required_files:
+  - "fsm_policy_v0.yaml"
+  - "forecast_effect_rules_v0.yaml"
+  - "realtime_forecast_rules_v0.yaml"
+  - "imagery_policy_v0.yaml"
+  - "perception_quality_rules_v0.yaml"
+  - "lifelong_companion_policy_v0.yaml"
+  - "sync_policy_v0.yaml"
+  - "sync_quality_rules_v0.yaml"
+  - "realtime_downshift_policy_v0.yaml"
+  - "green_bridge_policy_v0.yaml"
+  - "behavior_change_v0.yaml"
+emit_config_fingerprints: true
+output:
+  write_json: true
+  write_markdown: true

@@ -1,0 +1,16 @@
+schema_version: imagery_policy_v0
+ttl_sec_default: 86400
+promotion_rules:
+  minimum_agreement_count: 2
+  required_evidence_types:
+    - sensor
+    - contract
+hypothesis_codebook:
+  - HYPOTHESIS_ENV_RISK
+  - HYPOTHESIS_SOCIAL_DRIFT
+  - HYPOTHESIS_SELF_STRESS
+outcome_reason_codes:
+  imagery_decayed: IMAGERY_DECAYED
+  unknown_policy_mismatch: UNKNOWN_POLICY_MISMATCH
+  unknown_invalid_contract: UNKNOWN_INVALID_CONTRACT
+  unknown_missing_evidence: UNKNOWN_MISSING_EVIDENCE

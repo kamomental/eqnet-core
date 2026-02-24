@@ -1,0 +1,16 @@
+schema_version: realtime_downshift_policy_v0
+policy_version: realtime_downshift_policy_v0
+policy_source: configs/config_sets/B/realtime_downshift_policy_v0.yaml
+
+harm_streak_threshold: 2
+unknown_streak_threshold: 3
+cooldown_sec: 240
+actions:
+  - STOP_SYNC_PROPOSALS
+  - LOWER_COUPLING_CAP
+  - INCREASE_MIN_CONFIDENCE_TO_EMIT
+
+reason_codes:
+  harm_streak: DOWNSHIFT_HARM_STREAK
+  unknown_streak: DOWNSHIFT_UNKNOWN_STREAK
+  active: DOWNSHIFT_ACTIVE

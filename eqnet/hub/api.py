@@ -38,6 +38,7 @@ from eqnet.runtime.external_runtime import (
     ExternalRuntimeDelegate,
     ExternalRuntimeDelegateV2,
 )
+from eqnet.runtime.adaptive_fsm import load_fsm_policy
 from eqnet.telemetry.trace_paths import TracePathConfig, trace_output_path
 from eqnet.telemetry.trace_writer import append_trace_event
 from eqnet.telemetry.nightly_audit import NightlyAuditConfig, generate_audit
@@ -112,6 +113,7 @@ class EQNetHub:
             or getattr(self._runtime_delegate, "runtime_version", None)
             or DEFAULT_RUNTIME_VERSION
         )
+        self._fsm_policy_meta = self._load_fsm_policy_meta()
         if persona is not None:
             self._apply_persona_defaults(persona)
 
@@ -703,6 +705,9 @@ class EQNetHub:
                     "repair_event": repair_event or RepairEvent.NONE.value,
                     "repair_reason_codes": list(repair_reason_codes or self._repair_snapshot.reason_codes),
                     "repair_fingerprint": repair_snapshot_fingerprint or repair_fingerprint(self._repair_snapshot),
+                    "fsm_policy_fingerprint": str(self._fsm_policy_meta.get("policy_fingerprint") or ""),
+                    "fsm_policy_version": str(self._fsm_policy_meta.get("policy_version") or ""),
+                    "fsm_policy_source": str(self._fsm_policy_meta.get("policy_source") or ""),
                     "phase_override_applied": bool(thermo.get("phase_override_applied", False)),
                     **self._memory_thermo_contract_fields(
                         memory_entropy_delta=_maybe_float(thermo.get("memory_entropy_delta")),
@@ -1111,6 +1116,9 @@ class EQNetHub:
                         "defrag_metrics_before": dict(thermo.get("defrag_metrics_before") or {}),
                         "defrag_metrics_after": dict(thermo.get("defrag_metrics_after") or {}),
                         "defrag_metrics_delta": dict(thermo.get("defrag_metrics_delta") or {}),
+                        "fsm_policy_fingerprint": str(self._fsm_policy_meta.get("policy_fingerprint") or ""),
+                        "fsm_policy_version": str(self._fsm_policy_meta.get("policy_version") or ""),
+                        "fsm_policy_source": str(self._fsm_policy_meta.get("policy_source") or ""),
                         "phase_override_applied": bool(thermo.get("phase_override_applied", False)),
                         **thermo_fields,
                     }
@@ -1203,6 +1211,9 @@ class EQNetHub:
                         "mismatch_reason_codes": mismatch_reason_codes,
                         "event_id": f"hub:query_state:{resolved_day_key}:{now_ms}",
                         "trace_id": f"query_state:{resolved_day_key}",
+                        "fsm_policy_fingerprint": str(self._fsm_policy_meta.get("policy_fingerprint") or ""),
+                        "fsm_policy_version": str(self._fsm_policy_meta.get("policy_version") or ""),
+                        "fsm_policy_source": str(self._fsm_policy_meta.get("policy_source") or ""),
                         **self._memory_thermo_contract_fields(),
                     }
                 }
@@ -1222,6 +1233,27 @@ class EQNetHub:
             "invariants": {},
         }
         append_trace_event(target, event)
+
+    def _load_fsm_policy_meta(self) -> Dict[str, str]:
+        try:
+            policy = load_fsm_policy()
+            canonical = {
+                "schema_version": str(policy.get("schema_version") or ""),
+                "policy_version": str(policy.get("policy_version") or ""),
+                "initial_mode": str(policy.get("initial_mode") or ""),
+                "transitions": _normalize_for_hash(policy.get("transitions") or []),
+            }
+            return {
+                "policy_fingerprint": self._fingerprint_json_payload(canonical),
+                "policy_version": str(policy.get("policy_version") or "fsm_policy_v0"),
+                "policy_source": str(policy.get("policy_source") or "configs/fsm_policy_v0.yaml"),
+            }
+        except Exception:
+            return {
+                "policy_fingerprint": "",
+                "policy_version": "fsm_policy_v0",
+                "policy_source": "configs/fsm_policy_v0.yaml",
+            }
 
 def _env_truthy(name: str) -> bool:
     value = os.getenv(name)

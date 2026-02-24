@@ -1,0 +1,11 @@
+schema_version: forecast_effect_rules_v0
+effect_thresholds:
+  deterioration_helped_delta: -0.05
+  deterioration_harmed_delta: 0.05
+reason_codes:
+  helped_deterioration_down: EFFECT_HELPED_DETERIORATION_DOWN
+  harmed_deterioration_up: EFFECT_HARMED_DETERIORATION_UP
+  no_effect: EFFECT_NO_EFFECT
+  unknown_missing_baseline: EFFECT_UNKNOWN_MISSING_BASELINE
+  unknown_policy_mismatch: EFFECT_UNKNOWN_POLICY_MISMATCH
+  unknown_data_gap: EFFECT_UNKNOWN_DATA_GAP

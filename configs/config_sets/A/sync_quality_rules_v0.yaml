@@ -1,0 +1,29 @@
+schema_version: sync_quality_rules_v0
+policy_version: sync_quality_rules_v0
+policy_source: configs/config_sets/A/sync_quality_rules_v0.yaml
+
+freshness:
+  ttl_sec_default: 10
+  low_freshness_threshold: 0.25
+
+confidence:
+  min_confidence_to_emit: 0.4
+  default_confidence: 0.7
+
+noise:
+  high_noise_threshold: 0.75
+  default_noise: 0.3
+  noise_penalty_weight: 0.2
+
+priority_weights:
+  w_fresh: 0.5
+  w_conf: 0.35
+  w_noise: 0.15
+
+reason_codes:
+  low_sync_r: LOW_SYNC_R
+  high_noise: HIGH_NOISE
+  over_coupled: OVER_COUPLED
+  unknown_ttl_expired: UNKNOWN_TTL_EXPIRED
+  unknown_policy_mismatch: UNKNOWN_POLICY_MISMATCH
+  unknown_invalid_contract: UNKNOWN_INVALID_CONTRACT

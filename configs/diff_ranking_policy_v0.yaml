@@ -1,0 +1,16 @@
+ranking_version: diff_ranking_policy_v0
+weights:
+  harmed_rate: 100
+  unknown_rate: 50
+  blocked_rate: 40
+  helped_rate: 10
+  sync_r_metric: 15
+direction:
+  harmed_rate: increase_is_worse
+  unknown_rate: increase_is_worse
+  blocked_rate: increase_is_worse
+  helped_rate: increase_is_better
+  sync_r_metric: increase_is_better
+modes:
+  regressions_first: true
+  top_k: 20

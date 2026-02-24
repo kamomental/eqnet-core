@@ -1,0 +1,50 @@
+schema_version: lifelong_companion_policy_v0
+policy_version: lifelong_companion_policy_v0
+policy_source: configs/config_sets/A/lifelong_companion_policy_v0.yaml
+
+principles:
+  mutualism:
+    enabled: true
+    equal_dignity: true
+    self_sacrifice_forbidden: true
+    unilateral_dependence_forbidden: true
+  agency:
+    human_final_decision: true
+    proposal_only_mode: true
+    requires_approval_for_actions: true
+  safety:
+    crisis_escalation_enabled: true
+    reality_anchor_required: true
+    non_isolation_required: true
+  privacy:
+    plaintext_minimization_required: true
+    pii_minimization_required: true
+    redact_default: true
+  audit:
+    append_only_required: true
+    policy_mismatch_unknown: true
+    idempotency_required: true
+    fingerprint_required: true
+
+reciprocity_contract:
+  burden_limits:
+    max_consecutive_high_intensity_sessions: 3
+    required_recovery_interval_hours: 12
+  mutual_care_signals:
+    - CARE_ACK
+    - BOUNDARY_RESPECTED
+    - RECOVERY_GRANTED
+  imbalance_reason_codes:
+    - RECIPROCITY_IMBALANCE
+    - SELF_SACRIFICE_RISK
+    - ISOLATION_RISK
+
+operational_gates:
+  blocker_reason_codes:
+    - CRISIS_UNESCALATED
+    - CONSENT_MISSING
+    - RECIPROCITY_IMBALANCE
+    - SELF_SACRIFICE_RISK
+  warn_reason_codes:
+    - RECOVERY_WINDOW_MISSED
+    - BOUNDARY_SIGNAL_WEAK

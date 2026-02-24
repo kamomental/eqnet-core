@@ -1,0 +1,25 @@
+﻿schema_version: realtime_forecast_rules_v0
+score_thresholds:
+  proposal_min: 0.55
+ttl_sec_default: 240
+target_mode_mapping:
+  high: DEGRADED
+  medium: DRIFTING
+  low: RECOVERING
+reason_code_map:
+  sat_ratio_trend_up: RF_SAT_RATIO_TREND_UP
+  confidence_low_ratio_trend_up: RF_CONFIDENCE_LOW_RATIO_TREND_UP
+  contract_error_ratio_high: RF_CONTRACT_ERROR_RATIO_HIGH
+  pending_ratio_high: RF_PENDING_RATIO_HIGH
+  baseline_watch: RF_BASELINE_WATCH
+  fsm_mode_stable: RF_FSM_MODE_STABLE
+  fsm_mode_drifting: RF_FSM_MODE_DRIFTING
+  fsm_mode_degraded: RF_FSM_MODE_DEGRADED
+  fsm_mode_recovering: RF_FSM_MODE_RECOVERING
+outcome_reason_codes:
+  unknown_ttl_expired: UNKNOWN_TTL_EXPIRED
+  unknown_policy_mismatch: UNKNOWN_POLICY_MISMATCH
+  unknown_missing_baseline: UNKNOWN_MISSING_BASELINE
+  unknown_data_gap: UNKNOWN_DATA_GAP
+  unknown_invalid_contract: UNKNOWN_INVALID_CONTRACT
+

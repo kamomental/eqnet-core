@@ -1,0 +1,27 @@
+schema_version: perception_quality_rules_v0
+thresholds:
+  low_freshness_ratio: 0.25
+  low_confidence: 0.35
+  high_noise: 0.75
+priority_weights:
+  freshness: 0.5
+  confidence: 0.35
+  noise: 0.15
+channel_defaults:
+  sensor:
+    confidence: 0.75
+    noise: 0.25
+  dialogue:
+    confidence: 0.65
+    noise: 0.35
+  imagery:
+    confidence: 0.30
+    noise: 0.70
+  unknown:
+    confidence: 0.20
+    noise: 0.80
+reason_codes:
+  low_freshness: LOW_FRESHNESS
+  low_confidence: LOW_CONFIDENCE
+  high_noise: HIGH_NOISE
+  origin_unknown: ORIGIN_UNKNOWN

@@ -1,0 +1,13 @@
+schema_version: green_bridge_policy_v0
+policy_version: green_bridge_policy_v0
+policy_source: configs/config_sets/A/green_bridge_policy_v0.yaml
+enabled: false
+culture_resonance: 0.30
+tau_rate: 1.00
+score_weights:
+  delta: 0.65
+  control: 0.35
+priority_patch:
+  enabled: false
+  alpha: 0.0
+  max_delta: 0.0

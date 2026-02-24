@@ -1,0 +1,77 @@
+schema_version: fsm_policy_v0
+policy_version: fsm_policy_v0
+initial_mode: STABLE
+transitions:
+  - from: STABLE
+    to: DRIFTING
+    all:
+      - metric: pending_ratio
+        op: ">="
+        threshold: 0.25
+      - metric: shadow_pass_rate
+        op: "<="
+        threshold: 0.80
+    reason_code: drift_pending_and_pass_rate
+  - from: STABLE
+    to: DEGRADED
+    all:
+      - metric: contract_errors_ratio
+        op: ">="
+        threshold: 0.05
+    reason_code: degraded_contract_error_spike
+  - from: DRIFTING
+    to: DEGRADED
+    all:
+      - metric: memory_entropy_delta
+        op: ">="
+        threshold: 0.20
+      - metric: contract_errors_ratio
+        op: ">="
+        threshold: 0.03
+    reason_code: degraded_entropy_and_contract
+  - from: DRIFTING
+    to: RECOVERING
+    all:
+      - metric: repair_active
+        op: ">="
+        threshold: 1.0
+      - metric: pending_ratio
+        op: "<="
+        threshold: 0.12
+      - metric: shadow_pass_rate
+        op: ">="
+        threshold: 0.88
+    reason_code: recovering_pending_and_pass_rate
+  - from: DEGRADED
+    to: RECOVERING
+    all:
+      - metric: repair_active
+        op: ">="
+        threshold: 1.0
+      - metric: contract_errors_ratio
+        op: "<="
+        threshold: 0.02
+      - metric: memory_entropy_delta
+        op: "<="
+        threshold: 0.12
+    reason_code: recovering_contract_and_entropy
+  - from: RECOVERING
+    to: STABLE
+    all:
+      - metric: pending_ratio
+        op: "<="
+        threshold: 0.10
+      - metric: shadow_pass_rate
+        op: ">="
+        threshold: 0.90
+      - metric: contract_errors_ratio
+        op: "<="
+        threshold: 0.01
+    reason_code: stable_recovered
+  - from: RECOVERING
+    to: DRIFTING
+    all:
+      - metric: pending_ratio
+        op: ">="
+        threshold: 0.20
+    reason_code: drifting_rebound_pending

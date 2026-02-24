@@ -1,0 +1,45 @@
+schema_version: diff_gate_policy_v0
+required_scope_keys:
+  - trace_path
+  - start_day_key
+  - end_day_key
+  - config_set_a
+  - config_set_b
+require_config_meta: true
+require_non_empty_top_regressions: true
+top_regression_allowed_families:
+  - harmed_rate
+  - unknown_rate
+  - blocked_rate
+allowed_top_regression_metrics:
+  - sync_outcome_harmed_rate
+  - sync_outcome_unknown_rate
+  - sync_blocked_rate
+  - sync_micro_harmed_rate
+  - sync_micro_unknown_rate
+  - sync_downshift_applied_rate
+  - sync_emit_suppressed_time_ratio_avg
+disallow_improvement_metrics_in_top_regressions:
+  - sync_r_median_avg
+  - sync_r_p95_avg
+green_regression_guard:
+  enabled: true
+  blockers:
+    sync_micro_harmed_rate:
+      max_delta: 0.0
+      reason_code: GREEN_REGRESSION_SYNC_MICRO_HARMED_RATE
+    sync_downshift_applied_rate:
+      max_delta: 0.0
+      reason_code: GREEN_REGRESSION_SYNC_DOWNSHIFT_APPLIED_RATE
+    sync_micro_unknown_rate:
+      max_delta: 0.0
+      reason_code: GREEN_REGRESSION_SYNC_MICRO_UNKNOWN_RATE
+behavior_change_guard:
+  enabled: true
+  blockers:
+    behavior_change_harmed_rate_delta_avg:
+      max_delta: 0.03
+      reason_code: BC_REGRESSION_HARMED_RATE_DELTA
+    behavior_change_reject_rate_delta_avg:
+      max_delta: 0.20
+      reason_code: BC_REGRESSION_REJECT_RATE_DELTA
