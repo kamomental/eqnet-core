@@ -154,6 +154,11 @@ def test_log_moment_emits_trace_when_flag_enabled(
     assert isinstance(policy_obs.get("repair_reason_codes"), list)
     assert isinstance(policy_obs.get("repair_fingerprint"), str)
     assert policy_obs.get("repair_fingerprint")
+    assert isinstance(policy_obs.get("fsm_policy_fingerprint"), str)
+    assert policy_obs.get("fsm_policy_fingerprint")
+    assert policy_obs.get("fsm_policy_version") == "fsm_policy_v0"
+    assert isinstance(policy_obs.get("fsm_policy_source"), str)
+    assert "fsm_policy_v0.yaml" in str(policy_obs.get("fsm_policy_source") or "")
     assert isinstance(policy_obs.get("memory_entropy_delta"), (int, float))
     assert isinstance(policy_obs.get("memory_phase"), str)
     assert policy_obs.get("memory_phase")

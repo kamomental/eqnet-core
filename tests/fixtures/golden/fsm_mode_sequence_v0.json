@@ -1,0 +1,50 @@
+{
+  "events": [
+    {
+      "pending_ratio": 0.05,
+      "shadow_pass_rate": 0.96,
+      "contract_errors_ratio": 0.0,
+      "memory_entropy_delta": 0.05,
+      "repair_active": 0.0
+    },
+    {
+      "pending_ratio": 0.32,
+      "shadow_pass_rate": 0.72,
+      "contract_errors_ratio": 0.01,
+      "memory_entropy_delta": 0.10,
+      "repair_active": 0.0
+    },
+    {
+      "pending_ratio": 0.28,
+      "shadow_pass_rate": 0.70,
+      "contract_errors_ratio": 0.04,
+      "memory_entropy_delta": 0.24,
+      "repair_active": 0.0
+    },
+    {
+      "pending_ratio": 0.09,
+      "shadow_pass_rate": 0.91,
+      "contract_errors_ratio": 0.01,
+      "memory_entropy_delta": 0.09,
+      "repair_active": 1.0
+    }
+  ],
+  "expected_modes": [
+    "STABLE",
+    "DRIFTING",
+    "DEGRADED",
+    "RECOVERING"
+  ],
+  "expected_reason_codes": [
+    [],
+    [
+      "drift_pending_and_pass_rate"
+    ],
+    [
+      "degraded_entropy_and_contract"
+    ],
+    [
+      "recovering_contract_and_entropy"
+    ]
+  ]
+}
