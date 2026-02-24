@@ -25,6 +25,46 @@ from eqnet.telemetry.change_proposal_writer import (
     ChangeProposalWriter,
     ChangeProposalWriterConfig,
 )
+from eqnet.runtime.adaptive_fsm import load_fsm_policy, reduce_latest_mode
+from eqnet.runtime.companion_policy import (
+    companion_policy_meta,
+    load_lifelong_companion_policy,
+    validate_lifelong_companion_policy,
+)
+from eqnet.runtime.future_contracts import (
+    evaluate_imagery_events,
+    evaluate_realtime_outcomes,
+    evaluate_sync_outcomes,
+    load_imagery_policy,
+    load_perception_quality_rules,
+    load_realtime_rules,
+    load_sync_policy,
+    load_sync_quality_rules,
+    summarize_sync_cue_proposals,
+)
+from eqnet.runtime.sync_summary import summarize_sync_realtime
+from eqnet.runtime.nightly.preventive_summary import (
+    deterioration_score_from_metrics as _core_deterioration_score_from_metrics,
+    evaluate_preventive_proposals as _core_evaluate_preventive_proposals,
+    load_forecast_effect_rules as _core_load_forecast_effect_rules,
+)
+from eqnet.runtime.nightly.realtime_forecast_summary import (
+    build_forecast_lite_bundle as _core_build_forecast_lite_bundle,
+)
+from eqnet.runtime.nightly.perception_quality_summary import (
+    compute_perception_quality as _core_compute_perception_quality,
+    summarize_perception_quality as _core_summarize_perception_quality,
+    summarize_perception_quality_breakdown as _core_summarize_perception_quality_breakdown,
+)
+from eqnet.runtime.nightly.green_bridge import (
+    apply_green_priority_patch as _core_apply_green_priority_patch,
+    compute_green_bridge_snapshot as _core_compute_green_bridge_snapshot,
+    load_green_bridge_policy as _core_load_green_bridge_policy,
+)
+from eqnet.runtime.nightly.behavior_change import (
+    compute_behavior_change_snapshot as _core_compute_behavior_change_snapshot,
+    load_behavior_change_policy as _core_load_behavior_change_policy,
+)
 import yaml
 
 
@@ -70,6 +110,96 @@ def _load_telemetry(paths: List[Path]) -> List[Dict[str, Any]]:
     return entries
 
 
+def _sync_realtime_summary(telemetry_dir: Path, day: date) -> Dict[str, Any]:
+    return summarize_sync_realtime(telemetry_dir, day)
+
+
+def _compute_perception_quality(
+    event: Dict[str, Any],
+    *,
+    now_ts_ms: int,
+    rules: Dict[str, Any],
+) -> Dict[str, Any]:
+    return _core_compute_perception_quality(event, now_ts_ms=now_ts_ms, rules=rules)
+
+
+def _summarize_perception_quality(
+    events: List[Dict[str, Any]],
+    *,
+    now_ts_ms: int,
+    rules: Dict[str, Any],
+) -> Dict[str, Any]:
+    return _core_summarize_perception_quality(events, now_ts_ms=now_ts_ms, rules=rules)
+
+
+def _summarize_perception_quality_breakdown(
+    events: List[Dict[str, Any]],
+    *,
+    now_ts_ms: int,
+    rules: Dict[str, Any],
+) -> Dict[str, Any]:
+    return _core_summarize_perception_quality_breakdown(events, now_ts_ms=now_ts_ms, rules=rules)
+
+
+def _load_green_bridge_policy(default_path: Path) -> Dict[str, Any]:
+    return _core_load_green_bridge_policy(default_path)
+
+
+def _compute_green_bridge_snapshot(
+    *,
+    current_metrics: Dict[str, Any],
+    fsm_mode: str,
+    companion_policy_valid: bool,
+    policy: Dict[str, Any],
+) -> Dict[str, Any]:
+    return _core_compute_green_bridge_snapshot(
+        current_metrics=current_metrics,
+        fsm_mode=fsm_mode,
+        companion_policy_valid=companion_policy_valid,
+        policy=policy,
+    )
+
+
+def _apply_green_priority_patch(
+    *,
+    base_priority_score: float,
+    green_snapshot: Dict[str, Any],
+    policy: Dict[str, Any],
+    blocked: bool = False,
+    suppressed: bool = False,
+    unknown: bool = False,
+) -> Dict[str, Any]:
+    return _core_apply_green_priority_patch(
+        base_priority_score=base_priority_score,
+        green_snapshot=green_snapshot,
+        policy=policy,
+        blocked=blocked,
+        suppressed=suppressed,
+        unknown=unknown,
+    )
+
+
+def _load_behavior_change_policy(default_path: Path) -> Dict[str, Any]:
+    return _core_load_behavior_change_policy(default_path)
+
+
+def _compute_behavior_change_snapshot(
+    *,
+    current_payload: Dict[str, Any],
+    prev_payload: Dict[str, Any] | None,
+    telemetry_dir: Path,
+    day: date,
+    policy: Dict[str, Any],
+) -> Dict[str, Any]:
+    return _core_compute_behavior_change_snapshot(
+        current_payload=current_payload,
+        prev_payload=prev_payload,
+        telemetry_dir=telemetry_dir,
+        day=day,
+        policy=policy,
+    )
+
+
 def _split_halves(values: List[float]) -> Dict[str, float]:
     if not values:
         return {"first_mean": 0.0, "second_mean": 0.0, "delta": 0.0}
@@ -82,6 +212,35 @@ def _split_halves(values: List[float]) -> Dict[str, float]:
         "first_mean": round(first_mean, 3),
         "second_mean": round(second_mean, 3),
         "delta": round(second_mean - first_mean, 3),
+    }
+
+
+def _green_priority_patch_summary(proposals: List[Dict[str, Any]]) -> Dict[str, Any]:
+    applied_count = 0
+    skipped_by_guard_count = 0
+    deltas: List[float] = []
+    for proposal in proposals:
+        patch = proposal.get("green_priority_patch") if isinstance(proposal.get("green_priority_patch"), dict) else {}
+        if not isinstance(patch, dict):
+            continue
+        applied = bool(patch.get("applied", False))
+        if applied:
+            applied_count += 1
+        reasons = patch.get("reason_codes") if isinstance(patch.get("reason_codes"), list) else []
+        if "GREEN_PRIORITY_PATCH_SKIPPED_STATE_GUARD" in [str(x) for x in reasons]:
+            skipped_by_guard_count += 1
+        delta_raw = patch.get("delta", 0.0)
+        try:
+            deltas.append(float(delta_raw or 0.0))
+        except (TypeError, ValueError):
+            deltas.append(0.0)
+    return {
+        "green_priority_patch_applied_count": int(applied_count),
+        "green_priority_patch_skipped_by_guard_count": int(skipped_by_guard_count),
+        "green_priority_patch_delta_stats": {
+            "median": round(_percentile(deltas, 0.5), 6) if deltas else 0.0,
+            "p95": round(_percentile(deltas, 0.95), 6) if deltas else 0.0,
+        },
     }
 
 def _percentile(values: List[float], pct: float) -> float:
@@ -692,6 +851,60 @@ def _recommended_action_code(
     if low_max >= 0.25:
         return "uncertainty_high"
     return "stable"
+
+
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
+def _deterioration_score_from_metrics(metrics: Dict[str, Any]) -> float:
+    return _core_deterioration_score_from_metrics(metrics)
+
+
+def _load_forecast_effect_rules(default_path: Path) -> Dict[str, Any]:
+    return _core_load_forecast_effect_rules(default_path)
+
+
+def _evaluate_preventive_proposals(
+    *,
+    prev_report: Dict[str, Any],
+    current_metrics: Dict[str, Any],
+    today_fsm_meta: Dict[str, Any],
+    companion_meta: Dict[str, Any] | None,
+    day_key: str,
+    rules: Dict[str, Any],
+) -> Dict[str, Any]:
+    return _core_evaluate_preventive_proposals(
+        prev_report=prev_report,
+        current_metrics=current_metrics,
+        today_fsm_meta=today_fsm_meta,
+        companion_meta=companion_meta,
+        day_key=day_key,
+        rules=rules,
+    )
+
+
+def _forecast_lite(
+    *,
+    current_metrics: Dict[str, Any],
+    prev_metrics: Dict[str, Any],
+    nightly_payload: Dict[str, Any] | None,
+    fsm_mode: str,
+    day_key: str = "",
+    fsm_policy_meta: Dict[str, Any] | None = None,
+    companion_meta: Dict[str, Any] | None = None,
+    now_utc: datetime | None = None,
+) -> Dict[str, Any]:
+    return _core_build_forecast_lite_bundle(
+        current_metrics=current_metrics,
+        prev_metrics=prev_metrics,
+        nightly_payload=nightly_payload,
+        fsm_mode=fsm_mode,
+        day_key=day_key,
+        fsm_policy_meta=fsm_policy_meta,
+        companion_meta=companion_meta,
+        now_utc=now_utc,
+    )
 
 
 def _iso_week_string_from_timestamp_ms(timestamp_ms: int) -> str:
@@ -1528,6 +1741,117 @@ def _transition_events(trace_records: List[Dict[str, Any]]) -> List[Dict[str, An
     return events
 
 
+def _hub_policy_obs(record: Dict[str, Any]) -> Dict[str, Any]:
+    policy = record.get("policy")
+    if not isinstance(policy, dict):
+        return {}
+    observations = policy.get("observations")
+    if not isinstance(observations, dict):
+        return {}
+    hub = observations.get("hub")
+    return hub if isinstance(hub, dict) else {}
+
+
+def _hub_qualia_obs(record: Dict[str, Any]) -> Dict[str, Any]:
+    qualia = record.get("qualia")
+    if not isinstance(qualia, dict):
+        return {}
+    observations = qualia.get("observations")
+    if not isinstance(observations, dict):
+        return {}
+    hub = observations.get("hub")
+    return hub if isinstance(hub, dict) else {}
+
+
+def _to_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _fsm_feature_events_from_trace(trace_records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    events: List[Dict[str, Any]] = []
+    shadow_total = 0
+    shadow_pass = 0
+    pending_total = 0
+    pending_count = 0
+
+    ordered = sorted(
+        trace_records,
+        key=lambda row: int(_to_float(row.get("timestamp_ms"), 0.0)),
+    )
+    for row in ordered:
+        policy_obs = _hub_policy_obs(row)
+        qualia_obs = _hub_qualia_obs(row)
+        if not policy_obs and not qualia_obs:
+            continue
+
+        delegation_mode = str(policy_obs.get("delegation_mode") or "").strip().lower()
+        delegate_status = str(policy_obs.get("delegate_status") or "").strip().lower()
+        idempotency_status = str(policy_obs.get("idempotency_status") or "").strip().lower()
+
+        if delegation_mode == "shadow":
+            shadow_total += 1
+            if delegate_status == "ok":
+                shadow_pass += 1
+        shadow_pass_rate = (float(shadow_pass) / float(shadow_total)) if shadow_total > 0 else 1.0
+
+        if idempotency_status:
+            pending_total += 1
+            if idempotency_status in {"reserved", "pending"}:
+                pending_count += 1
+        pending_ratio = (float(pending_count) / float(pending_total)) if pending_total > 0 else 0.0
+
+        repair_state_after = str(policy_obs.get("repair_state_after") or "")
+        repair_event = str(policy_obs.get("repair_event") or "")
+        output_control_profile = str(policy_obs.get("output_control_profile") or "")
+
+        repair_active = 1.0 if repair_state_after in {"NON_BLAME", "ACCEPT", "NEXT_STEP"} else 0.0
+        repair_trigger = 1.0 if repair_event == "TRIGGER" else 0.0
+        budget_throttle_applied = 1.0 if bool(policy_obs.get("budget_throttle_applied")) else 0.0
+        output_control_cautious = (
+            1.0 if ("repair" in output_control_profile.lower() or "cautious" in output_control_profile.lower()) else 0.0
+        )
+
+        event = {
+            "timestamp_ms": int(_to_float(row.get("timestamp_ms"), 0.0)),
+            "pending_ratio": pending_ratio,
+            "shadow_pass_rate": shadow_pass_rate,
+            "contract_errors_ratio": _to_float(
+                policy_obs.get("contract_errors_ratio"),
+                _to_float(policy_obs.get("mecpe_contract_error_ratio"), 0.0),
+            ),
+            "memory_entropy_delta": _to_float(policy_obs.get("memory_entropy_delta"), 0.0),
+            "repair_active": repair_active,
+            "repair_trigger": repair_trigger,
+            "budget_throttle_applied": budget_throttle_applied,
+            "output_control_cautious": output_control_cautious,
+            "repair_reason_codes": list(policy_obs.get("repair_reason_codes") or []),
+            "output_control_profile": output_control_profile,
+            "output_control_fingerprint": str(qualia_obs.get("output_control_fingerprint") or ""),
+            "policy_day_key": str(policy_obs.get("day_key") or ""),
+            "episode_id": str(policy_obs.get("episode_id") or ""),
+        }
+        events.append(event)
+    return events
+
+
+def _adaptive_fsm_snapshot(trace_records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    policy = load_fsm_policy()
+    feature_events = _fsm_feature_events_from_trace(trace_records)
+    latest = reduce_latest_mode(feature_events, policy=policy)
+    return {
+        "mode": latest.mode.value,
+        "evidence": dict(latest.evidence),
+        "reason_codes": list(latest.reason_codes),
+        "policy_fingerprint": latest.policy_fingerprint,
+        "policy_version": latest.policy_version,
+        "policy_source": latest.policy_source,
+        "event_count": len(feature_events),
+    }
+
+
 def _decision_cycle_records(
     trace_records: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
@@ -2100,6 +2424,7 @@ def main() -> None:
     kpi = _kpi_summary(telemetry_entries)
 
     trace_records = _load_trace_v1_events(trace_root, day)
+    adaptive_fsm = _adaptive_fsm_snapshot(trace_records)
     decision_records = _decision_cycle_records(trace_records)
     deviant_records = _deviant_records(trace_records)
     deviant_boundary_records = [
@@ -2178,6 +2503,10 @@ def main() -> None:
         "segments": {},
         "recall_report": report.to_dict(),
         "lazy_rag_sat_ratio_alert_threshold": sat_alert_threshold,
+        "adaptive_fsm": adaptive_fsm,
+        "fsm_policy_fingerprint": str(adaptive_fsm.get("policy_fingerprint") or ""),
+        "fsm_policy_version": str(adaptive_fsm.get("policy_version") or ""),
+        "fsm_policy_source": str(adaptive_fsm.get("policy_source") or ""),
     }
     deviant_by_world: Dict[str, int] = {}
     for record in deviant_boundary_records:
@@ -2302,6 +2631,275 @@ def main() -> None:
     payload["confidence_low_ratio_delta"] = round(current_metrics["low_ratio"] - prev_metrics["low_ratio"], 3)
     payload["prev_lazy_rag_sat_ratio_p95"] = round(prev_metrics["sat_p95"], 3)
     payload["prev_confidence_low_ratio"] = round(prev_metrics["low_ratio"], 3)
+    effect_rules = _load_forecast_effect_rules(ROOT / "configs" / "forecast_effect_rules_v0.yaml")
+    realtime_rules = load_realtime_rules(ROOT / "configs" / "realtime_forecast_rules_v0.yaml")
+    imagery_policy = load_imagery_policy(ROOT / "configs" / "imagery_policy_v0.yaml")
+    quality_rules = load_perception_quality_rules(ROOT / "configs" / "perception_quality_rules_v0.yaml")
+    green_bridge_policy = _load_green_bridge_policy(ROOT / "configs" / "green_bridge_policy_v0.yaml")
+    behavior_change_policy = _load_behavior_change_policy(ROOT / "configs" / "behavior_change_v0.yaml")
+    sync_policy = load_sync_policy(ROOT / "configs" / "sync_policy_v0.yaml")
+    sync_quality_rules = load_sync_quality_rules(ROOT / "configs" / "sync_quality_rules_v0.yaml")
+    companion_policy = load_lifelong_companion_policy(ROOT / "configs" / "lifelong_companion_policy_v0.yaml")
+    companion_ok, companion_reasons = validate_lifelong_companion_policy(companion_policy)
+    companion_meta = companion_policy_meta(companion_policy)
+    payload["companion_policy"] = {
+        "schema_version": str(companion_policy.get("schema_version") or ""),
+        "valid": bool(companion_ok),
+        "validation_reason_codes": list(companion_reasons),
+        "policy_version": str(companion_meta.get("policy_version") or ""),
+        "policy_source": str(companion_meta.get("policy_source") or ""),
+        "policy_fingerprint": str(companion_meta.get("policy_fingerprint") or ""),
+    }
+    green_bridge = _compute_green_bridge_snapshot(
+        current_metrics=current_metrics,
+        fsm_mode=str(adaptive_fsm.get("mode") or "STABLE"),
+        companion_policy_valid=bool(companion_ok),
+        policy=green_bridge_policy,
+    )
+    payload["green_bridge"] = green_bridge
+    payload["green_response_score"] = float(green_bridge.get("green_response_score", 0.0) or 0.0)
+    payload["green_quality"] = float(green_bridge.get("green_quality", 0.0) or 0.0)
+    payload["green_decay_tau"] = float(green_bridge.get("green_decay_tau", 0.0) or 0.0)
+    payload["green_mode"] = str(green_bridge.get("green_mode") or "OFF")
+    payload["green_bridge_policy_version"] = str(green_bridge_policy.get("schema_version") or "green_bridge_policy_v0")
+    outcomes = _evaluate_preventive_proposals(
+        prev_report=prev_report,
+        current_metrics=current_metrics,
+        today_fsm_meta=adaptive_fsm,
+        companion_meta=companion_meta,
+        day_key=day.isoformat(),
+        rules=effect_rules,
+    )
+    payload["preventive_proposal_outcomes"] = outcomes.get("outcomes", [])
+    payload["preventive_outcome_helped_count"] = int(outcomes.get("helped_count", 0) or 0)
+    payload["preventive_outcome_harmed_count"] = int(outcomes.get("harmed_count", 0) or 0)
+    payload["preventive_outcome_unknown_count"] = int(outcomes.get("unknown_count", 0) or 0)
+    payload["preventive_outcome_no_effect_count"] = int(outcomes.get("no_effect_count", 0) or 0)
+    payload["preventive_outcome_reason_topk"] = outcomes.get("reason_topk", [])
+    forecast = _forecast_lite(
+        current_metrics=current_metrics,
+        prev_metrics=prev_metrics,
+        nightly_payload=audit_payload,
+        fsm_mode=str(adaptive_fsm.get("mode") or "STABLE"),
+        day_key=day.isoformat(),
+        fsm_policy_meta=adaptive_fsm,
+        companion_meta=companion_meta,
+    )
+    realtime_proposals = list(forecast.get("realtime_forecast_proposals") or [])
+    eval_ts_ms = int(datetime(day.year, day.month, day.day, 23, 59, tzinfo=timezone.utc).timestamp() * 1000)
+    ttl_default = int((realtime_rules.get("ttl_sec_default") or 300))
+    for proposal in realtime_proposals:
+        proposal["ttl_sec"] = int(proposal.get("ttl_sec") or ttl_default)
+        quality = _compute_perception_quality(
+            proposal,
+            now_ts_ms=eval_ts_ms,
+            rules=quality_rules,
+        )
+        proposal["perception_quality"] = {
+            "freshness_sec": quality.get("freshness_sec"),
+            "freshness_ratio": quality.get("freshness_ratio"),
+            "confidence": quality.get("confidence"),
+            "noise": quality.get("noise"),
+        }
+        base_priority = float(quality.get("priority_score", 0.0) or 0.0)
+        patch = _apply_green_priority_patch(
+            base_priority_score=base_priority,
+            green_snapshot=green_bridge,
+            policy=green_bridge_policy,
+            blocked=False,
+            suppressed=False,
+            unknown=False,
+        )
+        proposal["priority_score"] = patch.get("priority_score")
+        proposal["green_priority_patch"] = {
+            "applied": bool(patch.get("priority_patch_applied", False)),
+            "delta": float(patch.get("priority_patch_delta", 0.0) or 0.0),
+            "reason_codes": list(patch.get("priority_patch_reason_codes") or []),
+            "policy_meta": dict(patch.get("policy_meta") or {}),
+        }
+        proposal["priority_reason_codes"] = quality.get("reason_codes")
+    payload["realtime_forecast_rules_version"] = str(realtime_rules.get("schema_version") or "realtime_forecast_rules_v0")
+    payload["imagery_policy_version"] = str(imagery_policy.get("schema_version") or "imagery_policy_v0")
+    payload["sync_policy_version"] = str(sync_policy.get("schema_version") or "sync_policy_v0")
+    payload["sync_quality_rules_version"] = str(sync_quality_rules.get("schema_version") or "sync_quality_rules_v0")
+    payload["realtime_forecast_proposals"] = realtime_proposals
+    payload["realtime_forecast_proposal_count"] = int(forecast.get("realtime_forecast_proposal_count") or len(realtime_proposals))
+    prev_rt = prev_report.get("realtime_forecast_proposals") if isinstance(prev_report.get("realtime_forecast_proposals"), list) else []
+    realtime_outcomes = evaluate_realtime_outcomes(
+        prev_rt,
+        evaluation_day_key=day.isoformat(),
+        today_policy_meta={
+            "policy_fingerprint": str(adaptive_fsm.get("policy_fingerprint") or ""),
+            "policy_version": str(adaptive_fsm.get("policy_version") or ""),
+            "policy_source": str(adaptive_fsm.get("policy_source") or ""),
+        },
+        now_ts_ms=eval_ts_ms,
+        companion_policy=companion_policy,
+    )
+    payload["realtime_forecast_outcomes"] = realtime_outcomes.get("outcomes", [])
+    payload["realtime_outcome_helped_count"] = int(realtime_outcomes.get("helped_count", 0) or 0)
+    payload["realtime_outcome_harmed_count"] = int(realtime_outcomes.get("harmed_count", 0) or 0)
+    payload["realtime_outcome_no_effect_count"] = int(realtime_outcomes.get("no_effect_count", 0) or 0)
+    payload["realtime_outcome_unknown_count"] = int(realtime_outcomes.get("unknown_count", 0) or 0)
+    payload["realtime_outcome_reason_topk"] = realtime_outcomes.get("reason_topk", [])
+    quality_summary = _summarize_perception_quality(
+        realtime_proposals,
+        now_ts_ms=eval_ts_ms,
+        rules=quality_rules,
+    )
+    quality_breakdown = _summarize_perception_quality_breakdown(
+        realtime_proposals,
+        now_ts_ms=eval_ts_ms,
+        rules=quality_rules,
+    )
+    payload["quality_unknown_origin_count"] = int(quality_summary.get("quality_unknown_origin_count", 0) or 0)
+    payload["quality_low_freshness_count"] = int(quality_summary.get("quality_low_freshness_count", 0) or 0)
+    payload["quality_high_noise_count"] = int(quality_summary.get("quality_high_noise_count", 0) or 0)
+    payload["priority_score_stats"] = quality_summary.get("priority_score_stats", {})
+    payload["quality_by_origin"] = quality_breakdown.get("quality_by_origin", {})
+    payload["quality_by_kind"] = quality_breakdown.get("quality_by_kind", {})
+    green_patch_summary = _green_priority_patch_summary(realtime_proposals)
+    payload["green_priority_patch_applied_count"] = int(green_patch_summary.get("green_priority_patch_applied_count", 0) or 0)
+    payload["green_priority_patch_skipped_by_guard_count"] = int(green_patch_summary.get("green_priority_patch_skipped_by_guard_count", 0) or 0)
+    payload["green_priority_patch_delta_stats"] = green_patch_summary.get("green_priority_patch_delta_stats", {})
+    sync_proposals = payload.get("sync_cue_proposals")
+    if not isinstance(sync_proposals, list):
+        sync_proposals = []
+    payload["sync_cue_proposals"] = sync_proposals
+    sync_summary = summarize_sync_cue_proposals(sync_proposals, companion_policy=companion_policy)
+    payload["sync_blocked_count_by_reason"] = sync_summary.get("sync_blocked_count_by_reason", {})
+    payload["sync_order_parameter_r_stats"] = sync_summary.get("sync_order_parameter_r_stats", {})
+    payload["sync_blocked_rate"] = float(sync_summary.get("sync_blocked_rate", 0.0) or 0.0)
+    payload["sync_blocked_rate_by_origin"] = sync_summary.get("sync_blocked_rate_by_origin", {})
+    payload["sync_requires_approval_total"] = int(sync_summary.get("sync_requires_approval_total", 0) or 0)
+    payload["sync_blocked_total"] = int(sync_summary.get("sync_blocked_total", 0) or 0)
+
+    prev_sync = prev_report.get("sync_cue_proposals") if isinstance(prev_report.get("sync_cue_proposals"), list) else []
+    sync_policy_meta = companion_policy_meta(sync_policy)
+    sync_outcomes = evaluate_sync_outcomes(
+        prev_sync,
+        evaluation_day_key=day.isoformat(),
+        now_ts_ms=eval_ts_ms,
+        today_sync_policy_meta={
+            "policy_fingerprint": str(sync_policy_meta.get("policy_fingerprint") or ""),
+            "policy_version": str(sync_policy_meta.get("policy_version") or ""),
+            "policy_source": str(sync_policy_meta.get("policy_source") or ""),
+        },
+        today_companion_policy_meta={
+            "policy_fingerprint": str(companion_meta.get("policy_fingerprint") or ""),
+            "policy_version": str(companion_meta.get("policy_version") or ""),
+            "policy_source": str(companion_meta.get("policy_source") or ""),
+        },
+        today_sync_snapshot={
+            "sync_order_parameter_r": float((sync_summary.get("sync_order_parameter_r_stats") or {}).get("median") or 0.0),
+        },
+        companion_policy=companion_policy,
+        rules=sync_quality_rules,
+    )
+    payload["sync_outcomes"] = sync_outcomes.get("outcomes", [])
+    payload["sync_outcome_helped_count"] = int(sync_outcomes.get("helped_count", 0) or 0)
+    payload["sync_outcome_harmed_count"] = int(sync_outcomes.get("harmed_count", 0) or 0)
+    payload["sync_outcome_no_effect_count"] = int(sync_outcomes.get("no_effect_count", 0) or 0)
+    payload["sync_outcome_unknown_count"] = int(sync_outcomes.get("unknown_count", 0) or 0)
+    payload["sync_outcome_blocked_count"] = int(sync_outcomes.get("blocked_count", 0) or 0)
+    payload["sync_outcome_reason_topk"] = sync_outcomes.get("reason_topk", [])
+    sync_rt = _sync_realtime_summary(telemetry_path.parent, day)
+    payload["sync_micro_helped_count"] = int(sync_rt.get("sync_micro_helped_count", 0) or 0)
+    payload["sync_micro_harmed_count"] = int(sync_rt.get("sync_micro_harmed_count", 0) or 0)
+    payload["sync_micro_unknown_count"] = int(sync_rt.get("sync_micro_unknown_count", 0) or 0)
+    payload["sync_micro_no_effect_count"] = int(sync_rt.get("sync_micro_no_effect_count", 0) or 0)
+    payload["sync_micro_helped_rate"] = float(sync_rt.get("sync_micro_helped_rate", 0.0) or 0.0)
+    payload["sync_micro_harmed_rate"] = float(sync_rt.get("sync_micro_harmed_rate", 0.0) or 0.0)
+    payload["sync_micro_unknown_rate"] = float(sync_rt.get("sync_micro_unknown_rate", 0.0) or 0.0)
+    payload["sync_downshift_applied_count"] = int(sync_rt.get("sync_downshift_applied_count", 0) or 0)
+    payload["sync_emit_suppressed_time_ratio"] = float(sync_rt.get("sync_emit_suppressed_time_ratio", 0.0) or 0.0)
+    behavior_change = _compute_behavior_change_snapshot(
+        current_payload=payload,
+        prev_payload=prev_report if isinstance(prev_report, dict) else {},
+        telemetry_dir=telemetry_path.parent,
+        day=day,
+        policy=behavior_change_policy,
+    )
+    payload["behavior_change"] = behavior_change
+    payload["behavior_change_priority_shift"] = float(behavior_change.get("proposal_priority_shift", 0.0) or 0.0)
+    payload["behavior_change_reject_rate_delta"] = float(behavior_change.get("reject_rate_delta", 0.0) or 0.0)
+    payload["behavior_change_harmed_rate_delta"] = float(behavior_change.get("harmed_rate_delta", 0.0) or 0.0)
+    behavior_gate = behavior_change.get("gate") if isinstance(behavior_change.get("gate"), dict) else {}
+    payload["behavior_change_gate_status"] = str(behavior_gate.get("status") or "PASS")
+    payload["behavior_change_gate_reason_codes"] = list(behavior_gate.get("reason_codes") or [])
+    behavior_sig = behavior_change.get("signature") if isinstance(behavior_change.get("signature"), dict) else {}
+    payload["behavior_change_signature"] = dict(behavior_sig)
+    payload["behavior_change_signature_key"] = str(behavior_sig.get("key") or "")
+    behavior_sig_support = behavior_change.get("signature_support") if isinstance(behavior_change.get("signature_support"), dict) else {}
+    payload["behavior_change_sig_support_count"] = int(behavior_sig_support.get("compare_events", 0) or 0)
+    behavior_tol = behavior_change.get("tolerance") if isinstance(behavior_change.get("tolerance"), dict) else {}
+    payload["behavior_change_margin"] = float(behavior_tol.get("margin", 0.0) or 0.0)
+    payload["behavior_change_trust_budget"] = float(behavior_tol.get("effective_trust_budget", 0.0) or 0.0)
+    payload["behavior_change_trust_budget_global"] = float(behavior_tol.get("trust_budget_global", 0.0) or 0.0)
+    payload["behavior_change_trust_budget_sig"] = float(behavior_tol.get("trust_budget_sig", 0.0) or 0.0)
+    payload["behavior_change_trust_source"] = str(behavior_tol.get("trust_source") or "global")
+    payload["behavior_change_mix_weight_sig_effective"] = float(behavior_tol.get("mix_weight_sig_effective", 0.0) or 0.0)
+    payload["behavior_change_active_preset"] = str(behavior_tol.get("active_preset") or "default")
+    payload["behavior_change_preset_source"] = str(behavior_tol.get("preset_source") or "manual")
+    eff_warn = behavior_tol.get("effective_warn") if isinstance(behavior_tol.get("effective_warn"), dict) else {}
+    base_warn = behavior_tol.get("base_warn") if isinstance(behavior_tol.get("base_warn"), dict) else {}
+    payload["behavior_change_effective_warn"] = dict(eff_warn)
+    payload["behavior_change_base_warn"] = dict(base_warn)
+    payload["behavior_change_tolerance_enabled"] = bool(behavior_tol.get("enabled", False))
+    payload["behavior_change_tolerance_apply_to"] = str(behavior_tol.get("apply_to") or "")
+    payload["behavior_change_explain"] = {
+        "trust_source": str(behavior_tol.get("trust_source") or "global"),
+        "sig_support_count": int(behavior_sig_support.get("compare_events", 0) or 0),
+        "mix_weight_sig_effective": float(behavior_tol.get("mix_weight_sig_effective", 0.0) or 0.0),
+        "active_preset": str(behavior_tol.get("active_preset") or "default"),
+        "preset_source": str(behavior_tol.get("preset_source") or "manual"),
+        "trust_global": float(behavior_tol.get("trust_budget_global", 0.0) or 0.0),
+        "trust_sig": float(behavior_tol.get("trust_budget_sig", 0.0) or 0.0),
+        "effective_trust": float(behavior_tol.get("effective_trust_budget", 0.0) or 0.0),
+        "margin": float(behavior_tol.get("margin", 0.0) or 0.0),
+        "effective_warn": dict(eff_warn),
+        "base_warn": dict(base_warn),
+        "base_fail": dict(behavior_tol.get("base_fail") if isinstance(behavior_tol.get("base_fail"), dict) else {}),
+    }
+    explain_reason_codes: List[str] = []
+    explain = payload["behavior_change_explain"]
+    if int(explain.get("sig_support_count", 0) or 0) != int(payload.get("behavior_change_sig_support_count", 0) or 0):
+        explain_reason_codes.append("BEHAVIOR_CHANGE_EXPLAIN_SIG_SUPPORT_MISMATCH")
+    if float(explain.get("mix_weight_sig_effective", 0.0) or 0.0) != float(payload.get("behavior_change_mix_weight_sig_effective", 0.0) or 0.0):
+        explain_reason_codes.append("BEHAVIOR_CHANGE_EXPLAIN_MIX_WEIGHT_MISMATCH")
+    if str(explain.get("active_preset") or "") != str(payload.get("behavior_change_active_preset") or ""):
+        explain_reason_codes.append("BEHAVIOR_CHANGE_EXPLAIN_ACTIVE_PRESET_MISMATCH")
+    if str(explain.get("preset_source") or "") != str(payload.get("behavior_change_preset_source") or ""):
+        explain_reason_codes.append("BEHAVIOR_CHANGE_EXPLAIN_PRESET_SOURCE_MISMATCH")
+    if dict(explain.get("effective_warn") if isinstance(explain.get("effective_warn"), dict) else {}) != dict(payload.get("behavior_change_effective_warn") if isinstance(payload.get("behavior_change_effective_warn"), dict) else {}):
+        explain_reason_codes.append("BEHAVIOR_CHANGE_EXPLAIN_EFFECTIVE_WARN_MISMATCH")
+    payload["behavior_change_explain_consistency"] = {
+        "ok": len(explain_reason_codes) == 0,
+        "reason_codes": sorted(set(explain_reason_codes)),
+    }
+    payload["behavior_change_policy_version"] = str(behavior_change_policy.get("schema_version") or "behavior_change_v1")
+    prev_imagery = prev_report.get("imagery_events") if isinstance(prev_report.get("imagery_events"), list) else []
+    imagery_outcomes = evaluate_imagery_events(
+        prev_imagery,
+        now_ts_ms=eval_ts_ms,
+        evaluation_day_key=day.isoformat(),
+    )
+    payload["imagery_outcomes"] = imagery_outcomes.get("outcomes", [])
+    payload["imagery_outcome_reason_topk"] = imagery_outcomes.get("reason_topk", [])
+    payload["forecast_lite"] = {
+        "target_mode": forecast["target_mode"],
+        "reason_codes": forecast["reason_codes"],
+        "fsm_mode": str(adaptive_fsm.get("mode") or "STABLE"),
+        "policy_fingerprint": str(adaptive_fsm.get("policy_fingerprint") or ""),
+        "policy_version": str(adaptive_fsm.get("policy_version") or ""),
+        "policy_source": str(adaptive_fsm.get("policy_source") or ""),
+        "companion_policy_fingerprint": str(companion_meta.get("policy_fingerprint") or ""),
+        "companion_policy_version": str(companion_meta.get("policy_version") or ""),
+        "companion_policy_source": str(companion_meta.get("policy_source") or ""),
+    }
+    payload["forecast_lite_score"] = forecast["forecast_lite_score"]
+    payload["preventive_proposals"] = forecast["preventive_proposals"]
+    payload["preventive_proposal_count"] = int(forecast["preventive_proposal_count"])
     ui_cfg = getattr(runtime_cfg, "ui", None)
     reason_labels_cfg = getattr(ui_cfg, "uncertainty_reason_labels", {}) if ui_cfg else {}
     payload["uncertainty_reason_labels"] = dict(reason_labels_cfg) if isinstance(reason_labels_cfg, dict) else {}

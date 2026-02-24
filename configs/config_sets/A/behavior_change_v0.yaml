@@ -1,0 +1,133 @@
+schema_version: behavior_change_v1
+enabled: true
+
+window:
+  baseline_days: 7
+  compare_days: 1
+
+decision:
+  reject_values:
+    - REJECT
+  accept_values:
+    - ACCEPT_SHADOW
+    - ACCEPT_CANARY
+    - ACCEPT_ROLLOUT
+    - ROLLBACK
+    - LINK_EVAL_REPORT
+
+signature:
+  fields:
+    - world_type
+    - risk_bucket
+    - uncertainty_bucket
+    - response_route
+  max_keys: 128
+  hash_key: false
+  field_sanitizers:
+    world_type:
+      kind: lower
+      empty_value: unknown
+    risk_bucket:
+      kind: bucket
+      width: 0.1
+      min: 0.0
+      max: 1.0
+      empty_value: unknown
+    uncertainty_bucket:
+      kind: bucket
+      width: 0.1
+      min: 0.0
+      max: 1.0
+      empty_value: unknown
+    response_route:
+      kind: lower
+      empty_value: unknown
+  health:
+    actions_mode: advisory_only
+    reason_action_map_version: v1
+    fallback_ratio_warn: 0.9
+    active_keys_near_cap_ratio: 0.9
+    topk_support_min: 2
+    warn_consecutive_weeks: 2
+    recover_consecutive_weeks: 2
+    reason_action_map:
+      BC_SIG_HEALTH_FALLBACK_RATIO_HIGH:
+        - action: increase_signature_bucket_width
+          scope: sanitizers
+          target: signature.field_sanitizers
+          effort: medium
+          risk: low
+          expected_effect: stabilize
+        - action: tune_min_support_per_sig
+          scope: min_support
+          target: tolerance.min_support_per_sig
+          effort: low
+          risk: medium
+          expected_effect: stabilize
+      BC_SIG_HEALTH_ACTIVE_KEYS_NEAR_CAP:
+        - action: strengthen_signature_sanitizers
+          scope: sanitizers
+          target: signature.field_sanitizers
+          effort: medium
+          risk: low
+          expected_effect: stabilize
+        - action: review_signature_fields
+          scope: global
+          target: signature.fields
+          effort: medium
+          risk: medium
+          expected_effect: learn_more
+      BC_SIG_HEALTH_TOP_SUPPORT_LOW:
+        - action: widen_observation_window
+          scope: window
+          target: window.baseline_days
+          effort: low
+          risk: medium
+          expected_effect: learn_more
+        - action: simplify_signature_dimensions
+          scope: global
+          target: signature.fields
+          effort: medium
+          risk: medium
+          expected_effect: stabilize
+
+diff_gate:
+  thresholds:
+    harmed_rate_delta:
+      warn: 0.01
+      fail: 0.03
+    reject_rate_delta:
+      warn: 0.10
+      fail: 0.20
+  min_support:
+    per_signature_events: 1
+
+tolerance:
+  enabled: true
+  apply_to: warn_only
+  active_preset: default
+  preset_source: manual
+  margin_cap: 0.02
+  recovery_alpha: 0.6
+  harm_beta: 0.8
+  unknown_gamma: 0.8
+  reject_beta: 0.4
+  epsilon_to_fail: 0.001
+  initial_trust_budget: 0.5
+  mix_weight_sig: 0.7
+  min_support_per_sig: 1
+  trust_decay: 0.02
+  max_daily_delta: 0.05
+  presets:
+    default:
+      margin_cap: 0.02
+      recovery_alpha: 0.6
+      mix_weight_sig: 0.7
+    love:
+      margin_cap: 0.03
+      recovery_alpha: 0.75
+      mix_weight_sig: 0.85
+    recovery:
+      margin_cap: 0.015
+      recovery_alpha: 0.5
+      mix_weight_sig: 0.6
