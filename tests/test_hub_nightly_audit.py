@@ -77,6 +77,15 @@ def test_run_nightly_audit_writes_file(tmp_path):
     assert isinstance(ru["missing_required_fields_events"], int)
     assert "ru_v0_events" in ru
     assert isinstance(ru["ru_v0_events"], int)
+    assert isinstance(ru.get("tool_call_attempt_count"), int)
+    assert isinstance(ru.get("tool_call_blocked_count"), int)
+    assert isinstance(ru.get("forced_human_confirm_count"), int)
+    assert isinstance(ru.get("online_delta_applied_count"), int)
+    assert isinstance(ru.get("online_delta_missing_contract_count"), int)
+    assert isinstance(ru.get("blocked_tool_names_topk"), list)
+    assert isinstance(ru.get("blocked_reason_codes_topk"), list)
+    assert isinstance(ru.get("forced_gate_action_topk"), list)
+    assert isinstance((ru.get("online_delta_effectiveness") or {}).get("tool_block_rate"), (int, float))
     closed = payload.get("closed_loop_trace") or {}
     assert isinstance(closed.get("closed_loop_trace_ok"), bool)
     assert isinstance(closed.get("missing_keys"), list)
@@ -150,6 +159,61 @@ def test_run_nightly_audit_closed_loop_ok_when_required_fingerprints_exist(tmp_p
     closed = payload.get("closed_loop_trace") or {}
     assert closed.get("closed_loop_trace_ok") is True
     assert closed.get("missing_keys") == []
+
+
+def test_run_nightly_audit_yellow_when_online_delta_block_rate_too_high(tmp_path):
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {
+            "timestamp_ms": 1000,
+            "turn_id": "turn-1",
+            "scenario_id": "audit-demo",
+            "source_loop": "hub",
+            "event_type": "tool_call",
+            "ru_v0": {"gate_action": "EXECUTE", "policy_version": "ru-v0.1", "missing_required_fields": []},
+        },
+        {
+            "timestamp_ms": 1001,
+            "turn_id": "turn-2",
+            "scenario_id": "audit-demo",
+            "source_loop": "hub",
+            "event_type": "tool_call_blocked",
+            "tool_name": "web.fetch",
+            "reason_codes": ["ONLINE_DELTA_TOOL_BLOCKED"],
+            "ru_v0": {"gate_action": "HOLD", "policy_version": "ru-v0.1", "missing_required_fields": []},
+        },
+        {
+            "timestamp_ms": 1002,
+            "turn_id": "turn-3",
+            "scenario_id": "audit-demo",
+            "source_loop": "hub",
+            "event_type": "tool_call_blocked",
+            "tool_name": "web.fetch",
+            "reason_codes": ["ONLINE_DELTA_TOOL_BLOCKED"],
+            "ru_v0": {"gate_action": "HOLD", "policy_version": "ru-v0.1", "missing_required_fields": []},
+        },
+    ]
+    (day_dir / "hub-1.jsonl").write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+    config = EQNetConfig(
+        telemetry_dir=tmp_path / "telemetry",
+        reports_dir=tmp_path / "reports",
+        state_dir=tmp_path / "state",
+        trace_dir=trace_root,
+        audit_dir=tmp_path / "audit",
+        audit_thresholds={"online_delta_block_rate_yellow": 0.5},
+    )
+    hub = EQNetHub(config=config, embed_text_fn=lambda text: [])
+    hub._run_nightly_audit(date(2025, 12, 14))
+    payload = json.loads((tmp_path / "audit" / f"nightly_audit_{day}.json").read_text(encoding="utf-8"))
+    health = payload.get("health") or {}
+    reasons = [str(reason) for reason in (health.get("reasons") or [])]
+    assert any("online delta tool block rate high" in reason for reason in reasons)
 
 
 def test_run_nightly_audit_closed_loop_flags_missing_output_control(tmp_path):

@@ -39,6 +39,11 @@ from eqnet.runtime.external_runtime import (
     ExternalRuntimeDelegateV2,
 )
 from eqnet.runtime.adaptive_fsm import load_fsm_policy
+from eqnet.runtime.online_delta_v0 import (
+    apply_online_deltas,
+    load_online_deltas,
+    select_online_deltas,
+)
 from eqnet.telemetry.trace_paths import TracePathConfig, trace_output_path
 from eqnet.telemetry.trace_writer import append_trace_event
 from eqnet.telemetry.nightly_audit import NightlyAuditConfig, generate_audit
@@ -665,20 +670,33 @@ class EQNetHub:
             day_key = resolve_day_key_from_moment(_moment_timestamp(moment_entry))
             episode_id = get_or_create_episode_id(moment_entry)
             thermo = dict(self._latest_memory_thermo or {})
+            now_ms = int(_moment_timestamp(moment_entry).timestamp() * 1000)
+            online_ctx = self._build_online_delta_context(
+                moment_entry=moment_entry,
+                raw_event=raw_event if raw_event is not None else moment_entry,
+                day_key=day_key,
+                episode_id=episode_id,
+                moment_input_fingerprint=moment_input_fingerprint,
+            )
+            overlay = self._resolve_online_delta_overlay(
+                now_ms=now_ms,
+                context=online_ctx,
+                thermo=thermo,
+            )
             output_control = apply_policy_prior(
                 self.latest_policy_prior(),
                 day_key=day_key,
                 episode_id=episode_id,
                 repair_snapshot=self._repair_snapshot,
-                budget_throttle_applied=bool(thermo.get("budget_throttle_applied")),
+                budget_throttle_applied=bool(overlay.get("budget_throttle_applied")),
                 output_control_profile=(
-                    str(thermo.get("output_control_profile"))
-                    if thermo.get("output_control_profile")
+                    str(overlay.get("output_control_profile"))
+                    if overlay.get("output_control_profile")
                     else None
                 ),
                 throttle_reason_code=(
-                    str(thermo.get("throttle_reason_code"))
-                    if thermo.get("throttle_reason_code")
+                    str(overlay.get("throttle_reason_code"))
+                    if overlay.get("throttle_reason_code")
                     else None
                 ),
             )
@@ -700,6 +718,11 @@ class EQNetHub:
                     "output_control_repair_state": output_control.repair_state,
                     "output_control_profile": output_control.output_control_profile,
                     "throttle_reason_code": output_control.throttle_reason_code,
+                    "online_delta_applied": bool(overlay.get("online_delta_applied")),
+                    "online_delta_ids": list(overlay.get("online_delta_ids") or []),
+                    "online_delta_action_types": list(overlay.get("online_delta_action_types") or []),
+                    "forced_gate_action": str(overlay.get("forced_gate_action") or ""),
+                    "disallow_tools": list(overlay.get("disallow_tools") or []),
                     "repair_state_before": repair_state_before or self._repair_snapshot.state.value,
                     "repair_state_after": repair_state_after or self._repair_snapshot.state.value,
                     "repair_event": repair_event or RepairEvent.NONE.value,
@@ -730,7 +753,7 @@ class EQNetHub:
                         ),
                         throttle_reason_code=str(thermo.get("throttle_reason_code") or ""),
                         output_control_profile=str(
-                            thermo.get("output_control_profile")
+                            overlay.get("output_control_profile")
                             or output_control.output_control_profile
                             or "normal_v1"
                         ),
@@ -773,6 +796,113 @@ class EQNetHub:
             run_hub_turn(payload, state, self._trace_safety, target)
         except Exception as exc:  # pragma: no cover - defensive guardrail
             logger.warning("trace_v1 emit failed", exc_info=exc)
+
+    def _build_online_delta_context(
+        self,
+        *,
+        moment_entry: Any,
+        raw_event: Any,
+        day_key: str,
+        episode_id: str,
+        moment_input_fingerprint: Optional[str],
+    ) -> dict[str, Any]:
+        return {
+            "scenario_id": str(
+                _entry_value(moment_entry, "scenario_id")
+                or _entry_value(moment_entry, "session_id")
+                or "hub"
+            ),
+            "world_type": str(_entry_value(moment_entry, "world_type") or ""),
+            "gate_action": str(_entry_value(moment_entry, "gate_action") or ""),
+            "tool_name": str(
+                _entry_value(raw_event, "tool_name")
+                or _entry_value(moment_entry, "tool_name")
+                or ""
+            ),
+            "reason_codes": self._normalize_repair_reason_codes(
+                _entry_value(raw_event, "reason_codes")
+            ),
+            "fingerprint": str(moment_input_fingerprint or ""),
+            "day_key": day_key,
+            "episode_id": episode_id,
+        }
+
+    def _resolve_online_delta_overlay(
+        self,
+        *,
+        now_ms: int,
+        context: Mapping[str, Any],
+        thermo: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        resolved: dict[str, Any] = {
+            "budget_throttle_applied": bool(thermo.get("budget_throttle_applied")),
+            "output_control_profile": (
+                str(thermo.get("output_control_profile"))
+                if thermo.get("output_control_profile")
+                else None
+            ),
+            "throttle_reason_code": (
+                str(thermo.get("throttle_reason_code"))
+                if thermo.get("throttle_reason_code")
+                else None
+            ),
+            "forced_gate_action": "",
+            "disallow_tools": [],
+            "online_delta_applied": False,
+            "online_delta_ids": [],
+            "online_delta_action_types": [],
+        }
+        try:
+            deltas = load_online_deltas(self.config.state_dir, now_ms=now_ms)
+            selected = select_online_deltas(deltas, context)
+        except Exception as exc:
+            logger.warning("online_delta_v0 load/select failed", exc_info=exc)
+            return resolved
+        if not selected:
+            return resolved
+
+        base_policy = {
+            "budget_throttle_applied": resolved["budget_throttle_applied"],
+            "output_control_profile": resolved["output_control_profile"],
+            "throttle_reason_code": resolved["throttle_reason_code"],
+            "gate_action": str(context.get("gate_action") or "EXECUTE"),
+            "disallow_tools": [],
+        }
+        try:
+            merged = apply_online_deltas(base_policy, selected)
+        except Exception as exc:
+            logger.warning("online_delta_v0 apply failed", exc_info=exc)
+            return resolved
+
+        action_types = list(dict.fromkeys([item.action_type for item in selected]))
+        resolved["online_delta_applied"] = True
+        resolved["online_delta_ids"] = [item.delta_id for item in selected]
+        resolved["online_delta_action_types"] = action_types
+        resolved["budget_throttle_applied"] = bool(merged.get("budget_throttle_applied"))
+        profile = merged.get("output_control_profile")
+        resolved["output_control_profile"] = str(profile) if isinstance(profile, str) and profile else None
+        throttle_reason_code = merged.get("throttle_reason_code")
+        if isinstance(throttle_reason_code, str) and throttle_reason_code:
+            resolved["throttle_reason_code"] = throttle_reason_code
+        if "APPLY_CAUTIOUS_BUDGET" in action_types and not resolved.get("throttle_reason_code"):
+            resolved["throttle_reason_code"] = f"ONLINE_DELTA:{self._online_budget_reason_code(selected)}"
+        gate_action = str(merged.get("gate_action") or "")
+        if gate_action == "HUMAN_CONFIRM":
+            resolved["forced_gate_action"] = "HUMAN_CONFIRM"
+        resolved["disallow_tools"] = list(merged.get("disallow_tools") or [])
+        return resolved
+
+    def _online_budget_reason_code(self, selected: list[Any]) -> str:
+        for item in selected:
+            if item.action_type != "APPLY_CAUTIOUS_BUDGET":
+                continue
+            audit = item.audit if isinstance(item.audit, Mapping) else {}
+            reason_codes = audit.get("reason_codes")
+            if isinstance(reason_codes, list):
+                for reason in reason_codes:
+                    if isinstance(reason, str) and reason:
+                        return reason
+        return "APPLY_CAUTIOUS_BUDGET"
 
     def _emit_mecpe_v0(
         self,

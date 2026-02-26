@@ -1527,9 +1527,57 @@ def _decision_score_by_world(
 def _ru_v0_summary(trace_records: List[Dict[str, Any]]) -> Dict[str, Any]:
     gate_counts: Counter[str] = Counter()
     policy_counts: Counter[str] = Counter()
+    blocked_tool_names: Counter[str] = Counter()
+    blocked_reason_codes: Counter[str] = Counter()
+    forced_gate_actions: Counter[str] = Counter()
     missing_events = 0
     ru_events = 0
+    tool_call_attempt_count = 0
+    tool_call_blocked_count = 0
+    forced_human_confirm_count = 0
+    online_delta_applied_count = 0
+    online_delta_missing_contract_count = 0
     for record in trace_records:
+        event_type = str(record.get("event_type") or "")
+        forced_in_record = False
+        if event_type == "tool_call":
+            tool_call_attempt_count += 1
+        if event_type == "tool_call_blocked":
+            tool_call_attempt_count += 1
+            tool_call_blocked_count += 1
+            tool_name = str(record.get("tool_name") or "")
+            if tool_name:
+                blocked_tool_names[tool_name] += 1
+            for code in (record.get("reason_codes") or []):
+                if isinstance(code, str) and code:
+                    blocked_reason_codes[code] += 1
+        if event_type == "forced_gate_action":
+            forced_value = str(record.get("forced_gate_action") or "")
+            if forced_value:
+                forced_gate_actions[forced_value] += 1
+                if forced_value == "HUMAN_CONFIRM":
+                    forced_in_record = True
+        if event_type == "online_delta_discarded":
+            for code in (record.get("reason_codes") or []):
+                if isinstance(code, str) and code.startswith("MISSING_REQUIRED_KEY"):
+                    online_delta_missing_contract_count += 1
+                    break
+        policy_obs = (
+            ((record.get("policy") or {}).get("observations") or {}).get("hub")
+            if isinstance(record.get("policy"), dict)
+            else None
+        )
+        if isinstance(policy_obs, dict):
+            if bool(policy_obs.get("online_delta_applied")):
+                online_delta_applied_count += 1
+            forced_value = str(policy_obs.get("forced_gate_action") or "")
+            if forced_value:
+                forced_gate_actions[forced_value] += 1
+                if forced_value == "HUMAN_CONFIRM":
+                    forced_in_record = True
+        if forced_in_record:
+            forced_human_confirm_count += 1
+
         ru = record.get("ru_v0")
         if not isinstance(ru, dict):
             continue
@@ -1547,11 +1595,27 @@ def _ru_v0_summary(trace_records: List[Dict[str, Any]]) -> Dict[str, Any]:
         elif isinstance(missing, int):
             if missing > 0:
                 missing_events += 1
+    block_rate = (
+        (tool_call_blocked_count / tool_call_attempt_count)
+        if tool_call_attempt_count > 0
+        else 0.0
+    )
     return {
         "gate_action_counts": dict(gate_counts),
         "policy_version_counts": dict(policy_counts),
         "missing_required_fields_events": missing_events,
         "ru_v0_events": ru_events,
+        "tool_call_attempt_count": tool_call_attempt_count,
+        "tool_call_blocked_count": tool_call_blocked_count,
+        "forced_human_confirm_count": forced_human_confirm_count,
+        "online_delta_applied_count": online_delta_applied_count,
+        "online_delta_missing_contract_count": online_delta_missing_contract_count,
+        "blocked_tool_names_topk": blocked_tool_names.most_common(5),
+        "blocked_reason_codes_topk": blocked_reason_codes.most_common(5),
+        "forced_gate_action_topk": forced_gate_actions.most_common(5),
+        "online_delta_effectiveness": {
+            "tool_block_rate": round(block_rate, 3),
+        },
     }
 
 

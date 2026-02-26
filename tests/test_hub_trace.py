@@ -100,6 +100,15 @@ def _day_key_from_dt(stamp: datetime) -> str:
     return stamp.astimezone(timezone.utc).strftime("%Y-%m-%d")
 
 
+def _write_online_delta_v0(state_dir: Path, rows: list[dict[str, Any]]) -> Path:
+    path = state_dir / "online_delta_v0.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return path
+
+
 @pytest.fixture
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -331,6 +340,130 @@ def test_log_moment_applies_policy_prior_once(
     hub.log_moment(moment, "once")
     assert len(calls) == 1
     assert calls[0]["repair_snapshot"] is not None
+
+
+def test_log_moment_online_delta_overrides_nightly_budget_profile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    hub = _hub(tmp_path, monkeypatch)
+    hub._latest_memory_thermo = {
+        "budget_throttle_applied": False,
+        "output_control_profile": "normal_v1",
+        "throttle_reason_code": "",
+    }
+    _write_online_delta_v0(
+        hub.config.state_dir,
+        [
+            {
+                "schema_version": "online_delta_v0",
+                "created_at_ms": 1704164645000,
+                "ttl_ms": 600000,
+                "delta_id": "od-budget-1",
+                "priority": 50,
+                "condition": {"scenario_id": "session-demo"},
+                "action": {
+                    "type": "APPLY_CAUTIOUS_BUDGET",
+                    "payload": {"budget_profile": "cautious_budget_v1"},
+                },
+                "audit": {"reason_codes": ["TOOL_TIMEOUT"]},
+            }
+        ],
+    )
+    calls: list[dict[str, Any]] = []
+
+    class _StubControl:
+        control_applied_at = "response_gate_v1"
+        repair_state = "RECOGNIZE"
+
+        def __init__(self, profile: str, throttle_reason_code: str) -> None:
+            self.output_control_profile = profile
+            self.throttle_reason_code = throttle_reason_code
+
+        def to_fingerprint_payload(self) -> dict[str, Any]:
+            return {
+                "response_style_mode": "neutral",
+                "recall_budget_override": 3,
+                "safety_strictness": 0.5,
+                "temperature_cap": 0.5,
+                "repair_state": "RECOGNIZE",
+                "output_control_profile": self.output_control_profile,
+                "throttle_reason_code": self.throttle_reason_code,
+                "control_applied_at": "response_gate_v1",
+            }
+
+    def _spy_apply(  # noqa: ANN001
+        policy_prior,
+        *,
+        day_key,
+        episode_id,
+        repair_snapshot=None,
+        budget_throttle_applied=False,
+        output_control_profile=None,
+        throttle_reason_code=None,
+        output_control_policy=None,
+    ):
+        calls.append(
+            {
+                "budget_throttle_applied": budget_throttle_applied,
+                "output_control_profile": output_control_profile,
+                "throttle_reason_code": throttle_reason_code,
+            }
+        )
+        return _StubControl(
+            str(output_control_profile or "normal_v1"),
+            str(throttle_reason_code or ""),
+        )
+
+    monkeypatch.setattr("eqnet.hub.api.apply_policy_prior", _spy_apply)
+    moment = _dummy_moment()
+    hub.log_moment(moment, "online override")
+    assert calls
+    assert calls[0]["budget_throttle_applied"] is True
+    assert calls[0]["output_control_profile"] == "cautious_budget_v1"
+    assert str(calls[0]["throttle_reason_code"]).startswith("ONLINE_DELTA:")
+
+
+def test_log_moment_online_delta_force_human_confirm_is_observed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    hub = _hub(tmp_path, monkeypatch)
+    _write_online_delta_v0(
+        hub.config.state_dir,
+        [
+            {
+                "schema_version": "online_delta_v0",
+                "created_at_ms": 1704164645000,
+                "ttl_ms": 600000,
+                "delta_id": "od-confirm-1",
+                "priority": 60,
+                "condition": {"scenario_id": "session-demo"},
+                "action": {"type": "FORCE_HUMAN_CONFIRM", "payload": {}},
+            }
+        ],
+    )
+    moment = _dummy_moment()
+    hub.log_moment(moment, "force confirm")
+    day_dir = trace_root / _day_key_from_dt(moment.timestamp)
+    files = list(day_dir.glob("hub-*.jsonl"))
+    assert files
+    rows = [json.loads(line) for line in files[0].read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert rows
+    data = rows[0]
+    obs = data.get("policy", {}).get("observations", {}).get("hub", {})
+    assert obs.get("online_delta_applied") is True
+    assert "od-confirm-1" in (obs.get("online_delta_ids") or [])
+    assert "FORCE_HUMAN_CONFIRM" in (obs.get("online_delta_action_types") or [])
+    assert obs.get("forced_gate_action") == "HUMAN_CONFIRM"
+    assert data.get("policy", {}).get("gate_action") == "HUMAN_CONFIRM"
+    forced_events = [row for row in rows if row.get("event_type") == "forced_gate_action"]
+    assert forced_events
+    assert forced_events[-1].get("forced_gate_action") == "HUMAN_CONFIRM"
 
 
 def test_log_moment_explicit_repair_trigger_updates_trace(

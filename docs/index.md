@@ -4,6 +4,8 @@ This page provides stable entry points without moving existing docs.
 
 - Core (minimal loop, audits, forgetting): `docs/core/README.md`
 - Ops (runbooks, validation): `docs/ops/README.md`
+- ACE weightless operation (no fine-tuning): `docs/ops/ace_weightless_operation.md`
+- ACE weightless operation (JA): `docs/ops/ace_weightless_operation_ja.md`
 - Research (notes, hypotheses): `docs/research/README.md`
 - Posters (overview visuals): `docs/poster/README.md`
 - Sensors / Streaming: `docs/sensors/README.md`

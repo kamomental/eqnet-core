@@ -53,6 +53,10 @@ reports/weekly_ops_summary_*.json
 reports/weekly_ops_summary_*.md
 reports/audit/nightly_audit_*.json
 telemetry/audit/nightly_audit_*.json
+rule_delta.v0.jsonl
+**/rule_delta.v0.jsonl
+online_delta_v0.jsonl
+**/online_delta_v0.jsonl
 reports/exp_risk*.json
 reports/exp_risk*.md
 trace_runs/

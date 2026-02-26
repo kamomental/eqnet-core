@@ -12,3 +12,11 @@ Runbooks, audits, and operational checklists.
 - Love preset runbook: `docs/ops/love_preset_runbook.md`
 - Green/Core整合方針（ADR相当）: `docs/ops/green_core_alignment.md`
 - Weekly love preset checklist: `docs/ops/weekly_love_preset_checklist.md`
+- ACE-aligned weightless operation: `docs/ops/ace_weightless_operation.md`
+- ACE準拠 重み更新なし運用 (JA): `docs/ops/ace_weightless_operation_ja.md`
+
+## Artifact Policy
+
+- Treat nightly outputs as runtime artifacts, not source files.
+- Do not commit `telemetry/audit/nightly_audit_*.json`, `trace_v1/`, or `rule_delta.v0.jsonl`.
+- Validate structure and thresholds through tests, not by pinning environment-dependent JSON snapshots.

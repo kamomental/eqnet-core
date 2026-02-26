@@ -1,0 +1,10 @@
+schema_version: online_delta_promotion_v0
+window_turns: 200
+min_samples: 20
+min_success_delta: 0.05
+min_cost_delta: 0.02
+max_block_rate: 0.8
+max_forced_confirm_rate: 0.5
+success_signal_path: prospection.accepted
+cost_signal_path: cost
+max_candidates: 10

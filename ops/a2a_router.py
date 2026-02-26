@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -137,6 +138,99 @@ class A2ARouter:
             bucket[key] = response
         return None
 
+    def _normalize_tool_list(self, value: Any) -> List[str]:
+        if not isinstance(value, list):
+            return []
+        out: List[str] = []
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                out.append(item.strip())
+        return out
+
+    def _resolve_tool_policy(
+        self,
+        *,
+        session: A2ASession,
+        metadata: Mapping[str, Any],
+    ) -> Dict[str, List[str]]:
+        disallow: List[str] = []
+        allow: List[str] = []
+        spec_meta = session.spec.metadata if isinstance(session.spec.metadata, Mapping) else {}
+        spec_tool_policy = spec_meta.get("tool_policy") if isinstance(spec_meta, Mapping) else None
+        if isinstance(spec_tool_policy, Mapping):
+            disallow = self._normalize_tool_list(spec_tool_policy.get("disallow_tools"))
+            allow = self._normalize_tool_list(spec_tool_policy.get("allow_tools"))
+        disallow = disallow + self._normalize_tool_list(metadata.get("disallow_tools"))
+        allow = allow + self._normalize_tool_list(metadata.get("allow_tools"))
+        # Safety precedence: disallow wins over allow.
+        disallow_unique = list(dict.fromkeys(disallow))
+        allow_unique = [name for name in list(dict.fromkeys(allow)) if name not in set(disallow_unique)]
+        return {"disallow_tools": disallow_unique, "allow_tools": allow_unique}
+
+    def _extract_tool_name(self, turn_payload: Mapping[str, Any]) -> Optional[str]:
+        direct = turn_payload.get("tool_name")
+        if isinstance(direct, str) and direct.strip():
+            return direct.strip()
+        tool = turn_payload.get("tool")
+        if isinstance(tool, Mapping):
+            name = tool.get("name")
+            if isinstance(name, str) and name.strip():
+                return name.strip()
+        return None
+
+    def _emit_trace_v1_event(
+        self,
+        *,
+        session_id: str,
+        event_type: str,
+        tool_name: str | None = None,
+        reason_codes: List[str] | None = None,
+        online_delta_ids: List[str] | None = None,
+    ) -> None:
+        if str(os.getenv("EQNET_TRACE_V1") or "").strip().lower() not in {"1", "true", "yes", "on"}:
+            return
+        try:
+            from eqnet.telemetry.trace_paths import TracePathConfig, trace_output_path
+            from eqnet.telemetry.trace_writer import append_trace_event
+        except Exception:
+            return
+        now_ms = int(time.time() * 1000)
+        trace_root = Path(os.getenv("EQNET_TRACE_V1_DIR") or "telemetry/trace_v1")
+        target = trace_output_path(
+            TracePathConfig(base_dir=trace_root, source_loop="a2a_router"),
+            timestamp_ms=now_ms,
+        )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        normalized_reasons = [str(code) for code in (reason_codes or []) if isinstance(code, str) and code]
+        normalized_delta_ids = [str(item) for item in (online_delta_ids or []) if isinstance(item, str) and item]
+        payload: Dict[str, Any] = {
+            "schema_version": "trace_v1",
+            "source_loop": "a2a_router",
+            "scenario_id": "tool_policy",
+            "turn_id": f"{session_id}-{event_type}-{now_ms}",
+            "seed": abs(hash(f"{session_id}|{event_type}|{now_ms}")) % 1_000_000 + 1,
+            "timestamp_ms": now_ms,
+            "event_type": event_type,
+            "tool_name": str(tool_name or ""),
+            "reason_codes": normalized_reasons,
+            "boundary": {},
+            "self": {},
+            "prospection": {"accepted": False},
+            "policy": {
+                "observations": {
+                    "hub": {
+                        "operation": "a2a_router",
+                        "online_delta_applied": True,
+                        "online_delta_ids": normalized_delta_ids,
+                        "online_delta_action_types": ["DISALLOW_TOOL"] if event_type == "tool_call_blocked" else [],
+                    }
+                }
+            },
+            "qualia": {},
+            "invariants": {},
+        }
+        append_trace_event(target, payload)
+
     # -------------------------------------------------------------------- public
     def capabilities(self) -> Dict[str, Any]:
         """Return a light-weight capability manifest for discovery endpoints."""
@@ -237,6 +331,40 @@ class A2ARouter:
             raise ValueError("role must be planner/actor/critic/delegate")
         actor = str(payload.get("actor") or session.spec.from_agent)
         metadata = dict(payload.get("metadata") or {})
+        tool_policy = self._resolve_tool_policy(session=session, metadata=metadata)
+        turn_payload = dict(payload.get("payload") or {})
+        tool_name = self._extract_tool_name(turn_payload)
+        disallow_tools = set(tool_policy.get("disallow_tools") or [])
+        if isinstance(tool_name, str) and tool_name in disallow_tools:
+            online_delta_ids = self._normalize_tool_list(metadata.get("online_delta_ids"))
+            event_payload = {
+                "event": "tool_call_blocked",
+                "turn_index": len(session.turns),
+                "actor": actor,
+                "role": role,
+                "tool_name": tool_name,
+                "reason_codes": ["ONLINE_DELTA_TOOL_BLOCKED"],
+                "disallow_tools": sorted(disallow_tools),
+            }
+            self._log(session, event_payload)
+            self._emit_trace_v1_event(
+                session_id=session.spec.session_id,
+                event_type="tool_call_blocked",
+                tool_name=tool_name,
+                reason_codes=["ONLINE_DELTA_TOOL_BLOCKED"],
+                online_delta_ids=online_delta_ids,
+            )
+            response = {
+                "status": "blocked",
+                "blocked": True,
+                "turn_index": len(session.turns),
+                "remaining_steps": session.remaining_steps,
+                "reason_codes": ["ONLINE_DELTA_TOOL_BLOCKED"],
+                "tool_name": tool_name,
+                "audit_path": str(session.audit_path) if session.audit_path else None,
+            }
+            self._check_idempotency(session, "turn", payload, response)
+            return response
         if session.spec.guardrails.get("no_recursive"):
             caller = metadata.get("source_agent")
             callee = metadata.get("target_agent")
@@ -244,7 +372,6 @@ class A2ARouter:
                 session.status = "recursive_blocked"
                 self._log(session, {"event": "session.closed", "reason": "no_recursive_violation", "actor": actor})
                 raise RuntimeError("no_recursive guardrail violated")
-        turn_payload = dict(payload.get("payload") or {})
         turn_index = len(session.turns)
         record = TurnRecord(turn_index=turn_index, role=role, actor=actor, payload=turn_payload)
         session.turns.append(record)

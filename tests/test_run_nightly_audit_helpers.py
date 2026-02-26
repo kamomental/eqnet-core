@@ -22,6 +22,7 @@ from scripts.run_nightly_audit import (
     _summarize_perception_quality,
     _summarize_perception_quality_breakdown,
     _green_priority_patch_summary,
+    _ru_v0_summary,
     _load_green_bridge_policy,
     _compute_green_bridge_snapshot,
     _load_behavior_change_policy,
@@ -147,6 +148,36 @@ def test_fsm_feature_events_from_trace_extracts_inner_loop_signals() -> None:
     assert event["budget_throttle_applied"] == 1.0
     assert event["output_control_cautious"] == 1.0
     assert event["output_control_fingerprint"] == "qfp"
+
+
+def test_ru_v0_summary_counts_online_delta_events() -> None:
+    rows = [
+        {
+            "event_type": "tool_call",
+            "ru_v0": {"gate_action": "EXECUTE", "policy_version": "ru-v0.1", "missing_required_fields": []},
+        },
+        {
+            "event_type": "tool_call_blocked",
+            "tool_name": "web.fetch",
+            "reason_codes": ["ONLINE_DELTA_TOOL_BLOCKED"],
+            "ru_v0": {"gate_action": "HOLD", "policy_version": "ru-v0.1", "missing_required_fields": []},
+        },
+        {
+            "event_type": "forced_gate_action",
+            "forced_gate_action": "HUMAN_CONFIRM",
+            "ru_v0": {"gate_action": "HUMAN_CONFIRM", "policy_version": "ru-v0.1", "missing_required_fields": []},
+        },
+        {
+            "policy": {"observations": {"hub": {"online_delta_applied": True, "forced_gate_action": "HUMAN_CONFIRM"}}},
+            "ru_v0": {"gate_action": "EXECUTE", "policy_version": "ru-v0.1", "missing_required_fields": []},
+        },
+    ]
+    out = _ru_v0_summary(rows)
+    assert out["tool_call_attempt_count"] == 2
+    assert out["tool_call_blocked_count"] == 1
+    assert out["forced_human_confirm_count"] >= 2
+    assert out["online_delta_applied_count"] == 1
+    assert float((out.get("online_delta_effectiveness") or {}).get("tool_block_rate") or 0.0) == 0.5
 
 
 def test_adaptive_fsm_snapshot_from_trace_contains_policy_metadata() -> None:

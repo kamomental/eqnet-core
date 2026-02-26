@@ -332,3 +332,229 @@ def test_generate_audit_mecpe_contract_errors_do_not_break_audit(tmp_path: Path)
     assert health.get("status") in {"YELLOW", "RED"}
     reasons = health.get("reasons") or []
     assert any("mecpe contract errors detected" in str((item or {}).get("reason")) for item in reasons)
+
+
+def test_generate_audit_online_delta_promotion_rejects_when_min_samples_not_met(tmp_path: Path) -> None:
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {
+            "timestamp_ms": 1,
+            "turn_id": "turn-1",
+            "scenario_id": "scenario-demo",
+            "source_loop": "hub",
+            "prospection": {"accepted": True},
+            "policy": {
+                "observations": {
+                    "hub": {
+                        "online_delta_applied": True,
+                        "online_delta_ids": ["od-min-1"],
+                        "online_delta_action_types": ["APPLY_CAUTIOUS_BUDGET"],
+                    }
+                },
+                "throttles": {},
+            },
+            "invariants": {"TRACE_001": True},
+        }
+    ]
+    (day_dir / "hub-1.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    policy_path = tmp_path / "promotion.yaml"
+    policy_path.write_text(
+        "\n".join(
+            [
+                "schema_version: online_delta_promotion_v0",
+                "window_turns: 50",
+                "min_samples: 5",
+                "min_success_delta: 0.01",
+                "max_block_rate: 0.8",
+                "max_forced_confirm_rate: 0.8",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    rule_delta_path = tmp_path / "state" / "rule_delta.v0.jsonl"
+    out_path = generate_audit(
+        NightlyAuditConfig(
+            trace_root=trace_root,
+            out_root=tmp_path / "audit",
+            date_yyyy_mm_dd=day,
+            promotion_policy_path=policy_path,
+            rule_delta_path=rule_delta_path,
+            think_log_path=None,
+            act_log_path=None,
+        )
+    )
+    data = json.loads(out_path.read_text(encoding="utf-8"))
+    promotion = data.get("online_delta_promotion") or {}
+    decisions = promotion.get("promotion_decisions") or []
+    assert decisions
+    reason_codes = decisions[0].get("reason_codes") or []
+    assert "PROMOTION_REJECT_MIN_SAMPLES" in reason_codes
+    assert decisions[0].get("status") == "REJECTED"
+
+
+def test_generate_audit_online_delta_promotion_rejects_when_block_rate_high(tmp_path: Path) -> None:
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {
+            "timestamp_ms": 1,
+            "turn_id": "turn-1",
+            "scenario_id": "scenario-demo",
+            "source_loop": "hub",
+            "event_type": "tool_call_blocked",
+            "tool_name": "web.fetch",
+            "reason_codes": ["ONLINE_DELTA_TOOL_BLOCKED"],
+            "prospection": {"accepted": True},
+            "policy": {
+                "observations": {
+                    "hub": {
+                        "online_delta_applied": True,
+                        "online_delta_ids": ["od-block-1"],
+                        "online_delta_action_types": ["DISALLOW_TOOL"],
+                    }
+                },
+                "throttles": {},
+            },
+            "invariants": {"TRACE_001": True},
+        },
+        {
+            "timestamp_ms": 2,
+            "turn_id": "turn-2",
+            "scenario_id": "scenario-demo",
+            "source_loop": "hub",
+            "event_type": "tool_call_blocked",
+            "tool_name": "web.fetch",
+            "reason_codes": ["ONLINE_DELTA_TOOL_BLOCKED"],
+            "prospection": {"accepted": True},
+            "policy": {
+                "observations": {
+                    "hub": {
+                        "online_delta_applied": True,
+                        "online_delta_ids": ["od-block-1"],
+                        "online_delta_action_types": ["DISALLOW_TOOL"],
+                    }
+                },
+                "throttles": {},
+            },
+            "invariants": {"TRACE_001": True},
+        },
+    ]
+    (day_dir / "hub-1.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    policy_path = tmp_path / "promotion.yaml"
+    policy_path.write_text(
+        "\n".join(
+            [
+                "schema_version: online_delta_promotion_v0",
+                "window_turns: 50",
+                "min_samples: 1",
+                "min_success_delta: 0.0",
+                "max_block_rate: 0.1",
+                "max_forced_confirm_rate: 0.8",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out_path = generate_audit(
+        NightlyAuditConfig(
+            trace_root=trace_root,
+            out_root=tmp_path / "audit",
+            date_yyyy_mm_dd=day,
+            promotion_policy_path=policy_path,
+            rule_delta_path=tmp_path / "state" / "rule_delta.v0.jsonl",
+            think_log_path=None,
+            act_log_path=None,
+        )
+    )
+    data = json.loads(out_path.read_text(encoding="utf-8"))
+    decisions = ((data.get("online_delta_promotion") or {}).get("promotion_decisions") or [])
+    assert decisions
+    assert decisions[0].get("status") == "REJECTED"
+    assert "PROMOTION_REJECT_BLOCK_RATE_HIGH" in (decisions[0].get("reason_codes") or [])
+
+
+def test_generate_audit_online_delta_promotion_appends_rule_delta_append_only(tmp_path: Path) -> None:
+    trace_root = tmp_path / "trace_v1"
+    day = "2025-12-14"
+    day_dir = trace_root / day
+    day_dir.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {
+            "timestamp_ms": 1,
+            "turn_id": "turn-base-1",
+            "scenario_id": "scenario-demo",
+            "source_loop": "hub",
+            "prospection": {"accepted": False},
+            "policy": {"throttles": {}},
+            "invariants": {"TRACE_001": True},
+        },
+        {
+            "timestamp_ms": 2,
+            "turn_id": "turn-applied-1",
+            "scenario_id": "scenario-demo",
+            "source_loop": "hub",
+            "prospection": {"accepted": True},
+            "policy": {
+                "observations": {
+                    "hub": {
+                        "online_delta_applied": True,
+                        "online_delta_ids": ["od-promote-1"],
+                        "online_delta_action_types": ["FORCE_HUMAN_CONFIRM"],
+                    }
+                },
+                "throttles": {},
+            },
+            "invariants": {"TRACE_001": True},
+        },
+    ]
+    (day_dir / "hub-1.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    policy_path = tmp_path / "promotion.yaml"
+    policy_path.write_text(
+        "\n".join(
+            [
+                "schema_version: online_delta_promotion_v0",
+                "window_turns: 50",
+                "min_samples: 1",
+                "min_success_delta: 0.1",
+                "max_block_rate: 1.0",
+                "max_forced_confirm_rate: 1.0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    rule_delta_path = tmp_path / "state" / "rule_delta.v0.jsonl"
+
+    generate_audit(
+        NightlyAuditConfig(
+            trace_root=trace_root,
+            out_root=tmp_path / "audit",
+            date_yyyy_mm_dd=day,
+            promotion_policy_path=policy_path,
+            rule_delta_path=rule_delta_path,
+            think_log_path=None,
+            act_log_path=None,
+        )
+    )
+    generate_audit(
+        NightlyAuditConfig(
+            trace_root=trace_root,
+            out_root=tmp_path / "audit",
+            date_yyyy_mm_dd=day,
+            promotion_policy_path=policy_path,
+            rule_delta_path=rule_delta_path,
+            think_log_path=None,
+            act_log_path=None,
+        )
+    )
+    lines = [line for line in rule_delta_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(lines) == 1
+    row = json.loads(lines[0])
+    assert row.get("promotion_key") == "online_delta:od-promote-1"
+    assert row.get("operation") == "add"
