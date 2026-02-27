@@ -109,6 +109,15 @@ def _write_online_delta_v0(state_dir: Path, rows: list[dict[str, Any]]) -> Path:
     return path
 
 
+def _write_rule_delta_v0(state_dir: Path, rows: list[dict[str, Any]]) -> Path:
+    path = state_dir / "rule_delta.v0.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return path
+
+
 @pytest.fixture
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -423,6 +432,196 @@ def test_log_moment_online_delta_overrides_nightly_budget_profile(
     assert calls
     assert calls[0]["budget_throttle_applied"] is True
     assert calls[0]["output_control_profile"] == "cautious_budget_v1"
+    assert str(calls[0]["throttle_reason_code"]).startswith("ONLINE_DELTA:")
+
+
+def test_log_moment_rule_delta_applies_budget_profile_without_online(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    hub = _hub(tmp_path, monkeypatch)
+    hub._latest_memory_thermo = {
+        "budget_throttle_applied": False,
+        "output_control_profile": "normal_v1",
+        "throttle_reason_code": "",
+    }
+    _write_rule_delta_v0(
+        hub.config.state_dir,
+        [
+            {
+                "schema_version": "rule_delta.v0",
+                "operation": "add",
+                "promotion_key": "online_delta:od-rule-budget-1",
+                "target_online_delta_id": "od-rule-budget-1",
+                "action": {
+                    "type": "APPLY_CAUTIOUS_BUDGET",
+                    "payload": {"budget_profile": "cautious_budget_rule_v1"},
+                },
+                "condition": {"scenario_id": "session-demo"},
+            }
+        ],
+    )
+    calls: list[dict[str, Any]] = []
+
+    class _StubControl:
+        control_applied_at = "response_gate_v1"
+        repair_state = "RECOGNIZE"
+
+        def __init__(self, profile: str, throttle_reason_code: str) -> None:
+            self.output_control_profile = profile
+            self.throttle_reason_code = throttle_reason_code
+
+        def to_fingerprint_payload(self) -> dict[str, Any]:
+            return {
+                "response_style_mode": "neutral",
+                "recall_budget_override": 3,
+                "safety_strictness": 0.5,
+                "temperature_cap": 0.5,
+                "repair_state": "RECOGNIZE",
+                "output_control_profile": self.output_control_profile,
+                "throttle_reason_code": self.throttle_reason_code,
+                "control_applied_at": "response_gate_v1",
+            }
+
+    def _spy_apply(  # noqa: ANN001
+        policy_prior,
+        *,
+        day_key,
+        episode_id,
+        repair_snapshot=None,
+        budget_throttle_applied=False,
+        output_control_profile=None,
+        throttle_reason_code=None,
+        output_control_policy=None,
+    ):
+        calls.append(
+            {
+                "budget_throttle_applied": budget_throttle_applied,
+                "output_control_profile": output_control_profile,
+                "throttle_reason_code": throttle_reason_code,
+            }
+        )
+        return _StubControl(
+            str(output_control_profile or "normal_v1"),
+            str(throttle_reason_code or ""),
+        )
+
+    monkeypatch.setattr("eqnet.hub.api.apply_policy_prior", _spy_apply)
+    moment = _dummy_moment()
+    hub.log_moment(moment, "rule delta override")
+    assert calls
+    assert calls[0]["budget_throttle_applied"] is True
+    assert calls[0]["output_control_profile"] == "cautious_budget_rule_v1"
+    assert str(calls[0]["throttle_reason_code"]).startswith("RULE_DELTA:")
+
+    day_dir = trace_root / _day_key_from_dt(moment.timestamp)
+    files = list(day_dir.glob("hub-*.jsonl"))
+    assert files
+    data = json.loads(files[0].read_text(encoding="utf-8").splitlines()[0])
+    obs = data.get("policy", {}).get("observations", {}).get("hub", {})
+    assert obs.get("rule_delta_applied") is True
+    assert "online_delta:od-rule-budget-1" in (obs.get("rule_delta_ids") or [])
+    assert "APPLY_CAUTIOUS_BUDGET" in (obs.get("rule_delta_action_types") or [])
+
+
+def test_log_moment_online_delta_wins_over_rule_delta_budget_profile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_root = tmp_path / "trace_dump"
+    monkeypatch.setenv("EQNET_TRACE_V1_DIR", str(trace_root))
+    hub = _hub(tmp_path, monkeypatch)
+    hub._latest_memory_thermo = {
+        "budget_throttle_applied": False,
+        "output_control_profile": "normal_v1",
+        "throttle_reason_code": "",
+    }
+    _write_rule_delta_v0(
+        hub.config.state_dir,
+        [
+            {
+                "schema_version": "rule_delta.v0",
+                "operation": "add",
+                "promotion_key": "online_delta:od-rule-budget-2",
+                "target_online_delta_id": "od-rule-budget-2",
+                "action": {
+                    "type": "APPLY_CAUTIOUS_BUDGET",
+                    "payload": {"budget_profile": "cautious_budget_rule_v2"},
+                },
+                "condition": {"scenario_id": "session-demo"},
+            }
+        ],
+    )
+    _write_online_delta_v0(
+        hub.config.state_dir,
+        [
+            {
+                "schema_version": "online_delta_v0",
+                "created_at_ms": 1704164645000,
+                "ttl_ms": 600000,
+                "delta_id": "od-online-budget-2",
+                "priority": 100,
+                "condition": {"scenario_id": "session-demo"},
+                "action": {
+                    "type": "APPLY_CAUTIOUS_BUDGET",
+                    "payload": {"budget_profile": "cautious_budget_online_v2"},
+                },
+                "audit": {"reason_codes": ["TOOL_TIMEOUT"]},
+            }
+        ],
+    )
+    calls: list[dict[str, Any]] = []
+
+    class _StubControl:
+        control_applied_at = "response_gate_v1"
+        repair_state = "RECOGNIZE"
+
+        def __init__(self, profile: str, throttle_reason_code: str) -> None:
+            self.output_control_profile = profile
+            self.throttle_reason_code = throttle_reason_code
+
+        def to_fingerprint_payload(self) -> dict[str, Any]:
+            return {
+                "response_style_mode": "neutral",
+                "recall_budget_override": 3,
+                "safety_strictness": 0.5,
+                "temperature_cap": 0.5,
+                "repair_state": "RECOGNIZE",
+                "output_control_profile": self.output_control_profile,
+                "throttle_reason_code": self.throttle_reason_code,
+                "control_applied_at": "response_gate_v1",
+            }
+
+    def _spy_apply(  # noqa: ANN001
+        policy_prior,
+        *,
+        day_key,
+        episode_id,
+        repair_snapshot=None,
+        budget_throttle_applied=False,
+        output_control_profile=None,
+        throttle_reason_code=None,
+        output_control_policy=None,
+    ):
+        calls.append(
+            {
+                "budget_throttle_applied": budget_throttle_applied,
+                "output_control_profile": output_control_profile,
+                "throttle_reason_code": throttle_reason_code,
+            }
+        )
+        return _StubControl(
+            str(output_control_profile or "normal_v1"),
+            str(throttle_reason_code or ""),
+        )
+
+    monkeypatch.setattr("eqnet.hub.api.apply_policy_prior", _spy_apply)
+    hub.log_moment(_dummy_moment(), "online beats rule")
+    assert calls
+    assert calls[0]["budget_throttle_applied"] is True
+    assert calls[0]["output_control_profile"] == "cautious_budget_online_v2"
     assert str(calls[0]["throttle_reason_code"]).startswith("ONLINE_DELTA:")
 
 

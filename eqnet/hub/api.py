@@ -44,6 +44,11 @@ from eqnet.runtime.online_delta_v0 import (
     load_online_deltas,
     select_online_deltas,
 )
+from eqnet.runtime.rule_delta_v0 import (
+    apply_rule_deltas,
+    load_rule_deltas,
+    select_rule_deltas,
+)
 from eqnet.telemetry.trace_paths import TracePathConfig, trace_output_path
 from eqnet.telemetry.trace_writer import append_trace_event
 from eqnet.telemetry.nightly_audit import NightlyAuditConfig, generate_audit
@@ -721,6 +726,9 @@ class EQNetHub:
                     "online_delta_applied": bool(overlay.get("online_delta_applied")),
                     "online_delta_ids": list(overlay.get("online_delta_ids") or []),
                     "online_delta_action_types": list(overlay.get("online_delta_action_types") or []),
+                    "rule_delta_applied": bool(overlay.get("rule_delta_applied")),
+                    "rule_delta_ids": list(overlay.get("rule_delta_ids") or []),
+                    "rule_delta_action_types": list(overlay.get("rule_delta_action_types") or []),
                     "forced_gate_action": str(overlay.get("forced_gate_action") or ""),
                     "disallow_tools": list(overlay.get("disallow_tools") or []),
                     "repair_state_before": repair_state_before or self._repair_snapshot.state.value,
@@ -848,19 +856,13 @@ class EQNetHub:
             ),
             "forced_gate_action": "",
             "disallow_tools": [],
+            "rule_delta_applied": False,
+            "rule_delta_ids": [],
+            "rule_delta_action_types": [],
             "online_delta_applied": False,
             "online_delta_ids": [],
             "online_delta_action_types": [],
         }
-        try:
-            deltas = load_online_deltas(self.config.state_dir, now_ms=now_ms)
-            selected = select_online_deltas(deltas, context)
-        except Exception as exc:
-            logger.warning("online_delta_v0 load/select failed", exc_info=exc)
-            return resolved
-        if not selected:
-            return resolved
-
         base_policy = {
             "budget_throttle_applied": resolved["budget_throttle_applied"],
             "output_control_profile": resolved["output_control_profile"],
@@ -869,23 +871,57 @@ class EQNetHub:
             "disallow_tools": [],
         }
         try:
-            merged = apply_online_deltas(base_policy, selected)
+            rule_deltas = load_rule_deltas(self.config.state_dir)
+            selected_rule = select_rule_deltas(rule_deltas, context)
         except Exception as exc:
-            logger.warning("online_delta_v0 apply failed", exc_info=exc)
-            return resolved
+            logger.warning("rule_delta_v0 load/select failed", exc_info=exc)
+            selected_rule = []
+        merged = dict(base_policy)
+        if selected_rule:
+            try:
+                merged = apply_rule_deltas(merged, selected_rule)
+                resolved["rule_delta_applied"] = True
+                resolved["rule_delta_ids"] = [item.rule_id for item in selected_rule]
+                resolved["rule_delta_action_types"] = list(
+                    dict.fromkeys([item.action_type for item in selected_rule])
+                )
+            except Exception as exc:
+                logger.warning("rule_delta_v0 apply failed", exc_info=exc)
 
-        action_types = list(dict.fromkeys([item.action_type for item in selected]))
-        resolved["online_delta_applied"] = True
-        resolved["online_delta_ids"] = [item.delta_id for item in selected]
-        resolved["online_delta_action_types"] = action_types
+        selected: list[Any] = []
+        try:
+            deltas = load_online_deltas(self.config.state_dir, now_ms=now_ms)
+            selected = select_online_deltas(deltas, context)
+        except Exception as exc:
+            logger.warning("online_delta_v0 load/select failed", exc_info=exc)
+            selected = []
+        if selected:
+            try:
+                merged = apply_online_deltas(merged, selected)
+                resolved["online_delta_applied"] = True
+                resolved["online_delta_ids"] = [item.delta_id for item in selected]
+                resolved["online_delta_action_types"] = list(
+                    dict.fromkeys([item.action_type for item in selected])
+                )
+            except Exception as exc:
+                logger.warning("online_delta_v0 apply failed", exc_info=exc)
+
         resolved["budget_throttle_applied"] = bool(merged.get("budget_throttle_applied"))
         profile = merged.get("output_control_profile")
         resolved["output_control_profile"] = str(profile) if isinstance(profile, str) and profile else None
         throttle_reason_code = merged.get("throttle_reason_code")
         if isinstance(throttle_reason_code, str) and throttle_reason_code:
             resolved["throttle_reason_code"] = throttle_reason_code
-        if "APPLY_CAUTIOUS_BUDGET" in action_types and not resolved.get("throttle_reason_code"):
-            resolved["throttle_reason_code"] = f"ONLINE_DELTA:{self._online_budget_reason_code(selected)}"
+        online_action_types = list(resolved.get("online_delta_action_types") or [])
+        rule_action_types = list(resolved.get("rule_delta_action_types") or [])
+        if (
+            "APPLY_CAUTIOUS_BUDGET" in (online_action_types + rule_action_types)
+            and not resolved.get("throttle_reason_code")
+        ):
+            if "APPLY_CAUTIOUS_BUDGET" in online_action_types:
+                resolved["throttle_reason_code"] = f"ONLINE_DELTA:{self._online_budget_reason_code(selected)}"
+            else:
+                resolved["throttle_reason_code"] = "RULE_DELTA:APPLY_CAUTIOUS_BUDGET"
         gate_action = str(merged.get("gate_action") or "")
         if gate_action == "HUMAN_CONFIRM":
             resolved["forced_gate_action"] = "HUMAN_CONFIRM"
