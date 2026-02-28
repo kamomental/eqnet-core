@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
+import hmac
 import hashlib
 import json
+import os
 import re
 from typing import Any, Dict, Mapping
 
@@ -132,13 +135,32 @@ def apply_quarantine_replay_guard(
     return out, recent
 
 
-def intake_signature(*, text: str, reason_codes: list[str] | None = None) -> str:
+def intake_signature(*, text: str, reason_codes: list[str] | None = None) -> Dict[str, str]:
     normalized = " ".join((text or "").lower().split())
     payload = {
         "text": normalized,
         "reason_codes": sorted({str(x) for x in (reason_codes or [])}),
     }
-    return _digest(payload)
+    key_b64 = os.getenv("EQNET_IMMUNE_HMAC_KEY_B64")
+    key_id = str(os.getenv("EQNET_IMMUNE_HMAC_KEY_ID") or "v2-local")
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    if key_b64:
+        try:
+            key = base64.b64decode(key_b64, validate=True)
+            if key:
+                signature = hmac.new(key, canonical, digestmod=hashlib.sha256).hexdigest()[:16]
+                return {
+                    "signature": signature,
+                    "signature_v": "2",
+                    "key_id": key_id,
+                }
+        except Exception:
+            pass
+    return {
+        "signature": _digest(payload),
+        "signature_v": "1",
+        "key_id": "legacy",
+    }
 
 
 def _event_hash(event: Mapping[str, Any] | None) -> str:

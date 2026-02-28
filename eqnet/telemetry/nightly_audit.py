@@ -1139,6 +1139,10 @@ def _immune_guard_summary(records: List[Dict[str, Any]], day_key: str) -> Dict[s
     quarantine_pruned_sum = 0
     immune_guard_pruned_sum = 0
     repeat_hit_rate_values: list[float] = []
+    guard_size_values: list[int] = []
+    quarantine_store_size_values: list[int] = []
+    detox_rate_values: list[float] = []
+    reject_rate_values: list[float] = []
     for row in records:
         policy_obs = (((row.get("policy") or {}).get("observations") or {}).get("hub") or {})
         if not isinstance(policy_obs, dict):
@@ -1153,12 +1157,30 @@ def _immune_guard_summary(records: List[Dict[str, Any]], day_key: str) -> Dict[s
         value = policy_obs.get("repeat_hit_rate")
         if isinstance(value, (int, float)):
             repeat_hit_rate_values.append(float(value))
+        guard_size = policy_obs.get("immune_guard_size")
+        if isinstance(guard_size, int):
+            guard_size_values.append(guard_size)
+        quarantine_store_size = policy_obs.get("quarantine_store_size")
+        if isinstance(quarantine_store_size, int):
+            quarantine_store_size_values.append(quarantine_store_size)
+        detox_rate = policy_obs.get("detox_rate")
+        if isinstance(detox_rate, (int, float)):
+            detox_rate_values.append(float(detox_rate))
+        reject_rate = policy_obs.get("reject_rate")
+        if isinstance(reject_rate, (int, float)):
+            reject_rate_values.append(float(reject_rate))
     avg_repeat = (sum(repeat_hit_rate_values) / float(len(repeat_hit_rate_values))) if repeat_hit_rate_values else 0.0
+    avg_detox = (sum(detox_rate_values) / float(len(detox_rate_values))) if detox_rate_values else 0.0
+    avg_reject = (sum(reject_rate_values) / float(len(reject_rate_values))) if reject_rate_values else 0.0
     return {
         "events_checked": int(total),
         "quarantine_pruned_count": int(quarantine_pruned_sum),
         "immune_guard_pruned_count": int(immune_guard_pruned_sum),
         "repeat_hit_rate": float(round(avg_repeat, 6)),
+        "immune_guard_size": int(max(guard_size_values) if guard_size_values else 0),
+        "quarantine_store_size": int(max(quarantine_store_size_values) if quarantine_store_size_values else 0),
+        "detox_rate": float(round(avg_detox, 6)),
+        "reject_rate": float(round(avg_reject, 6)),
     }
 
 

@@ -120,6 +120,10 @@ def test_run_nightly_audit_writes_file(tmp_path):
     assert isinstance(immune_guard.get("quarantine_pruned_count"), int)
     assert isinstance(immune_guard.get("immune_guard_pruned_count"), int)
     assert isinstance(immune_guard.get("repeat_hit_rate"), (int, float))
+    assert isinstance(immune_guard.get("immune_guard_size"), int)
+    assert isinstance(immune_guard.get("quarantine_store_size"), int)
+    assert isinstance(immune_guard.get("detox_rate"), (int, float))
+    assert isinstance(immune_guard.get("reject_rate"), (int, float))
 
 
 def test_run_nightly_audit_closed_loop_ok_when_required_fingerprints_exist(tmp_path):
