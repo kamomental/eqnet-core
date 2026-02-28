@@ -21,6 +21,7 @@ from eqnet.runtime.interaction_tools import (
     shape_response_profile,
 )
 from eqnet.runtime.immune_tool import DEFAULT_IMMUNE_POLICY, classify_intake
+from eqnet.runtime.immune_tool import apply_quarantine_replay_guard, intake_signature
 from eqnet.runtime.homeostasis_tool import update_homeostasis
 from eqnet.runtime.policy import PolicyPrior
 from eqnet.runtime.state import QualiaState
@@ -128,6 +129,12 @@ class EQNetHub:
             "confidence": 0.0,
             "uncertainty": 1.0,
             "reason_codes": [],
+        }
+        self._immune_guard_state: dict[str, Any] = {
+            "recent_signatures": [],
+            "quarantined_events_count": 0,
+            "detoxed_events_count": 0,
+            "rejected_events_count": 0,
         }
         self._repair_snapshot: RepairSnapshot = RepairSnapshot.initial()
         self._trace_safety = SafetyConfig()
@@ -770,6 +777,34 @@ class EQNetHub:
                 event=_ensure_mapping(raw_event if isinstance(raw_event, Mapping) else thin_entry),
                 policy=immune_cfg,
             )
+            guard_policy = (
+                dict(getattr(self.config, "runtime_policy", {}).get("immune_guard") or {})
+                if isinstance(getattr(self.config, "runtime_policy", None), Mapping)
+                else {}
+            )
+            immune_sig = intake_signature(
+                text=str(raw_text or ""),
+                reason_codes=list(immune.get("reason_codes") or []),
+            )
+            immune, updated_recent = apply_quarantine_replay_guard(
+                immune_result=immune,
+                signature=immune_sig,
+                recent_signatures=list((self._immune_guard_state or {}).get("recent_signatures") or []),
+                policy=guard_policy,
+            )
+            immune_action = str(immune.get("action") or "ACCEPT").upper()
+            guard_counts = dict(self._immune_guard_state or {})
+            guard_counts["recent_signatures"] = list(updated_recent)
+            guard_counts["quarantined_events_count"] = int(guard_counts.get("quarantined_events_count") or 0)
+            guard_counts["detoxed_events_count"] = int(guard_counts.get("detoxed_events_count") or 0)
+            guard_counts["rejected_events_count"] = int(guard_counts.get("rejected_events_count") or 0)
+            if immune_action == "QUARANTINE":
+                guard_counts["quarantined_events_count"] += 1
+            elif immune_action == "DETOX":
+                guard_counts["detoxed_events_count"] += 1
+            elif immune_action == "REJECT":
+                guard_counts["rejected_events_count"] += 1
+            self._immune_guard_state = guard_counts
             intake_text = str(immune.get("detox_text") or raw_text or "")
             interaction_cfg = {
                 **DEFAULT_INTERACTION_POLICY,
@@ -857,6 +892,11 @@ class EQNetHub:
                     "immune_score": _maybe_float(immune.get("score")),
                     "immune_ops_digest": str(immune.get("ops_digest") or ""),
                     "immune_event_hash": str(immune.get("event_hash") or ""),
+                    "immune_repeat_hit": bool(immune.get("repeat_hit", False)),
+                    "immune_signature": str(immune.get("signature") or ""),
+                    "quarantined_events_count": int(self._immune_guard_state.get("quarantined_events_count") or 0),
+                    "detoxed_events_count": int(self._immune_guard_state.get("detoxed_events_count") or 0),
+                    "rejected_events_count": int(self._immune_guard_state.get("rejected_events_count") or 0),
                     "homeostasis_mode": str(homeostasis.get("homeostasis_mode") or "FOCUSED"),
                     "arousal_level": _maybe_float(homeostasis.get("arousal_level")),
                     "stability_index": _maybe_float(homeostasis.get("stability_index")),
@@ -1205,6 +1245,8 @@ class EQNetHub:
             self._latest_memory_thermo = dict(value or {})
         elif kind == "interaction":
             self._interaction_state = dict(value or {})
+        elif kind == "immune_guard":
+            self._immune_guard_state = dict(value or {})
 
     def _get_latest_state(self) -> Dict[str, Any]:
         return {
@@ -1213,6 +1255,7 @@ class EQNetHub:
             "policy_prior": self._latest_policy_prior,
             "memory_thermo": dict(self._latest_memory_thermo or {}),
             "interaction": dict(self._interaction_state or {}),
+            "immune_guard": dict(self._immune_guard_state or {}),
         }
 
     def _derive_idempotency_key(

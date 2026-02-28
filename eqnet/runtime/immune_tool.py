@@ -87,6 +87,60 @@ def classify_intake(
     }
 
 
+def apply_quarantine_replay_guard(
+    *,
+    immune_result: Mapping[str, Any],
+    signature: str,
+    recent_signatures: list[str],
+    policy: Mapping[str, Any] | None = None,
+) -> tuple[Dict[str, Any], list[str]]:
+    cfg = policy if isinstance(policy, Mapping) else {}
+    enabled = bool(cfg.get("enabled", True))
+    max_size = max(1, int(_safe_float(cfg.get("max_size"), 128)))
+    repeat_action = str(cfg.get("repeat_action") or "REJECT").upper()
+    if repeat_action not in {"REJECT", "QUARANTINE"}:
+        repeat_action = "REJECT"
+    out = dict(immune_result)
+    recent = [str(x) for x in recent_signatures if isinstance(x, str) and x]
+    risky = str(out.get("action") or "").upper() in {"DETOX", "QUARANTINE", "REJECT"}
+    repeat_hit = enabled and signature in recent and risky
+    if repeat_hit:
+        out["action"] = repeat_action
+        out["score"] = max(_safe_float(out.get("score"), 0.0), 0.95 if repeat_action == "REJECT" else 0.75)
+        reasons = list(out.get("reason_codes") or [])
+        if "REPEAT_QUARANTINE_PATTERN" not in reasons:
+            reasons.append("REPEAT_QUARANTINE_PATTERN")
+        out["reason_codes"] = reasons
+    if risky and enabled:
+        if signature in recent:
+            recent = [s for s in recent if s != signature]
+        recent.append(signature)
+        if len(recent) > max_size:
+            recent = recent[-max_size:]
+    out["repeat_hit"] = bool(repeat_hit)
+    out["signature"] = signature
+    out["ops_digest"] = _digest(
+        {
+            "action": str(out.get("action") or ""),
+            "score": round(_safe_float(out.get("score"), 0.0), 4),
+            "reason_codes": sorted({str(x) for x in (out.get("reason_codes") or [])}),
+            "event_hash": str(out.get("event_hash") or ""),
+            "repeat_hit": bool(out.get("repeat_hit")),
+            "signature": signature,
+        }
+    )
+    return out, recent
+
+
+def intake_signature(*, text: str, reason_codes: list[str] | None = None) -> str:
+    normalized = " ".join((text or "").lower().split())
+    payload = {
+        "text": normalized,
+        "reason_codes": sorted({str(x) for x in (reason_codes or [])}),
+    }
+    return _digest(payload)
+
+
 def _event_hash(event: Mapping[str, Any] | None) -> str:
     payload = {
         "scenario_id": str((event or {}).get("scenario_id") or ""),
@@ -143,4 +197,9 @@ def _deep_merge(base: Mapping[str, Any], override: Mapping[str, Any]) -> Dict[st
     return out
 
 
-__all__ = ["DEFAULT_IMMUNE_POLICY", "classify_intake"]
+__all__ = [
+    "DEFAULT_IMMUNE_POLICY",
+    "classify_intake",
+    "apply_quarantine_replay_guard",
+    "intake_signature",
+]
