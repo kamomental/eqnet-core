@@ -959,6 +959,11 @@ def _memory_thermo_contract_coverage(records: List[Dict[str, Any]], day_key: str
     entropy_class_inconsistency_count = 0
     defrag_metrics_missing_count = 0
     defrag_delta_inconsistency_count = 0
+    metabolism_invariants_failed_count = 0
+    transaction_missing_count = 0
+    transaction_non_atomic_count = 0
+    repair_plan_missing_count = 0
+    repair_ops_digest_missing_count = 0
     required = (
         "memory_entropy_delta",
         "memory_phase",
@@ -1040,6 +1045,25 @@ def _memory_thermo_contract_coverage(records: List[Dict[str, Any]], day_key: str
                     break
             if inconsistent:
                 defrag_delta_inconsistency_count += 1
+        inv_ok = policy_obs.get("metabolism_invariants_ok")
+        if isinstance(inv_ok, bool) and not inv_ok:
+            metabolism_invariants_failed_count += 1
+        if "nightly_transaction_id" in policy_obs:
+            tx_id = policy_obs.get("nightly_transaction_id")
+            if not (isinstance(tx_id, str) and tx_id.strip()):
+                transaction_missing_count += 1
+        if "nightly_transaction_atomic" in policy_obs:
+            tx_atomic = policy_obs.get("nightly_transaction_atomic")
+            if isinstance(tx_atomic, bool) and not tx_atomic:
+                transaction_non_atomic_count += 1
+        if str(policy_obs.get("repair_status") or "").lower() == "applied" and "repair_plan_id" in policy_obs:
+            repair_plan_id = policy_obs.get("repair_plan_id")
+            if not (isinstance(repair_plan_id, str) and repair_plan_id.strip()):
+                repair_plan_missing_count += 1
+            if "repair_ops_digest" in policy_obs:
+                repair_ops_digest = policy_obs.get("repair_ops_digest")
+                if not (isinstance(repair_ops_digest, str) and repair_ops_digest.strip()):
+                    repair_ops_digest_missing_count += 1
 
     if total == 0:
         return {
@@ -1053,6 +1077,11 @@ def _memory_thermo_contract_coverage(records: List[Dict[str, Any]], day_key: str
             "entropy_class_inconsistency_count": 0,
             "defrag_metrics_missing_count": 0,
             "defrag_delta_inconsistency_count": 0,
+            "metabolism_invariants_failed_count": 0,
+            "transaction_missing_count": 0,
+            "transaction_non_atomic_count": 0,
+            "repair_plan_missing_count": 0,
+            "repair_ops_digest_missing_count": 0,
             "phase_transition_fp_stale_count": 0,
             "phase_override_applied_count": 0,
             "warnings": [],
@@ -1074,6 +1103,11 @@ def _memory_thermo_contract_coverage(records: List[Dict[str, Any]], day_key: str
             and entropy_class_inconsistency_count == 0
             and defrag_metrics_missing_count == 0
             and defrag_delta_inconsistency_count == 0
+            and metabolism_invariants_failed_count == 0
+            and transaction_missing_count == 0
+            and transaction_non_atomic_count == 0
+            and repair_plan_missing_count == 0
+            and repair_ops_digest_missing_count == 0
             and phase_transition_fp_stale_count == 0
         ),
         "missing_keys": sorted(set(missing_keys)),
@@ -1085,6 +1119,11 @@ def _memory_thermo_contract_coverage(records: List[Dict[str, Any]], day_key: str
         "entropy_class_inconsistency_count": entropy_class_inconsistency_count,
         "defrag_metrics_missing_count": defrag_metrics_missing_count,
         "defrag_delta_inconsistency_count": defrag_delta_inconsistency_count,
+        "metabolism_invariants_failed_count": metabolism_invariants_failed_count,
+        "transaction_missing_count": transaction_missing_count,
+        "transaction_non_atomic_count": transaction_non_atomic_count,
+        "repair_plan_missing_count": repair_plan_missing_count,
+        "repair_ops_digest_missing_count": repair_ops_digest_missing_count,
         "phase_transition_fp_stale_count": phase_transition_fp_stale_count,
         "phase_override_applied_count": phase_override_applied_count,
         "warnings": (
@@ -1487,6 +1526,36 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
             health,
             level="YELLOW",
             reason="defrag metrics delta inconsistency detected",
+        )
+    if int(memory_thermo_contract.get("metabolism_invariants_failed_count") or 0) > 0:
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason="metabolism invariants violated",
+        )
+    if int(memory_thermo_contract.get("transaction_missing_count") or 0) > 0:
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason="nightly transaction id missing",
+        )
+    if int(memory_thermo_contract.get("transaction_non_atomic_count") or 0) > 0:
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason="nightly transaction marked non-atomic",
+        )
+    if int(memory_thermo_contract.get("repair_plan_missing_count") or 0) > 0:
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason="repair plan id missing for applied repair",
+        )
+    if int(memory_thermo_contract.get("repair_ops_digest_missing_count") or 0) > 0:
+        health = _bump_health(
+            health,
+            level="YELLOW",
+            reason="repair ops digest missing for applied repair",
         )
     if int(memory_thermo_contract.get("phase_transition_fp_stale_count") or 0) > 0:
         health = _bump_health(

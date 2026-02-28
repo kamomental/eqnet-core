@@ -5,6 +5,7 @@ import logging
 import os
 import hashlib
 import time
+import shutil
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Optional, Protocol, Tuple
@@ -12,6 +13,12 @@ from typing import Any, Callable, Dict, Mapping, Optional, Protocol, Tuple
 from eqnet.hub.runtime_contract import HubRuntime
 from eqnet.qualia_model import update_qualia_state
 from eqnet.runtime.life_indicator import LifeIndicator
+from eqnet.runtime.nightly.metabolism_tool import (
+    DEFAULT_METABOLISM_POLICY,
+    load_metabolism_policy,
+    run_metabolism_cycle,
+)
+from eqnet.runtime.nightly.repair_tool import run_repair_cycle
 from eqnet.runtime.policy import PolicyPrior
 from eqnet.telemetry.nightly_audit import NightlyAuditConfig, generate_audit
 from emot_terrain_lab.hub.qualia_logging import append_qualia_telemetry
@@ -22,66 +29,22 @@ from emot_terrain_lab.ops.nightly_life_indicator import (
 
 LOGGER = logging.getLogger(__name__)
 
-DEFAULT_MEMORY_THERMO_POLICY: Dict[str, Any] = {
-    "policy_version": "memory-ops-v1",
-    "entropy_model_id": "defrag-observe-v1",
-    "enabled_metrics": [
-        "memory_item_count",
-        "link_count",
-        "bytes_estimate",
-        "summary_count",
-    ],
-    "delta_weights": {
-        "memory_item_count": 1.0,
-        "link_count": 1.0,
-        "bytes_estimate": 1.0,
-        "summary_count": 1.0,
-    },
-    "entropy_cost_class_thresholds": {
-        "mid": 0.05,
-        "high": 0.20,
-    },
-    "default_phase": "stabilization",
-    "phase_profiles": {
-        "exploration": {
-            "phase_weight_profile": "phase.exploration.v1",
-            "delta_weights": {
-                "memory_item_count": 1.3,
-                "link_count": 1.1,
-                "bytes_estimate": 0.8,
-                "summary_count": 0.7,
-            },
-            "entropy_cost_class_thresholds": {"mid": 0.06, "high": 0.22},
-        },
-        "stabilization": {
-            "phase_weight_profile": "phase.stabilization.v1",
-            "delta_weights": {
-                "memory_item_count": 1.0,
-                "link_count": 1.0,
-                "bytes_estimate": 1.0,
-                "summary_count": 1.0,
-            },
-            "entropy_cost_class_thresholds": {"mid": 0.05, "high": 0.20},
-        },
-        "recovery": {
-            "phase_weight_profile": "phase.recovery.v1",
-            "delta_weights": {
-                "memory_item_count": 0.8,
-                "link_count": 1.4,
-                "bytes_estimate": 1.1,
-                "summary_count": 1.2,
-            },
-            "entropy_cost_class_thresholds": {"mid": 0.04, "high": 0.16},
-        },
-    },
-    "energy_budget_limit": 0.10,
-    "output_control_profiles": {
-        "normal": "normal_v1",
-        "throttled": "cautious_budget_v1",
-    },
-    "throttle_reason_codes": {
-        "budget_exceeded": "BUDGET_EXCEEDED",
-    },
+DEFAULT_MEMORY_THERMO_POLICY: Dict[str, Any] = dict(DEFAULT_METABOLISM_POLICY)
+TX_PHASE_INIT = "INIT"
+TX_PHASE_STAGED = "STAGED"
+TX_PHASE_COMMITTING = "COMMITTING"
+TX_PHASE_COMMITTED = "COMMITTED"
+TX_PHASE_ROLLING_BACK = "ROLLING_BACK"
+TX_PHASE_ROLLED_BACK = "ROLLED_BACK"
+TX_PHASE_FAILED = "FAILED"
+ALLOWED_TX_TRANSITIONS = {
+    TX_PHASE_INIT: {TX_PHASE_STAGED, TX_PHASE_FAILED},
+    TX_PHASE_STAGED: {TX_PHASE_COMMITTING, TX_PHASE_FAILED},
+    TX_PHASE_COMMITTING: {TX_PHASE_COMMITTED, TX_PHASE_ROLLING_BACK, TX_PHASE_FAILED},
+    TX_PHASE_ROLLING_BACK: {TX_PHASE_ROLLED_BACK, TX_PHASE_FAILED},
+    TX_PHASE_ROLLED_BACK: {TX_PHASE_FAILED},
+    TX_PHASE_FAILED: set(),
+    TX_PHASE_COMMITTED: set(),
 }
 
 
@@ -197,27 +160,60 @@ class ExternalRuntimeDelegateV2(HubRuntime):
     ) -> None:
         day = date_obj or date.today()
         day_key_compact = day.strftime("%Y%m%d")
+        tx_id = self._nightly_transaction_id(day=day, idempotency_key=idempotency_key)
+        if _env_truthy("EQNET_NIGHTLY_TX_IDEMPOTENT") and idempotency_key and self._is_tx_committed(tx_id):
+            return
+        self._advance_tx_phase(tx_id, TX_PHASE_INIT)
         qualia_path = self._config.telemetry_dir / f"qualia-{day_key_compact}.jsonl"
         qualia_records = load_qualia_log(qualia_path)
         thermo_policy = _memory_thermo_policy(self._config)
         previous_thermo = self._read_latest().get("memory_thermo")
-        phase_ctx = _resolve_phase_context(thermo_policy, previous_thermo)
-        defrag_result = _run_defrag_observe(qualia_records, thermo_policy, phase_ctx)
-        forgetting_report = _run_forgetting_reweight(self._config)
-        if forgetting_report is not None:
-            defrag_result["forgetting"] = forgetting_report
-        self._write_latest("memory_thermo", defrag_result)
+        defrag_result = run_metabolism_cycle(
+            qualia_records=qualia_records,
+            policy=thermo_policy,
+            previous_state=previous_thermo if isinstance(previous_thermo, Mapping) else None,
+        )
+        repair_report = _run_forgetting_reweight(self._config)
+        if repair_report is not None:
+            defrag_result["repair"] = repair_report
+            forgetting = repair_report.get("forgetting")
+            if isinstance(forgetting, Mapping):
+                defrag_result["forgetting"] = dict(forgetting)
+            defrag_result["repair_status"] = str(repair_report.get("repair_status") or "")
+            defrag_result["repair_tool_version"] = str(repair_report.get("repair_tool_version") or "")
+            defrag_result["repaired_events_count"] = int(repair_report.get("repaired_events_count") or 0)
+            defrag_result["repair_plan_id"] = str(repair_report.get("repair_plan_id") or "")
+            defrag_result["repair_replay_token"] = str(repair_report.get("replay_token") or "")
+            defrag_result["repair_ops"] = list(repair_report.get("repair_ops") or [])
+            defrag_result["repair_ops_digest"] = str(repair_report.get("repair_ops_digest") or "")
+        defrag_result["nightly_transaction_id"] = tx_id
+        defrag_result["nightly_transaction_phase"] = TX_PHASE_INIT
+        defrag_result["nightly_transaction_atomic"] = False
         life_indicator = compute_life_indicator_for_day(
             qualia_records,
             num_diary_entries=0,
             num_self_reflection_entries=0,
         )
         policy_prior = PolicyPrior()
-        self._write_latest("life_indicator", life_indicator)
-        self._write_latest("policy_prior", policy_prior)
-        self._save_life_indicator(day, life_indicator)
-        self._save_policy_prior(policy_prior)
-        self._write_nightly_report(day, life_indicator, policy_prior)
+        try:
+            staged = self._stage_nightly_artifacts(
+                day=day,
+                life_indicator=life_indicator,
+                policy_prior=policy_prior,
+                memory_thermo=defrag_result,
+            )
+            self._advance_tx_phase(tx_id, TX_PHASE_STAGED)
+            self._advance_tx_phase(tx_id, TX_PHASE_COMMITTING)
+            self._commit_nightly_artifacts(staged, tx_id=tx_id)
+            self._advance_tx_phase(tx_id, TX_PHASE_COMMITTED)
+            defrag_result["nightly_transaction_phase"] = TX_PHASE_COMMITTED
+            defrag_result["nightly_transaction_atomic"] = True
+            self._write_latest("memory_thermo", defrag_result)
+            self._write_latest("life_indicator", life_indicator)
+            self._write_latest("policy_prior", policy_prior)
+        except Exception:
+            self._advance_tx_phase(tx_id, TX_PHASE_FAILED)
+            raise
         self._run_nightly_audit(day)
 
     def query_state(
@@ -313,6 +309,180 @@ class ExternalRuntimeDelegateV2(HubRuntime):
         except Exception:
             LOGGER.warning("nightly audit failed for %s", day_key, exc_info=True)
 
+    def _nightly_transaction_id(self, *, day: date, idempotency_key: Optional[str]) -> str:
+        payload = {
+            "day": day.isoformat(),
+            "idempotency_key": str(idempotency_key or ""),
+            "runtime_version": self.runtime_version,
+        }
+        if not idempotency_key:
+            payload["now_ns"] = time.time_ns()
+            payload["pid"] = os.getpid()
+        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+    def _stage_nightly_artifacts(
+        self,
+        *,
+        day: date,
+        life_indicator: LifeIndicator,
+        policy_prior: PolicyPrior,
+        memory_thermo: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        tx_id = str(memory_thermo.get("nightly_transaction_id") or self._nightly_transaction_id(day=day, idempotency_key=None))
+        day_compact = day.strftime("%Y%m%d")
+        staging_root = (
+            Path(self._config.reports_dir)
+            / ".nightly_staging"
+            / f"{day_compact}-{tx_id}"
+        )
+        staging_root.mkdir(parents=True, exist_ok=True)
+        target_to_staged: dict[Path, Path] = {}
+
+        life_payload = {
+            "identity": life_indicator.identity_score,
+            "qualia": life_indicator.qualia_score,
+            "meta_awareness": life_indicator.meta_awareness_score,
+        }
+        policy_payload = dict(policy_prior.__dict__)
+        memory_payload = dict(memory_thermo)
+        report_payload = {
+            "life_indicator": dict(life_payload),
+            "policy_prior": dict(policy_payload),
+            "nightly_transaction": {
+                "id": tx_id,
+                "phase": str(memory_thermo.get("nightly_transaction_phase") or TX_PHASE_INIT),
+                "atomic": bool(memory_thermo.get("nightly_transaction_atomic", False)),
+            },
+        }
+
+        outputs: list[tuple[Path, dict[str, Any], str]] = [
+            (
+                Path(self._config.state_dir) / f"life-indicator-{day_compact}.json",
+                life_payload,
+                "life_indicator",
+            ),
+            (
+                Path(self._config.state_dir) / "policy-prior-latest.json",
+                policy_payload,
+                "policy_prior",
+            ),
+            (
+                Path(self._config.state_dir) / "memory-thermo-latest.json",
+                memory_payload,
+                "memory_thermo",
+            ),
+            (
+                Path(self._config.reports_dir) / f"nightly-{day_compact}.json",
+                report_payload,
+                "nightly_report",
+            ),
+        ]
+        for target, payload, label in outputs:
+            staged_file = staging_root / f"{label}.json"
+            staged_file.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            target_to_staged[target] = staged_file
+        return {
+            "tx_id": tx_id,
+            "staging_root": staging_root,
+            "target_to_staged": target_to_staged,
+        }
+
+    def _commit_nightly_artifacts(self, staged: Mapping[str, Any], *, tx_id: str | None = None) -> None:
+        staging_root = Path(staged.get("staging_root"))
+        target_to_staged = staged.get("target_to_staged")
+        if not isinstance(target_to_staged, Mapping):
+            raise ValueError("target_to_staged is required")
+        backup_root = staging_root / "backup"
+        backup_root.mkdir(parents=True, exist_ok=True)
+        backups: list[tuple[Path, Path]] = []
+        committed_targets: list[Path] = []
+        try:
+            for target_raw, staged_raw in target_to_staged.items():
+                target = Path(target_raw)
+                staged_file = Path(staged_raw)
+                if not staged_file.exists():
+                    raise FileNotFoundError(f"staged file missing: {staged_file}")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if target.exists():
+                    backup = backup_root / f"{len(backups):03d}-{target.name}.bak"
+                    os.replace(target, backup)
+                    backups.append((target, backup))
+            for target_raw, staged_raw in target_to_staged.items():
+                target = Path(target_raw)
+                staged_file = Path(staged_raw)
+                os.replace(staged_file, target)
+                committed_targets.append(target)
+        except Exception:
+            if tx_id:
+                self._advance_tx_phase(tx_id, TX_PHASE_ROLLING_BACK)
+            for target in committed_targets:
+                try:
+                    if target.exists():
+                        target.unlink()
+                except Exception:
+                    pass
+            for target, backup in backups:
+                try:
+                    if backup.exists():
+                        os.replace(backup, target)
+                except Exception:
+                    pass
+            if tx_id:
+                self._advance_tx_phase(tx_id, TX_PHASE_ROLLED_BACK)
+            raise
+        finally:
+            try:
+                shutil.rmtree(staging_root, ignore_errors=True)
+            except Exception:
+                pass
+
+    def _tx_journal_path(self, tx_id: str) -> Path:
+        root = Path(self._config.state_dir) / "nightly_tx"
+        root.mkdir(parents=True, exist_ok=True)
+        return root / f"{tx_id}.json"
+
+    def _tx_current_phase(self, tx_id: str) -> str | None:
+        path = self._tx_journal_path(tx_id)
+        if not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        phase = payload.get("phase")
+        if isinstance(phase, str) and phase:
+            return phase
+        return None
+
+    def _is_tx_committed(self, tx_id: str) -> bool:
+        return self._tx_current_phase(tx_id) == TX_PHASE_COMMITTED
+
+    def _advance_tx_phase(self, tx_id: str, next_phase: str) -> None:
+        current = self._tx_current_phase(tx_id)
+        if current is None:
+            if next_phase != TX_PHASE_INIT:
+                # late recovery path: allow writing the observed phase
+                pass
+        elif current == next_phase:
+            return
+        else:
+            allowed = ALLOWED_TX_TRANSITIONS.get(current, set())
+            if next_phase not in allowed:
+                return
+        payload = {
+            "tx_id": tx_id,
+            "phase": next_phase,
+            "updated_at_ms": int(time.time() * 1000),
+        }
+        self._tx_journal_path(tx_id).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
 
 def _normalize_day_key(value: Any) -> Optional[str]:
     if value is None:
@@ -330,12 +500,7 @@ def _normalize_day_key(value: Any) -> Optional[str]:
 
 
 def _memory_thermo_policy(config: Any) -> Dict[str, Any]:
-    raw = getattr(config, "memory_thermo_policy", None)
-    if not isinstance(raw, dict):
-        return dict(DEFAULT_MEMORY_THERMO_POLICY)
-    merged = dict(DEFAULT_MEMORY_THERMO_POLICY)
-    merged.update(raw)
-    return merged
+    return load_metabolism_policy(config)
 
 
 def _run_defrag_observe(
@@ -721,22 +886,11 @@ def _apply_forgetting_reweight(
 
 
 def _run_forgetting_reweight(config: Any) -> Optional[Dict[str, Any]]:
-    forgetting_cfg = _forgetting_policy(config)
-    if not forgetting_cfg:
-        return None
-    if not bool(forgetting_cfg.get("enable", False)):
-        return {"status": "disabled"}
+    return run_repair_cycle(config)
 
-    replay_path = _resolve_replay_memory_path(config, forgetting_cfg)
-    events = _load_replay_events(replay_path)
-    if not events:
-        return {"status": "skipped", "reason": "replay_memory_empty", "replay_memory_path": str(replay_path)}
 
-    updated, report = _apply_forgetting_reweight(events, forgetting_cfg, now_ts=time.time())
-    if int(report.get("changed_count", 0)) > 0:
-        _rewrite_replay_events(replay_path, updated)
-        report["rewrite_applied"] = True
-    else:
-        report["rewrite_applied"] = False
-    report["replay_memory_path"] = str(replay_path)
-    return report
+def _env_truthy(name: str) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}

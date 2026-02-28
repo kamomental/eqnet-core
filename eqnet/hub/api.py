@@ -13,6 +13,13 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from eqnet.runtime.life_indicator import LifeIndicator
+from eqnet.runtime.interaction_tools import (
+    DEFAULT_INTERACTION_POLICY,
+    build_reflex_signal,
+    estimate_resonance_state,
+    interaction_digest,
+    shape_response_profile,
+)
 from eqnet.runtime.policy import PolicyPrior
 from eqnet.runtime.state import QualiaState
 from eqnet.runtime.turn import CoreState, SafetyConfig
@@ -112,6 +119,14 @@ class EQNetHub:
         self._latest_life_indicator: Optional[LifeIndicator] = None
         self._latest_policy_prior: Optional[PolicyPrior] = None
         self._latest_memory_thermo: dict[str, Any] | None = None
+        self._interaction_state: dict[str, Any] = {
+            "valence": 0.5,
+            "arousal": 0.5,
+            "safety": 0.5,
+            "confidence": 0.0,
+            "uncertainty": 1.0,
+            "reason_codes": [],
+        }
         self._repair_snapshot: RepairSnapshot = RepairSnapshot.initial()
         self._trace_safety = SafetyConfig()
         self._runtime_delegate = self._resolve_runtime_delegate(runtime_delegate)
@@ -604,6 +619,25 @@ class EQNetHub:
         phase_override_applied: bool | None = None,
         policy_version: str | None = None,
         entropy_model_id: str | None = None,
+        metabolism_status: str | None = None,
+        metabolism_tool_version: str | None = None,
+        repair_status: str | None = None,
+        repair_tool_version: str | None = None,
+        repaired_events_count: int | None = None,
+        attention_budget_level: float | None = None,
+        attention_budget_used: float | None = None,
+        attention_budget_recovered: float | None = None,
+        affect_budget_level: float | None = None,
+        affect_budget_used: float | None = None,
+        affect_budget_recovered: float | None = None,
+        metabolism_invariants_ok: bool | None = None,
+        metabolism_conservation_error: float | None = None,
+        nightly_transaction_id: str | None = None,
+        nightly_transaction_phase: str | None = None,
+        nightly_transaction_atomic: bool | None = None,
+        repair_plan_id: str | None = None,
+        repair_replay_token: str | None = None,
+        repair_ops_digest: str | None = None,
     ) -> dict[str, Any]:
         phase = memory_phase or "stabilization"
         profile = phase_weight_profile or "default"
@@ -626,6 +660,33 @@ class EQNetHub:
             "phase_override_applied": bool(phase_override_applied) if phase_override_applied is not None else False,
             "policy_version": policy_version or "memory-ops-v1",
             "entropy_model_id": entropy_model_id or "entropy-model-v1",
+            "metabolism_status": str(metabolism_status or "unknown"),
+            "metabolism_tool_version": str(metabolism_tool_version or ""),
+            "repair_status": str(repair_status or "unknown"),
+            "repair_tool_version": str(repair_tool_version or ""),
+            "repaired_events_count": int(repaired_events_count if repaired_events_count is not None else 0),
+            "attention_budget_level": float(attention_budget_level if attention_budget_level is not None else 0.0),
+            "attention_budget_used": float(attention_budget_used if attention_budget_used is not None else 0.0),
+            "attention_budget_recovered": float(
+                attention_budget_recovered if attention_budget_recovered is not None else 0.0
+            ),
+            "affect_budget_level": float(affect_budget_level if affect_budget_level is not None else 0.0),
+            "affect_budget_used": float(affect_budget_used if affect_budget_used is not None else 0.0),
+            "affect_budget_recovered": float(
+                affect_budget_recovered if affect_budget_recovered is not None else 0.0
+            ),
+            "metabolism_invariants_ok": bool(metabolism_invariants_ok) if metabolism_invariants_ok is not None else True,
+            "metabolism_conservation_error": float(
+                metabolism_conservation_error if metabolism_conservation_error is not None else 0.0
+            ),
+            "nightly_transaction_id": str(nightly_transaction_id or ""),
+            "nightly_transaction_phase": str(nightly_transaction_phase or ""),
+            "nightly_transaction_atomic": bool(nightly_transaction_atomic)
+            if nightly_transaction_atomic is not None
+            else False,
+            "repair_plan_id": str(repair_plan_id or ""),
+            "repair_replay_token": str(repair_replay_token or ""),
+            "repair_ops_digest": str(repair_ops_digest or ""),
         }
 
     def _emit_trace_v1(
@@ -688,6 +749,36 @@ class EQNetHub:
                 context=online_ctx,
                 thermo=thermo,
             )
+            interaction_policy = (
+                dict(getattr(self.config, "runtime_policy", {}).get("interaction") or {})
+                if isinstance(getattr(self.config, "runtime_policy", None), Mapping)
+                else {}
+            )
+            interaction_cfg = {
+                **DEFAULT_INTERACTION_POLICY,
+                **interaction_policy,
+            }
+            resonance = estimate_resonance_state(
+                text=str(raw_text or ""),
+                prev_state=self._interaction_state,
+                policy=interaction_cfg,
+            )
+            reflex = build_reflex_signal(
+                resonance=resonance,
+                policy=interaction_cfg,
+            )
+            shaper = shape_response_profile(
+                resonance=resonance,
+                metabolism=thermo,
+                policy=interaction_cfg,
+            )
+            interaction_payload = {
+                "resonance": resonance,
+                "reflex": reflex,
+                "response_shaper": shaper,
+            }
+            interaction_fp = interaction_digest(interaction_payload)
+            self._interaction_state = dict(resonance)
             output_control = apply_policy_prior(
                 self.latest_policy_prior(),
                 day_key=day_key,
@@ -729,6 +820,17 @@ class EQNetHub:
                     "rule_delta_applied": bool(overlay.get("rule_delta_applied")),
                     "rule_delta_ids": list(overlay.get("rule_delta_ids") or []),
                     "rule_delta_action_types": list(overlay.get("rule_delta_action_types") or []),
+                    "reflex_mode": str(reflex.get("mode") or "neutral"),
+                    "reflex_latency_target_ms": int(reflex.get("latency_target_ms") or 150),
+                    "resonance_valence": _maybe_float(resonance.get("valence")),
+                    "resonance_arousal": _maybe_float(resonance.get("arousal")),
+                    "resonance_safety": _maybe_float(resonance.get("safety")),
+                    "resonance_confidence": _maybe_float(resonance.get("confidence")),
+                    "response_shape_mode": str(shaper.get("mode") or "balanced"),
+                    "response_shape_pace": str(shaper.get("pace") or "steady"),
+                    "response_shape_strategy": str(shaper.get("strategy") or "brief_then_detail"),
+                    "response_shape_max_sentences": int(shaper.get("max_sentences") or 4),
+                    "interaction_state_fingerprint": interaction_fp,
                     "forced_gate_action": str(overlay.get("forced_gate_action") or ""),
                     "disallow_tools": list(overlay.get("disallow_tools") or []),
                     "repair_state_before": repair_state_before or self._repair_snapshot.state.value,
@@ -767,6 +869,33 @@ class EQNetHub:
                         ),
                         policy_version=str(thermo.get("policy_version") or "memory-ops-v1"),
                         entropy_model_id=str(thermo.get("entropy_model_id") or "entropy-model-v1"),
+                        metabolism_status=str(thermo.get("metabolism_status") or "unknown"),
+                        metabolism_tool_version=str(thermo.get("metabolism_tool_version") or ""),
+                        repair_status=str(thermo.get("repair_status") or "unknown"),
+                        repair_tool_version=str(thermo.get("repair_tool_version") or ""),
+                        repaired_events_count=int(thermo.get("repaired_events_count") or 0),
+                        attention_budget_level=_maybe_float(thermo.get("attention_budget_level")),
+                        attention_budget_used=_maybe_float(thermo.get("attention_budget_used")),
+                        attention_budget_recovered=_maybe_float(thermo.get("attention_budget_recovered")),
+                        affect_budget_level=_maybe_float(thermo.get("affect_budget_level")),
+                        affect_budget_used=_maybe_float(thermo.get("affect_budget_used")),
+                        affect_budget_recovered=_maybe_float(thermo.get("affect_budget_recovered")),
+                        metabolism_invariants_ok=(
+                            bool(thermo.get("metabolism_invariants_ok"))
+                            if "metabolism_invariants_ok" in thermo
+                            else None
+                        ),
+                        metabolism_conservation_error=_maybe_float(thermo.get("metabolism_conservation_error")),
+                        nightly_transaction_id=str(thermo.get("nightly_transaction_id") or ""),
+                        nightly_transaction_phase=str(thermo.get("nightly_transaction_phase") or ""),
+                        nightly_transaction_atomic=(
+                            bool(thermo.get("nightly_transaction_atomic"))
+                            if "nightly_transaction_atomic" in thermo
+                            else None
+                        ),
+                        repair_plan_id=str(thermo.get("repair_plan_id") or ""),
+                        repair_replay_token=str(thermo.get("repair_replay_token") or ""),
+                        repair_ops_digest=str(thermo.get("repair_ops_digest") or ""),
                     ),
                 }
             )
@@ -779,6 +908,9 @@ class EQNetHub:
                     "life_indicator_fingerprint": closed_loop_fp["life_indicator_fingerprint"],
                     "policy_prior_fingerprint": closed_loop_fp["policy_prior_fingerprint"],
                     "output_control_fingerprint": output_control_fingerprint,
+                    "reflex_text": str(reflex.get("text") or ""),
+                    "resonance_reason_codes": list(resonance.get("reason_codes") or []),
+                    "interaction_state_fingerprint": interaction_fp,
                 }
             )
 
@@ -1031,6 +1163,8 @@ class EQNetHub:
             self._latest_policy_prior = value
         elif kind == "memory_thermo":
             self._latest_memory_thermo = dict(value or {})
+        elif kind == "interaction":
+            self._interaction_state = dict(value or {})
 
     def _get_latest_state(self) -> Dict[str, Any]:
         return {
@@ -1038,6 +1172,7 @@ class EQNetHub:
             "life_indicator": self._latest_life_indicator,
             "policy_prior": self._latest_policy_prior,
             "memory_thermo": dict(self._latest_memory_thermo or {}),
+            "interaction": dict(self._interaction_state or {}),
         }
 
     def _derive_idempotency_key(
@@ -1241,6 +1376,33 @@ class EQNetHub:
             output_control_profile=str(thermo.get("output_control_profile") or "normal_v1"),
             policy_version=str(thermo.get("policy_version") or "memory-ops-v1"),
             entropy_model_id=str(thermo.get("entropy_model_id") or "defrag-observe-v1"),
+            metabolism_status=str(thermo.get("metabolism_status") or "unknown"),
+            metabolism_tool_version=str(thermo.get("metabolism_tool_version") or ""),
+            repair_status=str(thermo.get("repair_status") or "unknown"),
+            repair_tool_version=str(thermo.get("repair_tool_version") or ""),
+            repaired_events_count=int(thermo.get("repaired_events_count") or 0),
+            attention_budget_level=_maybe_float(thermo.get("attention_budget_level")),
+            attention_budget_used=_maybe_float(thermo.get("attention_budget_used")),
+            attention_budget_recovered=_maybe_float(thermo.get("attention_budget_recovered")),
+            affect_budget_level=_maybe_float(thermo.get("affect_budget_level")),
+            affect_budget_used=_maybe_float(thermo.get("affect_budget_used")),
+            affect_budget_recovered=_maybe_float(thermo.get("affect_budget_recovered")),
+            metabolism_invariants_ok=(
+                bool(thermo.get("metabolism_invariants_ok"))
+                if "metabolism_invariants_ok" in thermo
+                else None
+            ),
+            metabolism_conservation_error=_maybe_float(thermo.get("metabolism_conservation_error")),
+            nightly_transaction_id=str(thermo.get("nightly_transaction_id") or ""),
+            nightly_transaction_phase=str(thermo.get("nightly_transaction_phase") or ""),
+            nightly_transaction_atomic=(
+                bool(thermo.get("nightly_transaction_atomic"))
+                if "nightly_transaction_atomic" in thermo
+                else None
+            ),
+            repair_plan_id=str(thermo.get("repair_plan_id") or ""),
+            repair_replay_token=str(thermo.get("repair_replay_token") or ""),
+            repair_ops_digest=str(thermo.get("repair_ops_digest") or ""),
         )
         event = {
             "event_id": f"hub:nightly:{date_obj.isoformat()}:{idempotency_key}",
