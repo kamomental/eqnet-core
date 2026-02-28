@@ -211,6 +211,12 @@ def test_log_moment_emits_trace_when_flag_enabled(
     assert isinstance(policy_obs.get("immune_repeat_hit"), bool)
     assert isinstance(policy_obs.get("immune_signature"), str)
     assert policy_obs.get("immune_signature")
+    assert policy_obs.get("immune_signature_v") == "1"
+    assert policy_obs.get("immune_ops_digest_v") == "1"
+    assert isinstance(policy_obs.get("immune_repeat_action"), str)
+    assert policy_obs.get("immune_repeat_action")
+    assert isinstance(policy_obs.get("immune_repeat_count"), int)
+    assert isinstance(policy_obs.get("immune_repeat_window"), int)
     assert isinstance(policy_obs.get("quarantined_events_count"), int)
     assert isinstance(policy_obs.get("detoxed_events_count"), int)
     assert isinstance(policy_obs.get("rejected_events_count"), int)

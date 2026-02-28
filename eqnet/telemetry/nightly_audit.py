@@ -1134,6 +1134,34 @@ def _memory_thermo_contract_coverage(records: List[Dict[str, Any]], day_key: str
     }
 
 
+def _immune_guard_summary(records: List[Dict[str, Any]], day_key: str) -> Dict[str, Any]:
+    total = 0
+    quarantine_pruned_sum = 0
+    immune_guard_pruned_sum = 0
+    repeat_hit_rate_values: list[float] = []
+    for row in records:
+        policy_obs = (((row.get("policy") or {}).get("observations") or {}).get("hub") or {})
+        if not isinstance(policy_obs, dict):
+            continue
+        if str(policy_obs.get("day_key") or "") != day_key:
+            continue
+        if str(policy_obs.get("operation") or "") != "run_nightly":
+            continue
+        total += 1
+        quarantine_pruned_sum += int(policy_obs.get("quarantine_pruned_count") or 0)
+        immune_guard_pruned_sum += int(policy_obs.get("immune_guard_pruned_count") or 0)
+        value = policy_obs.get("repeat_hit_rate")
+        if isinstance(value, (int, float)):
+            repeat_hit_rate_values.append(float(value))
+    avg_repeat = (sum(repeat_hit_rate_values) / float(len(repeat_hit_rate_values))) if repeat_hit_rate_values else 0.0
+    return {
+        "events_checked": int(total),
+        "quarantine_pruned_count": int(quarantine_pruned_sum),
+        "immune_guard_pruned_count": int(immune_guard_pruned_sum),
+        "repeat_hit_rate": float(round(avg_repeat, 6)),
+    }
+
+
 def _separation_governance_audit(
     *,
     think_log_path: Path | None,
@@ -1479,6 +1507,7 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
             reason="repair trigger detected without progression",
         )
     memory_thermo_contract = _memory_thermo_contract_coverage(records, cfg.date_yyyy_mm_dd)
+    immune_guard = _immune_guard_summary(records, cfg.date_yyyy_mm_dd)
     if memory_thermo_contract.get("missing_keys"):
         health = _bump_health(
             health,
@@ -1660,6 +1689,7 @@ def generate_audit(cfg: NightlyAuditConfig) -> Path:
         "recall_cue_budget": recall_cue_budget,
         "repair_coverage": repair_coverage,
         "memory_thermo_contract": memory_thermo_contract,
+        "immune_guard": immune_guard,
         "separation": _separation_governance_audit(
             think_log_path=cfg.think_log_path,
             act_log_path=cfg.act_log_path,

@@ -115,6 +115,11 @@ def test_run_nightly_audit_writes_file(tmp_path):
     assert isinstance(thermo.get("phase_transition_fp_stale_count"), int)
     assert isinstance(thermo.get("phase_override_applied_count"), int)
     assert isinstance(thermo.get("warnings"), list)
+    immune_guard = payload.get("immune_guard") or {}
+    assert isinstance(immune_guard.get("events_checked"), int)
+    assert isinstance(immune_guard.get("quarantine_pruned_count"), int)
+    assert isinstance(immune_guard.get("immune_guard_pruned_count"), int)
+    assert isinstance(immune_guard.get("repeat_hit_rate"), (int, float))
 
 
 def test_run_nightly_audit_closed_loop_ok_when_required_fingerprints_exist(tmp_path):

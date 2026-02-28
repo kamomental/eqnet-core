@@ -132,9 +132,12 @@ class EQNetHub:
         }
         self._immune_guard_state: dict[str, Any] = {
             "recent_signatures": [],
+            "signature_hits": {},
             "quarantined_events_count": 0,
             "detoxed_events_count": 0,
             "rejected_events_count": 0,
+            "total_events_count": 0,
+            "repeat_hits_count": 0,
         }
         self._repair_snapshot: RepairSnapshot = RepairSnapshot.initial()
         self._trace_safety = SafetyConfig()
@@ -307,7 +310,10 @@ class EQNetHub:
             policy_prior_fingerprint = current["policy_prior_fingerprint"]
             output_control_fingerprint = current["output_control_fingerprint"]
             audit_fingerprint = current["audit_fingerprint"]
-            memory_thermo = current.get("memory_thermo")
+            memory_thermo = dict(current.get("memory_thermo") or {})
+            immune_rollup = self._rollup_immune_guard_nightly(day)
+            memory_thermo.update(immune_rollup)
+            self._latest_memory_thermo = dict(memory_thermo)
 
             idem_status = "done"
             result_fingerprint = self._fingerprint_json_payload(
@@ -795,9 +801,20 @@ class EQNetHub:
             immune_action = str(immune.get("action") or "ACCEPT").upper()
             guard_counts = dict(self._immune_guard_state or {})
             guard_counts["recent_signatures"] = list(updated_recent)
+            sig_hits = (
+                dict(guard_counts.get("signature_hits") or {})
+                if isinstance(guard_counts.get("signature_hits"), Mapping)
+                else {}
+            )
+            sig_hits[immune_sig] = int(sig_hits.get(immune_sig) or 0) + 1
+            guard_counts["signature_hits"] = sig_hits
             guard_counts["quarantined_events_count"] = int(guard_counts.get("quarantined_events_count") or 0)
             guard_counts["detoxed_events_count"] = int(guard_counts.get("detoxed_events_count") or 0)
             guard_counts["rejected_events_count"] = int(guard_counts.get("rejected_events_count") or 0)
+            guard_counts["total_events_count"] = int(guard_counts.get("total_events_count") or 0) + 1
+            guard_counts["repeat_hits_count"] = int(guard_counts.get("repeat_hits_count") or 0)
+            if bool(immune.get("repeat_hit")):
+                guard_counts["repeat_hits_count"] += 1
             if immune_action == "QUARANTINE":
                 guard_counts["quarantined_events_count"] += 1
             elif immune_action == "DETOX":
@@ -894,6 +911,11 @@ class EQNetHub:
                     "immune_event_hash": str(immune.get("event_hash") or ""),
                     "immune_repeat_hit": bool(immune.get("repeat_hit", False)),
                     "immune_signature": str(immune.get("signature") or ""),
+                    "immune_signature_v": "1",
+                    "immune_ops_digest_v": "1",
+                    "immune_repeat_action": str(immune_action),
+                    "immune_repeat_count": int((self._immune_guard_state.get("signature_hits") or {}).get(immune_sig) or 0),
+                    "immune_repeat_window": int(len(self._immune_guard_state.get("recent_signatures") or [])),
                     "quarantined_events_count": int(self._immune_guard_state.get("quarantined_events_count") or 0),
                     "detoxed_events_count": int(self._immune_guard_state.get("detoxed_events_count") or 0),
                     "rejected_events_count": int(self._immune_guard_state.get("rejected_events_count") or 0),
@@ -1151,6 +1173,47 @@ class EQNetHub:
                     if isinstance(reason, str) and reason:
                         return reason
         return "APPLY_CAUTIOUS_BUDGET"
+
+    def _rollup_immune_guard_nightly(self, _day: date) -> dict[str, Any]:
+        guard = dict(self._immune_guard_state or {})
+        recent = [str(x) for x in (guard.get("recent_signatures") or []) if isinstance(x, str) and x]
+        max_size = 128
+        try:
+            runtime_policy = getattr(self.config, "runtime_policy", None)
+            if isinstance(runtime_policy, Mapping):
+                guard_policy = runtime_policy.get("immune_guard")
+                if isinstance(guard_policy, Mapping):
+                    max_size = max(1, int(guard_policy.get("max_size") or 128))
+        except Exception:
+            max_size = 128
+        before = len(recent)
+        if before > max_size:
+            recent = recent[-max_size:]
+        pruned = max(0, before - len(recent))
+        total = int(guard.get("total_events_count") or 0)
+        repeat_hits = int(guard.get("repeat_hits_count") or 0)
+        repeat_hit_rate = (repeat_hits / float(total)) if total > 0 else 0.0
+        guard["recent_signatures"] = recent
+        # Keep recent signature hit stats bounded to known signatures.
+        hits_raw = guard.get("signature_hits")
+        if isinstance(hits_raw, Mapping):
+            guard["signature_hits"] = {
+                str(sig): int(count or 0)
+                for sig, count in hits_raw.items()
+                if isinstance(sig, str) and sig in set(recent)
+            }
+        # Reset nightly counters after rollup.
+        guard["total_events_count"] = 0
+        guard["repeat_hits_count"] = 0
+        guard["quarantined_events_count"] = 0
+        guard["detoxed_events_count"] = 0
+        guard["rejected_events_count"] = 0
+        self._immune_guard_state = guard
+        return {
+            "quarantine_pruned_count": int(pruned),
+            "immune_guard_pruned_count": int(pruned),
+            "repeat_hit_rate": float(round(repeat_hit_rate, 6)),
+        }
 
     def _emit_mecpe_v0(
         self,
@@ -1527,6 +1590,9 @@ class EQNetHub:
                         "defrag_metrics_before": dict(thermo.get("defrag_metrics_before") or {}),
                         "defrag_metrics_after": dict(thermo.get("defrag_metrics_after") or {}),
                         "defrag_metrics_delta": dict(thermo.get("defrag_metrics_delta") or {}),
+                        "quarantine_pruned_count": int(thermo.get("quarantine_pruned_count") or 0),
+                        "immune_guard_pruned_count": int(thermo.get("immune_guard_pruned_count") or 0),
+                        "repeat_hit_rate": float(_maybe_float(thermo.get("repeat_hit_rate")) or 0.0),
                         "fsm_policy_fingerprint": str(self._fsm_policy_meta.get("policy_fingerprint") or ""),
                         "fsm_policy_version": str(self._fsm_policy_meta.get("policy_version") or ""),
                         "fsm_policy_source": str(self._fsm_policy_meta.get("policy_source") or ""),

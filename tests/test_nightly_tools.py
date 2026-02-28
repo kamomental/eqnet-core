@@ -168,6 +168,9 @@ def test_run_nightly_trace_contains_metabolism_and_repair_fields(
     assert obs.get("nightly_transaction_id")
     assert obs.get("nightly_transaction_phase") == "COMMITTED"
     assert obs.get("nightly_transaction_atomic") is True
+    assert isinstance(obs.get("quarantine_pruned_count"), int)
+    assert isinstance(obs.get("immune_guard_pruned_count"), int)
+    assert isinstance(obs.get("repeat_hit_rate"), (int, float))
 
 
 def test_run_nightly_atomic_commit_does_not_publish_partial_latest_state(
