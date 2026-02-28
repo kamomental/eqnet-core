@@ -22,6 +22,7 @@ from eqnet.runtime.interaction_tools import (
 )
 from eqnet.runtime.immune_tool import DEFAULT_IMMUNE_POLICY, classify_intake
 from eqnet.runtime.immune_tool import apply_quarantine_replay_guard, intake_signature
+from eqnet.runtime.immune_tool import validate_immune_hmac_runtime_config
 from eqnet.runtime.homeostasis_tool import update_homeostasis
 from eqnet.runtime.policy import PolicyPrior
 from eqnet.runtime.state import QualiaState
@@ -144,6 +145,9 @@ class EQNetHub:
         self._runtime_delegate = self._resolve_runtime_delegate(runtime_delegate)
         self._idempotency_store = idempotency_store or NoopIdempotencyStore()
         self._mecpe_writer = MecpeWriter(MecpeWriterConfig(telemetry_dir=self.config.telemetry_dir))
+        self._immune_hmac_runtime = validate_immune_hmac_runtime_config(
+            log_warning=lambda message: logger.warning(message)
+        )
         self._runtime_version = (
             runtime_version
             or os.getenv(RUNTIME_VERSION_ENV)

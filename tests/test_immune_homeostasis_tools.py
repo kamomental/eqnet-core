@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import base64
+
+import eqnet.runtime.immune_tool as immune_tool_mod
 from eqnet.runtime.homeostasis_tool import update_homeostasis
 from eqnet.runtime.immune_tool import (
     apply_quarantine_replay_guard,
     classify_intake,
     intake_signature,
+    validate_immune_hmac_runtime_config,
 )
 
 
@@ -63,3 +67,43 @@ def test_immune_replay_guard_marks_repeat_hit() -> None:
     assert isinstance(second.get("ops_digest"), str)
     assert second.get("ops_digest")
     assert len(recent2) >= 1
+
+
+def test_validate_immune_hmac_runtime_config_prod_requires_key() -> None:
+    immune_tool_mod._HMAC_CONFIG_WARNED = False
+    try:
+        validate_immune_hmac_runtime_config(env={"EQNET_ENV": "production"})
+        assert False, "should raise in production without hmac key"
+    except RuntimeError:
+        pass
+
+
+def test_validate_immune_hmac_runtime_config_dev_warns_once_and_falls_back() -> None:
+    immune_tool_mod._HMAC_CONFIG_WARNED = False
+    warnings: list[str] = []
+    out1 = validate_immune_hmac_runtime_config(
+        env={"EQNET_ENV": "dev"},
+        log_warning=lambda m: warnings.append(m),
+    )
+    out2 = validate_immune_hmac_runtime_config(
+        env={"EQNET_ENV": "dev"},
+        log_warning=lambda m: warnings.append(m),
+    )
+    assert out1.get("signature_v") == "1"
+    assert out2.get("signature_v") == "1"
+    assert len(warnings) == 1
+
+
+def test_validate_immune_hmac_runtime_config_uses_v2_when_key_valid() -> None:
+    immune_tool_mod._HMAC_CONFIG_WARNED = False
+    key_b64 = base64.b64encode(b"0123456789abcdef0123456789abcdef").decode("ascii")
+    out = validate_immune_hmac_runtime_config(
+        env={
+            "EQNET_ENV": "production",
+            "EQNET_IMMUNE_HMAC_KEY_B64": key_b64,
+            "EQNET_IMMUNE_HMAC_KEY_ID": "k1",
+        },
+    )
+    assert out.get("hmac_enabled") is True
+    assert out.get("signature_v") == "2"
+    assert out.get("key_id") == "k1"

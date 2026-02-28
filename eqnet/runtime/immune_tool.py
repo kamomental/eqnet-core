@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import re
-from typing import Any, Dict, Mapping
+from typing import Any, Callable, Dict, Mapping
 
 
 DEFAULT_IMMUNE_POLICY: Dict[str, Any] = {
@@ -31,6 +31,7 @@ DEFAULT_IMMUNE_POLICY: Dict[str, Any] = {
         ],
     },
 }
+_HMAC_CONFIG_WARNED = False
 
 
 def classify_intake(
@@ -163,6 +164,55 @@ def intake_signature(*, text: str, reason_codes: list[str] | None = None) -> Dic
     }
 
 
+def validate_immune_hmac_runtime_config(
+    *,
+    env: Mapping[str, str] | None = None,
+    log_warning: Callable[[str], None] | None = None,
+) -> Dict[str, Any]:
+    env_map = env or os.environ
+    runtime_env = str(env_map.get("EQNET_ENV") or env_map.get("ENV") or "").strip().lower()
+    is_prod = runtime_env in {"prod", "production"}
+    key_b64 = env_map.get("EQNET_IMMUNE_HMAC_KEY_B64")
+    key_id = str(env_map.get("EQNET_IMMUNE_HMAC_KEY_ID") or "v2-local")
+    status = {
+        "runtime_env": runtime_env or "unset",
+        "is_prod": bool(is_prod),
+        "hmac_enabled": False,
+        "signature_v": "1",
+        "key_id": key_id if key_b64 else "legacy",
+    }
+    if key_b64:
+        try:
+            key = base64.b64decode(key_b64, validate=True)
+            if len(key) < 16:
+                raise ValueError("key too short")
+            status["hmac_enabled"] = True
+            status["signature_v"] = "2"
+            status["key_id"] = key_id
+            return status
+        except Exception:
+            if is_prod:
+                raise RuntimeError("immune hmac key invalid for production runtime")
+            _warn_once("immune hmac key invalid; falling back to signature_v=1", log_warning)
+            return status
+    if is_prod:
+        raise RuntimeError("immune hmac key required for production runtime")
+    _warn_once("immune hmac key missing; falling back to signature_v=1", log_warning)
+    return status
+
+
+def _warn_once(message: str, log_warning: Callable[[str], None] | None) -> None:
+    global _HMAC_CONFIG_WARNED
+    if _HMAC_CONFIG_WARNED:
+        return
+    _HMAC_CONFIG_WARNED = True
+    if log_warning is not None:
+        try:
+            log_warning(message)
+        except Exception:
+            return
+
+
 def _event_hash(event: Mapping[str, Any] | None) -> str:
     payload = {
         "scenario_id": str((event or {}).get("scenario_id") or ""),
@@ -224,4 +274,5 @@ __all__ = [
     "classify_intake",
     "apply_quarantine_replay_guard",
     "intake_signature",
+    "validate_immune_hmac_runtime_config",
 ]
