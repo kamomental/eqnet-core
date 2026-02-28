@@ -20,6 +20,8 @@ from eqnet.runtime.interaction_tools import (
     interaction_digest,
     shape_response_profile,
 )
+from eqnet.runtime.immune_tool import DEFAULT_IMMUNE_POLICY, classify_intake
+from eqnet.runtime.homeostasis_tool import update_homeostasis
 from eqnet.runtime.policy import PolicyPrior
 from eqnet.runtime.state import QualiaState
 from eqnet.runtime.turn import CoreState, SafetyConfig
@@ -754,18 +756,38 @@ class EQNetHub:
                 if isinstance(getattr(self.config, "runtime_policy", None), Mapping)
                 else {}
             )
+            immune_policy = (
+                dict(getattr(self.config, "runtime_policy", {}).get("immune") or {})
+                if isinstance(getattr(self.config, "runtime_policy", None), Mapping)
+                else {}
+            )
+            immune_cfg = {
+                **DEFAULT_IMMUNE_POLICY,
+                **immune_policy,
+            }
+            immune = classify_intake(
+                text=str(raw_text or ""),
+                event=_ensure_mapping(raw_event if isinstance(raw_event, Mapping) else thin_entry),
+                policy=immune_cfg,
+            )
+            intake_text = str(immune.get("detox_text") or raw_text or "")
             interaction_cfg = {
                 **DEFAULT_INTERACTION_POLICY,
                 **interaction_policy,
             }
             resonance = estimate_resonance_state(
-                text=str(raw_text or ""),
+                text=intake_text,
                 prev_state=self._interaction_state,
                 policy=interaction_cfg,
             )
             reflex = build_reflex_signal(
                 resonance=resonance,
                 policy=interaction_cfg,
+            )
+            homeostasis = update_homeostasis(
+                prev_state=self._interaction_state,
+                resonance=resonance,
+                metabolism=thermo,
             )
             shaper = shape_response_profile(
                 resonance=resonance,
@@ -775,10 +797,19 @@ class EQNetHub:
             interaction_payload = {
                 "resonance": resonance,
                 "reflex": reflex,
+                "immune": {
+                    "action": immune.get("action"),
+                    "score": immune.get("score"),
+                    "ops_digest": immune.get("ops_digest"),
+                },
+                "homeostasis": homeostasis,
                 "response_shaper": shaper,
             }
             interaction_fp = interaction_digest(interaction_payload)
-            self._interaction_state = dict(resonance)
+            self._interaction_state = {
+                **dict(resonance),
+                **dict(homeostasis),
+            }
             output_control = apply_policy_prior(
                 self.latest_policy_prior(),
                 day_key=day_key,
@@ -822,6 +853,14 @@ class EQNetHub:
                     "rule_delta_action_types": list(overlay.get("rule_delta_action_types") or []),
                     "reflex_mode": str(reflex.get("mode") or "neutral"),
                     "reflex_latency_target_ms": int(reflex.get("latency_target_ms") or 150),
+                    "immune_action": str(immune.get("action") or "ACCEPT"),
+                    "immune_score": _maybe_float(immune.get("score")),
+                    "immune_ops_digest": str(immune.get("ops_digest") or ""),
+                    "immune_event_hash": str(immune.get("event_hash") or ""),
+                    "homeostasis_mode": str(homeostasis.get("homeostasis_mode") or "FOCUSED"),
+                    "arousal_level": _maybe_float(homeostasis.get("arousal_level")),
+                    "stability_index": _maybe_float(homeostasis.get("stability_index")),
+                    "homeostasis_adjustments_count": int(homeostasis.get("homeostasis_adjustments_count") or 0),
                     "resonance_valence": _maybe_float(resonance.get("valence")),
                     "resonance_arousal": _maybe_float(resonance.get("arousal")),
                     "resonance_safety": _maybe_float(resonance.get("safety")),
@@ -910,6 +949,7 @@ class EQNetHub:
                     "output_control_fingerprint": output_control_fingerprint,
                     "reflex_text": str(reflex.get("text") or ""),
                     "resonance_reason_codes": list(resonance.get("reason_codes") or []),
+                    "immune_reason_codes": list(immune.get("reason_codes") or []),
                     "interaction_state_fingerprint": interaction_fp,
                 }
             )
