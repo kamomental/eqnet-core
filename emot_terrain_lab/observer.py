@@ -185,6 +185,15 @@ def _fixed_disclaimer_text(culture: str | None = None, tone: str | None = None) 
     return "This is a working hypothesis. If it feels off, please tell me and I will keep listening."
 
 
+def _attempt_llm_disclaimer(
+    state: Dict[str, Any],
+    tone: str,
+    culture: str,
+    cfg: Any,
+) -> str | None:
+    return None
+
+
 def _generate_disclaimer_text(state: Dict[str, Any], tone: str, culture: str) -> Tuple[str, str]:
     cfg = _get_observer_cfg()
     mode = _effective_mode(cfg.mode)

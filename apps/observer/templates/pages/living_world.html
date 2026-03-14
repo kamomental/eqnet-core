@@ -1,0 +1,126 @@
+﻿<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Project ATRI Living World</title>
+  <link rel="stylesheet" href="/static/living_world.css" />
+</head>
+<body>
+  <main class="living-shell" data-world-url="{{ world_url }}" data-state-url="/project-atri/2d-state" data-event-url="/project-atri/2d-event">
+    <section class="stage-panel">
+      <div class="stage-backdrop"></div>
+      <header class="stage-header glass">
+        <div>
+          <p class="eyebrow">Project ATRI</p>
+          <h1>Living World</h1>
+        </div>
+        <div class="status-cluster">
+          <div class="status-pill"><span class="dot"></span><span id="modeLabel">Reality</span></div>
+          <div class="status-pill subtle" id="zoneLabel">Harbor Market</div>
+        </div>
+      </header>
+
+      <div class="stage-wrap glass-deep">
+        <canvas id="worldCanvas" width="1440" height="900"></canvas>
+        <div class="stage-overlay top-left">
+          <div class="overlay-card ambient-card">
+            <span class="card-label">Ambient</span>
+            <strong id="ambientLabel">settled daylight</strong>
+            <p id="ambientText">The companion remains close to the user and keeps attention open.</p>
+          </div>
+        </div>
+        <div class="stage-overlay top-right">
+          <div class="overlay-card memory-card">
+            <span class="card-label">Memory Glow</span>
+            <strong id="memoryAnchor">bakery</strong>
+            <p id="memoryText">Recent visual recall is still warm and available.</p>
+          </div>
+        </div>
+        <div class="stage-overlay bottom-left">
+          <div class="avatar-ribbon glass">
+            <div class="avatar-core">
+              <span class="avatar-halo"></span>
+              <span class="avatar-face"></span>
+            </div>
+            <div class="avatar-copy">
+              <p class="avatar-name">ATRI Core</p>
+              <p class="avatar-state" id="activityLabel">attend</p>
+            </div>
+          </div>
+        </div>
+        <div class="stage-overlay bottom-right">
+          <div class="dialogue-ribbon glass">
+            <span class="card-label">Presence</span>
+            <p id="presenceText">Listening closely and letting the place settle before speaking.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="world-side">
+      <section class="side-card hero-card glass">
+        <p class="eyebrow">Whole-System View</p>
+        <h2>Life First</h2>
+        <p>
+          This surface is for presence, movement, recall, streaming, and recovery.
+          It is not an audit dashboard.
+        </p>
+      </section>
+
+      <section class="side-card metrics-card glass">
+        <div class="metric-row">
+          <span>Energy</span>
+          <div class="meter"><i id="energyMeter"></i></div>
+          <strong id="energyValue">0.72</strong>
+        </div>
+        <div class="metric-row">
+          <span>Stress</span>
+          <div class="meter warm"><i id="stressMeter"></i></div>
+          <strong id="stressValue">0.24</strong>
+        </div>
+        <div class="metric-row">
+          <span>Love</span>
+          <div class="meter bloom"><i id="loveMeter"></i></div>
+          <strong id="loveValue">0.44</strong>
+        </div>
+        <div class="metric-row">
+          <span>Attention</span>
+          <div class="meter mist"><i id="attentionMeter"></i></div>
+          <strong id="attentionValue">0.57</strong>
+        </div>
+      </section>
+
+      <section class="side-card scene-card glass">
+        <div class="scene-head">
+          <div>
+            <p class="eyebrow">World Loop</p>
+            <h3 id="worldTitle">Harbor Town</h3>
+          </div>
+          <span class="scene-badge" id="worldTypeLabel">infrastructure</span>
+        </div>
+        <ul class="scene-list" id="entityList"></ul>
+      </section>
+
+      <section class="side-card stream-card glass">
+        <div class="scene-head">
+          <div>
+            <p class="eyebrow">Mode Drift</p>
+            <h3>Reality / Stream / Sim</h3>
+          </div>
+        </div>
+        <div class="mode-stack">
+          <button class="mode-chip is-active" data-demo-mode="reality">Reality</button>
+          <button class="mode-chip" data-demo-mode="streaming">Streaming</button>
+          <button class="mode-chip" data-demo-mode="simulation">Simulation</button>
+        </div>
+        <p class="support-copy" id="modeDescription">
+          Real-world interaction stays primary. Other modes only change expression density.
+        </p>
+      </section>
+    </aside>
+  </main>
+  <script src="/static/living_world_runtime.js"></script>
+</body>
+</html>
+

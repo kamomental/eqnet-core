@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
@@ -7,11 +7,15 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .routers.api import audits as api_audits
+from .routers.api import inner_os as api_inner_os
+from .routers.api import living_world as api_living_world
 from .routers.api import traces as api_traces
 from .routers.api import workspace as api_workspace
 from .routers.html import pages as html_pages
 
 BASE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = BASE_DIR.parent.parent
+WORLD_DIR = REPO_ROOT / "docs" / "replay" / "world"
 
 app = FastAPI(title="EQNet Observer", version="0.1.0")
 
@@ -19,10 +23,13 @@ _templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 html_pages.templates = _templates
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+app.mount("/worlds", StaticFiles(directory=str(WORLD_DIR)), name="worlds")
 
 app.include_router(api_audits.router, prefix="/api", tags=["api"])
 app.include_router(api_traces.router, prefix="/api", tags=["api"])
 app.include_router(api_workspace.router, prefix="/api", tags=["api"])
+app.include_router(api_inner_os.router, tags=["inner_os"])
+app.include_router(api_living_world.router, tags=["living_world"])
 app.include_router(html_pages.router, tags=["html"])
 
 

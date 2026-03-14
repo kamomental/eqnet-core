@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -31,6 +31,19 @@ def overlay_latest(request: Request) -> HTMLResponse:
         {
             "request": request,
             "poll_s": settings.overlay_poll_seconds,
+        },
+    )
+    disable_cache(response)
+    return response
+
+
+@router.get("/living-world", response_class=HTMLResponse)
+def living_world(request: Request) -> HTMLResponse:
+    response = _tmpl().TemplateResponse(
+        "pages/living_world.html",
+        {
+            "request": request,
+            "world_url": "/worlds/harbor_town.json",
         },
     )
     disable_cache(response)
