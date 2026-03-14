@@ -75,6 +75,9 @@ def test_handle_memory_reference_high_fidelity_reply() -> None:
     assert "いっしょ" in result["reply"]
     assert result["candidate"]["node"] == "garden"
     assert result.get("meta", {}).get("mode") == "recall"
+    assert result.get("summary")
+    assert result.get("memory_anchor")
+    assert result.get("meta", {}).get("record_kind") in {"observed_real", "verified"}
 
 
 def _build_outcome(fidelity: float, anchor: float, score: float = 0.5) -> ReplayOutcome:
@@ -153,6 +156,8 @@ def test_handle_memory_reference_emits_double_take_for_borrowed_idea(monkeypatch
     )
     meta = result.get("meta") or {}
     assert meta.get("memory_kind") == "borrowed_idea"
+    assert meta.get("record_kind") == "reconstructed"
+    assert meta.get("record_provenance") == "eqnet_memory_reference"
     assert meta.get("audit_event") == "DOUBLE_TAKE"
 
 
@@ -174,4 +179,5 @@ def test_handle_memory_reference_emits_source_fuzzy_for_low_fidelity(monkeypatch
     meta = result.get("meta") or {}
     assert meta.get("memory_kind") == "unknown"
     assert meta.get("source_class") == "uncertain"
+    assert meta.get("record_kind") == "reconstructed"
     assert meta.get("audit_event") == "SOURCE_FUZZY"

@@ -4,21 +4,21 @@
 The field keeps three bounded thermodynamic-style indicators that downstream
 controllers can rely on without re-deriving the maths each time:
 
-* ``S`` — entropy normalised to ``[0, 1]`` (higher = more disorder)
-* ``H`` — enthalpy/energy carrier normalised to ``[0, 1]``
-* ``ρ`` — synchrony/density proxy derived from gradient magnitudes (higher =
-  calmer flow, lower gradients)
+* ``S``: entropy normalized to ``[0, 1]`` (higher = more disorder)
+* ``H``: enthalpy / energy carrier normalized to ``[0, 1]``
+* ``rho``: synchrony / density proxy derived from gradient magnitudes
+  (higher = calmer flow, lower gradients)
 
-Together with a reward delta ``ΔR`` (see :mod:`devlife.runtime.loop`), the
-Ignition Index is anchored to the contract::
+Together with a normalized reward delta, the ignition index follows::
 
-    I = w₁·ΔR_norm + w₂·(1 − S)
-    w₁ + w₂ = 1,   S ∈ [0, 1]
+    I = w_r * delta_r_norm + w_s * (1 - S)
+    w_r + w_s = 1,   S in [0, 1]
 
-which guarantees ``∂I/∂S ≤ 0`` and ``∂I/∂ΔR ≥ 0`` when the weights are
-non-negative.  This file focuses on producing stable S/H/ρ signals so that the
-loop only has to reason about combining them.
+With non-negative weights, this keeps the index monotonic with respect to
+reward and inverse entropy. This file focuses on producing stable ``S``, ``H``,
+and ``rho`` signals so that the loop only has to reason about combining them.
 """
+
 
 from __future__ import annotations
 

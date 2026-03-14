@@ -1,4 +1,4 @@
-# Python artifacts
+﻿# Python artifacts
 __pycache__/
 *.py[cod]
 *.pyo
@@ -31,7 +31,9 @@ Thumbs.db
 state/
 reports/nightly/*.json
 emot_terrain_lab/data/
+models/sse/
 data/
+models/sse/
 
 # Generated analytics
 telemetry/**/*.jsonl
@@ -69,3 +71,4 @@ assets/replay/character/**/*.png
 assets/replay/masks/**/*.png
 assets/replay/src/*.png
 assets/replay/**/*.json
+

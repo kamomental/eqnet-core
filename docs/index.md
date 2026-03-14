@@ -1,4 +1,4 @@
-# Documentation Entry Points
+﻿# Documentation Entry Points
 
 This page provides stable entry points without moving existing docs.
 
@@ -15,4 +15,6 @@ This page provides stable entry points without moving existing docs.
 - Roadmap / Progress: `docs/roadmap/README.md`
 - Persona / UX: `docs/persona/README.md`
 - Tools / Integration: `docs/tools/README.md`
+- Inner OS: `inner_os/README.md` / `docs/component_os_status.md`
+- Project ATRI: `docs/project_atri_core_architecture.md` / `docs/project_atri_pipeline_os.md` / `docs/project_atri_operating_model.md` / `docs/project_atri_runtime_and_streaming.md` / `docs/project_atri_progress.md` / `docs/project_atri_simulation_growth.md` / `docs/project_atri_2d_simulation_interface.md`
 - Social Resilience SoT: `docs/social_resilience_principles.md`

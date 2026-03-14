@@ -341,10 +341,19 @@ def handle_memory_reference(
         elif use_as_experience and memory_kind == "borrowed_idea":
             audit_event = "DOUBLE_TAKE"
             evidence_keys.extend(["borrowed_idea", "experience_use"])
+
+        record_kind = "observed_real"
+        if source_class == "self" and outcome is not None and outcome.fidelity >= 0.82:
+            record_kind = "verified"
+        elif source_class in {"uncertain", "other", "imagery"} or audit_event in {"SOURCE_FUZZY", "DOUBLE_TAKE"}:
+            record_kind = "reconstructed"
+
         return {
             "source_class": source_class,
             "memory_kind": memory_kind,
             "audit_event": audit_event,
+            "record_kind": record_kind,
+            "record_provenance": "eqnet_memory_reference",
             "evidence_keys": sorted(set(evidence_keys)),
         }
 
@@ -374,6 +383,8 @@ def handle_memory_reference(
             "reply": _truncate(reply, max_reply_chars),
             "fidelity": 0.0,
             "candidate": None,
+            "summary": seed,
+            "memory_anchor": seed[:160],
             "meta": {
                 "mode": strategy,
                 "disclaimer_source": "template",
@@ -395,6 +406,8 @@ def handle_memory_reference(
             "reply": _truncate(reply, max_reply_chars),
             "fidelity": 0.0,
             "candidate": None,
+            "summary": seed,
+            "memory_anchor": seed[:160],
             "meta": {
                 "mode": strategy,
                 "disclaimer_source": "fallback",
@@ -420,6 +433,8 @@ def handle_memory_reference(
             "score": outcome.candidate.score,
             "affective": outcome.candidate.affective,
         },
+        "summary": label,
+        "memory_anchor": label[:160],
         "meta": {
             "mode": strategy,
             "anchor": outcome.candidate.anchor,

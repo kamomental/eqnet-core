@@ -164,6 +164,37 @@ class EmotionalMemorySystem:
             record["emotion_vec"] = self._resize_list(record["emotion_vec"])
         return record
 
+    def _apply_consent_filters(self):
+        mask = np.array([self.ethics.preferences.record_axes.get(axis, True) for axis in AXES], dtype=bool)
+        for exp in self.l1.experiences:
+            vec = np.array(exp.get("emotion_vec", []), dtype=float)
+            if vec.size:
+                exp["emotion_vec"] = np.where(mask, vec, 0.0).tolist()
+            context = exp.setdefault("context", {})
+            if not self.ethics.preferences.store_dialogue:
+                exp["dialogue"] = ""
+            if not self.ethics.preferences.store_membrane:
+                context.pop("membrane", None)
+            if not self.ethics.preferences.store_projection:
+                context.pop("projection", None)
+            if not self.ethics.preferences.store_field:
+                context.pop("qualia", None)
+        if not self.ethics.preferences.store_diary:
+            self.diary.redact()
+        for pat in self.l3.patterns:
+            sig = np.array(pat.get("emotion_signature", []), dtype=float)
+            if sig.size:
+                pat["emotion_signature"] = np.where(mask, sig, 0.0).tolist()
+            if not self.ethics.preferences.store_field:
+                pat.pop("qualia_signature", None)
+        if not self.ethics.preferences.store_field:
+            for ep in self.l2.episodes:
+                ep.pop("qualia_profile", None)
+            for node in self.story_graph.nodes.values():
+                for example in node.get("examples", []):
+                    example.pop("qualia", None)
+            self.memory_palace.qualia_state = self.memory_palace._default_qualia_state()
+
     def save_state(self):
         self._apply_consent_filters()
         p = self._state_paths()
@@ -846,6 +877,7 @@ def _aggregate_metrics_for_day(self, day: date) -> Dict[str, float]:
             blended = 0.6 * phi_vec + 0.4 * psi_vec
             return blended
         return accum / weight_sum
+
 
 
 

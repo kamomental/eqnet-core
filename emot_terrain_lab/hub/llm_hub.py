@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 Minimal LLM hub wrapper.
 
@@ -23,6 +23,8 @@ from terrain import llm as terrain_llm
 from emot_terrain_lab.tools.registry import SkillRegistry
 from emot_terrain_lab.hub.akorn import AkornGate, AkornConfig
 from emot_terrain_lab.rag.lazy_rag import LazyRAG, LazyRAGConfig
+from emot_terrain_lab.rag.sse_search import SSESearchAdapter
+from emot_terrain_lab.vision.lmstudio_vlm import LMStudioVLMAdapter
 from runtime.config import load_runtime_cfg
 
 
@@ -38,7 +40,7 @@ class LLMHubConfig:
         "Keep responses concise and compassionate."
     )
     default_intent: str = "chitchat"
-    fallback_text: str = "ごめんね、今すぐ良い言葉が浮かばなかったよ。"
+    fallback_text: str = "I am sorry, but I could not prepare a response just now."
 
 
 @dataclass
@@ -51,6 +53,8 @@ class HubResponse:
     safety: Dict[str, str]
     confidence: float = 0.0
     uncertainty_reason: Tuple[str, ...] = ()
+    retrieval_summary: Optional[Dict[str, object]] = None
+    perception_summary: Optional[Dict[str, object]] = None
 
 
 class LLMHub:
@@ -62,6 +66,8 @@ class LLMHub:
         # Allow environment-based tuning of AKOrN small gains
         self.akorn = AkornGate(AkornConfig.from_env())
         self._lazy_rag: Optional[LazyRAG] = None
+        self._sse_search: Optional[SSESearchAdapter] = None
+        self._vlm_adapter: Optional[LMStudioVLMAdapter] = None
         try:
             self._runtime_cfg = load_runtime_cfg()
         except Exception:
@@ -74,6 +80,22 @@ class LLMHub:
         if self._lazy_rag is None:
             self._lazy_rag = LazyRAG(LazyRAGConfig.from_env())
         return self._lazy_rag
+
+    def _get_sse_search(self) -> Optional[SSESearchAdapter]:
+        if self._sse_search is None:
+            adapter = SSESearchAdapter()
+            if not adapter.enabled:
+                return None
+            self._sse_search = adapter
+        return self._sse_search
+
+    def _get_vlm_adapter(self) -> Optional[LMStudioVLMAdapter]:
+        if self._vlm_adapter is None:
+            adapter = LMStudioVLMAdapter()
+            if not adapter.enabled:
+                return None
+            self._vlm_adapter = adapter
+        return self._vlm_adapter
 
     def _show_uncertainty_meta(self) -> bool:
         env = (os.getenv("EQNET_SHOW_UNCERTAINTY_META", "") or "").strip().lower()
@@ -167,6 +189,7 @@ class LLMHub:
         controls: Dict[str, float],
         intent: Optional[str] = None,
         slos: Optional[Dict[str, float]] = None,
+        image_path: Optional[str] = None,
     ) -> HubResponse:
         """
         Generate text under EQNet control.
@@ -179,10 +202,10 @@ class LLMHub:
             Optional additional context (e.g., retrieved snippets). For the
             scaffold we simply append it to the prompt.
         controls:
-            Dict containing behaviour controls (pause_ms, temperature, warmth…)
+            Dict containing behaviour controls (pause_ms, temperature, warmth窶ｦ)
             produced by :class:`hub.policy.PolicyHead`.
         intent:
-            Intent label (qa/chitchat/code…). Currently only chitchat behaviour
+            Intent label (qa/chitchat/code窶ｦ). Currently only chitchat behaviour
             is defined but the parameter is kept for future routing policies.
         slos:
             Optional SLO hints (e.g., ``{"p95_ms": 180}``). The scaffold only
@@ -199,19 +222,51 @@ class LLMHub:
                 context = context.strip()
         retrieval_error = False
         sat_ratio: Optional[float] = None
-        if not context:
-            rag = self._get_lazy_rag()
-            if rag is not None:
+        retrieval_summary: Optional[Dict[str, object]] = None
+        perception_summary: Optional[Dict[str, object]] = None
+        visual_context: Optional[str] = None
+        if image_path:
+            vlm = self._get_vlm_adapter()
+            if vlm is not None:
                 try:
-                    context = rag.build_context(user_text)
+                    perception_summary = vlm.describe_image(image_path, user_text=user_text)
+                    visual_text = str(perception_summary.get("text") or "").strip() if perception_summary else ""
+                    if visual_text:
+                        visual_context = f"[vision]\n{visual_text}"
+                except Exception as exc:
+                    perception_summary = {"backend": "lmstudio_vlm", "image_path": image_path, "error": "vision_error", "detail": str(exc)}
+        if not context:
+            sse = self._get_sse_search()
+            if sse is not None:
+                try:
+                    sse_hits = sse.search(user_text)
+                    if sse_hits:
+                        context = sse.build_context(user_text)
+                        retrieval_summary = sse.summarize_hits(sse_hits)
                 except Exception:
                     retrieval_error = True
                     context = None
-                diag = getattr(rag, "last_score_diag", {}) or {}
-                try:
-                    sat_ratio = float(diag.get("sat_ratio")) if "sat_ratio" in diag else None
-                except (TypeError, ValueError):
-                    sat_ratio = None
+            if not context:
+                rag = self._get_lazy_rag()
+                if rag is not None:
+                    try:
+                        context = rag.build_context(user_text)
+                    except Exception:
+                        retrieval_error = True
+                        context = None
+                    diag = getattr(rag, "last_score_diag", {}) or {}
+                    try:
+                        sat_ratio = float(diag.get("sat_ratio")) if "sat_ratio" in diag else None
+                    except (TypeError, ValueError):
+                        sat_ratio = None
+                    if context:
+                        retrieval_summary = {
+                            "backend": "lazy_rag",
+                            "context_chars": len(context),
+                            "sat_ratio": sat_ratio,
+                        }
+        if visual_context:
+            context = f"{visual_context}\n\n{context.strip()}" if context else visual_context
         prompt = user_text
         if context:
             prompt = context.strip() + "\n\n---\n\n" + user_text.strip()
@@ -267,6 +322,8 @@ class LLMHub:
             safety={**safety, **({"akorn": "applied"} if gate_log else {}), **gate_note},
             confidence=confidence,
             uncertainty_reason=uncertainty_reason,
+            retrieval_summary=retrieval_summary,
+            perception_summary=perception_summary,
         )
 
 
@@ -274,19 +331,19 @@ class LLMHub:
 def _uncertainty_lexicon(locale: str) -> Dict[str, object]:
     normalized = (locale or "ja").lower()
     defaults: Dict[str, object] = {
-        "line_template": "※推定信頼度: {confidence:.2f}（{confidence_label}） / 不確実要因: {reasons}",
-        "reason_low": "低",
+        "line_template": "confidence: {confidence:.2f} ({confidence_label}) / reasons: {reasons}",
+        "reason_low": "low",
         "reason_join": ", ",
         "confidence_low_max": 0.54,
         "confidence_mid_max": 0.79,
-        "confidence_label_low": "低",
-        "confidence_label_mid": "中",
-        "confidence_label_high": "高",
+        "confidence_label_low": "low",
+        "confidence_label_mid": "mid",
+        "confidence_label_high": "high",
         "reason_labels": {
-            "retrieval_sparse": "関連記憶が少ない",
-            "retrieval_error": "記憶検索で一時的なエラー",
-            "score_saturation_high": "スコア飽和が高い",
-            "score_saturation_moderate": "スコア飽和がやや高い",
+            "retrieval_sparse": "retrieval_sparse",
+            "retrieval_error": "retrieval_error",
+            "score_saturation_high": "score_saturation_high",
+            "score_saturation_moderate": "score_saturation_moderate",
         },
     }
     if not normalized.startswith("ja"):
@@ -337,3 +394,8 @@ def _confidence_label(confidence: float, lex: Dict[str, object]) -> str:
     if confidence <= mid_max:
         return str(lex.get("confidence_label_mid", "mid"))
     return str(lex.get("confidence_label_high", "high"))
+
+
+
+
+

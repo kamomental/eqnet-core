@@ -16,7 +16,7 @@ import json
 import logging
 import os
 import re
-from rag.assoc_safety import calc_saturation_stats, clamp_score, sanitize_weights
+from .assoc_safety import calc_saturation_stats, clamp_score, sanitize_weights
 
 _WORD_RE = re.compile(r"[A-Za-z0-9_]+|[ぁ-んァ-ン一-龥]+")
 

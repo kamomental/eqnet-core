@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Inner replay controller with lightweight simulate→evaluate→veto flow."""
+"""Inner replay controller with a lightweight simulate-evaluate-veto flow."""
 
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from typing import Dict, Sequence
 
 @dataclass(frozen=True)
 class ReplayConfig:
-    """Configuration knobs that mirror Σ→Ψ の内的リプレイ挙動."""
+    """Configuration knobs for the replay preparation and veto cycle."""
 
     theta_prep: float = 0.65
     tau_conscious_s: float = 0.32
@@ -32,7 +32,7 @@ class ReplayConfig:
 
 @dataclass(frozen=True)
 class ReplayInputs:
-    """Fast-path で集約済みの Σ 指標."""
+    """Input features consumed by the fast-path replay cycle."""
 
     chaos_sens: float
     tom_cost: float
@@ -56,7 +56,7 @@ class ReplayStats:
 
 @dataclass(frozen=True)
 class ReplayOutcome:
-    """結果ログを receipt に貼り付けやすいよう整理."""
+    """Structured replay result suitable for logging and downstream receipts."""
 
     decision: str
     felt_intent_time: float
@@ -69,7 +69,7 @@ class ReplayOutcome:
 
 
 class InnerReplayController:
-    """Deterministic inner replay runner (ランダム性は seed に依存)."""
+    """Deterministic inner replay runner seeded for stable behavior."""
 
     def __init__(self, config: ReplayConfig | None = None, **overrides) -> None:
         if config is None:
