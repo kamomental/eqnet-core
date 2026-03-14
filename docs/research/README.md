@@ -15,3 +15,4 @@ Exploratory notes, hypotheses, and long-form reasoning.
 - Wave p3p4: `docs/wave_p3p4.md`
 - Mood gate ablation: `docs/dev_mood_gate_ablation.md`
 - FEP/RWM bridge: `docs/fep_rwm_bridge.md`
+- Inverse-problem operating model: `docs/eqnet_inverse_problem_operating_model.md`

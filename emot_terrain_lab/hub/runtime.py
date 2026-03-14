@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 End-to-end runtime scaffold that ties perception, EQNet metrics, policy
 controls, and the LLM hub together.
@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Optional, Dict, Any, Tuple, List, Mapping
+from typing import Optional, Dict, Any, Tuple, List, Mapping, Callable
 import copy
 import math
 import os
@@ -74,10 +74,27 @@ from eqnet_core.models.conscious import (
 )
 from eqnet_core.models.emotion import EmotionVector, ValueGradient
 from eqnet_core.models.talk_mode import TalkMode
+from eqnet_core.models.runtime_turn import RuntimeTurnResult
+from eqnet_core.models.project_atri_2d import ProjectATRI2DState, ProjectATRI2DEvent
 from eqnet_core.qualia import AccessGate, AccessGateConfig, MetaMonitor
 from .perception import PerceptionBridge, PerceptionConfig, AffectSample
 from .policy import PolicyHead, PolicyConfig, AffectControls
 from .llm_hub import LLMHub, LLMHubConfig, HubResponse
+from emot_terrain_lab.vision.lmstudio_vlm import LMStudioVLMAdapter
+from emot_terrain_lab.rag.sse_search import SSESearchAdapter
+from emot_terrain_lab.memory.vision_memory_store import VisionMemoryStore
+from inner_os.conscious_access import ConsciousAccessCore
+from inner_os.integration_hooks import IntegrationHooks
+from inner_os.memory_bridge import collect_runtime_memory_candidates
+from inner_os.relational_world import RelationalWorldCore, RelationalWorldState
+from inner_os.physiology import (
+    BoundaryCore,
+    HeartbeatConfig,
+    HeartbeatCore,
+    HeartbeatState,
+    PainStressCore,
+    RecoveryCore,
+)
 from .robot_bridge import RobotBridgeConfig, ROS2Bridge
 from datetime import datetime
 from emot_terrain_lab.terrain.system import EmotionalMemorySystem
@@ -99,6 +116,12 @@ LOGGER = logging.getLogger(__name__)
 if not logging.getLogger().handlers:
     logging.basicConfig(level=logging.INFO)
 LOGGER.setLevel(logging.DEBUG)
+
+INNER_OS_SURFACE_THRESHOLDS = {
+    "closing_question_bias": 0.24,
+    "probe_question_bias": 0.28,
+    "reopening_recovery": 0.24,
+}
 
 
 @dataclass
@@ -459,6 +482,7 @@ class EmotionalHubRuntime:
         self.perception = PerceptionBridge(self.config.perception)
         self.policy = PolicyHead(self.config.policy)
         self.llm = LLMHub(self.config.llm)
+        self._vision_memory_store = VisionMemoryStore()
         self.robot_bridge: Optional[ROS2Bridge] = None
         if self.config.robot.enabled:
             self.robot_bridge = ROS2Bridge(self.config.robot)
@@ -604,6 +628,17 @@ class EmotionalHubRuntime:
         self._heart_last_ts = time.time()
         self._heart_base_rate = 0.85
         self._heart_gain = 0.45
+        self._heartbeat_core = HeartbeatCore(
+            HeartbeatConfig(base_rate=self._heart_base_rate, gain=self._heart_gain),
+            HeartbeatState(
+                rate=self._heart_rate,
+                phase=self._heart_phase,
+                last_ts=self._heart_last_ts,
+            ),
+        )
+        self._pain_stress_core = PainStressCore()
+        self._recovery_core = RecoveryCore()
+        self._boundary_core = BoundaryCore()
         self._moment_log_writer = MomentLogWriter(self.config.moment_log_path)
         self._turn_id = 0
         self._session_id = None
@@ -612,6 +647,30 @@ class EmotionalHubRuntime:
         )
         if runtime_session is not None:
             self._session_id = getattr(runtime_session, "session_id", None)
+        self._relational_world_core = RelationalWorldCore(
+            RelationalWorldState(
+                mode="reality",
+                world_id="harbor_town",
+                world_type="infrastructure",
+                zone_id="market",
+                time_phase="day",
+                weather="clear",
+                simulation_enabled=False,
+                simulation_episode_id=None,
+                simulation_transfer_pending=False,
+                world_source="runtime",
+            )
+        )
+        self._surface_world_state: Dict[str, Any] = self._relational_world_core.snapshot()
+        self._conscious_access_core = ConsciousAccessCore()
+        self._integration_hooks = IntegrationHooks(
+            pain_stress_core=self._pain_stress_core,
+            recovery_core=self._recovery_core,
+            boundary_core=self._boundary_core,
+            conscious_access_core=self._conscious_access_core,
+        )
+        self._last_2d_event: Optional[Dict[str, Any]] = None
+        self._last_observed_vision_entry: Optional[Dict[str, Any]] = None
         self._culture_recurrence: Dict[Tuple[str, str, str, str], int] = defaultdict(
             int
         )
@@ -806,16 +865,12 @@ class EmotionalHubRuntime:
     ) -> None:
         """Allow external callers (e.g., UI sliders) to tune the heart loop."""
 
-        if base_rate is not None:
-            try:
-                self._heart_base_rate = float(base_rate)
-            except (TypeError, ValueError):
-                pass
-        if gain is not None:
-            try:
-                self._heart_gain = float(gain)
-            except (TypeError, ValueError):
-                pass
+        try:
+            self._heartbeat_core.set_params(base_rate=base_rate, gain=gain)
+        except (TypeError, ValueError):
+            pass
+        self._heart_base_rate = float(self._heartbeat_core.config.base_rate)
+        self._heart_gain = float(self._heartbeat_core.config.gain)
 
     def _build_default_persona_meta(self) -> Dict[str, Any]:
         persona_cfg = getattr(self.config.mask_layer, "persona", None)
@@ -852,6 +907,570 @@ class EmotionalHubRuntime:
 
     def current_talk_mode(self) -> TalkMode:
         return self._talk_mode
+
+    def load_state(self) -> None:
+        if self.eqnet_system is None:
+            return
+        loader = getattr(self.eqnet_system, "_load_state", None)
+        if callable(loader):
+            loader()
+
+    def save_state(self) -> None:
+        if self.eqnet_system is None:
+            return
+        self.eqnet_system.save_state()
+
+    def _inner_os_relational_context(self, sensor_metrics: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+        sensor_metrics = dict(sensor_metrics or {})
+        world_state = dict(self._surface_world_state or {})
+        object_counts = sensor_metrics.get("object_counts") or {}
+        nearby_objects: List[str] = []
+        if isinstance(object_counts, Mapping):
+            nearby_objects = [str(key).strip() for key in object_counts.keys() if str(key).strip()][:6]
+        place_anchor = self._dominant_memory_anchor() or str(world_state.get("zone_id") or "").strip() or None
+        return {
+            "culture_id": str(world_state.get("culture_id") or "default"),
+            "community_id": str(world_state.get("community_id") or "local"),
+            "social_role": str(world_state.get("social_role") or "companion"),
+            "place_memory_anchor": place_anchor,
+            "nearby_objects": nearby_objects,
+        }
+
+    def process_turn(
+        self,
+        user_text: Optional[str] = None,
+        context: Optional[str] = None,
+        intent: Optional[str] = None,
+        fast_only: bool = False,
+        image_path: Optional[str] = None,
+        transferred_lessons: Optional[list[Mapping[str, Any]]] = None,
+    ) -> RuntimeTurnResult:
+        sensor_snapshot = getattr(self._runtime_sensors, "snapshot", None)
+        sensor_metrics = (
+            getattr(sensor_snapshot, "metrics", {}) if sensor_snapshot is not None else {}
+        )
+        try:
+            safety_bias = float(self._surface_safety_bias())
+        except Exception:
+            safety_bias = 0.0
+        pre_hook = self._integration_hooks.pre_turn_update(
+            user_input={"text": user_text or ""},
+            sensor_input=sensor_metrics,
+            local_context={
+                "last_shadow_estimate": self._last_shadow_estimate,
+                "last_gate_context": self._last_gate_context,
+                "relational_world": self._inner_os_relational_context(sensor_metrics),
+            },
+            current_state={
+                "current_energy": float(getattr(self._self_model, "current_energy", 0.7) or 0.7),
+                "temporal_pressure": float(self._last_gate_context.get("inner_os_temporal_pressure") or 0.0),
+                "social_update_strength": float(self._last_gate_context.get("inner_os_social_update_strength") or 1.0),
+                "identity_update_strength": float(self._last_gate_context.get("inner_os_identity_update_strength") or 1.0),
+                "interaction_afterglow": float(self._last_gate_context.get("inner_os_interaction_afterglow") or 0.0),
+                "interaction_afterglow_intent": self._last_gate_context.get("inner_os_interaction_afterglow_intent"),
+                "replay_intensity": float(self._last_gate_context.get("inner_os_replay_intensity") or 0.0),
+                "anticipation_tension": float(self._last_gate_context.get("inner_os_anticipation_tension") or 0.0),
+                "stabilization_drive": float(self._last_gate_context.get("inner_os_stabilization_drive") or 0.0),
+                "relational_clarity": float(self._last_gate_context.get("inner_os_relational_clarity") or 0.0),
+                "meaning_inertia": float(self._last_gate_context.get("inner_os_meaning_inertia") or 0.0),
+                "recovery_reopening": float(self._last_gate_context.get("inner_os_recovery_reopening") or 0.0),
+                "future_signal": max(float(getattr(self, "_last_future_risk", 0.0) or 0.0) - float(getattr(self, "_last_future_hope", 0.0) or 0.0) * 0.35, 0.0),
+            },
+            safety_bias=safety_bias,
+        )
+        expression_hint = pre_hook.interaction_hints.get("expression_hint") if isinstance(pre_hook.interaction_hints, Mapping) else {}
+        context_for_step = context
+        if isinstance(expression_hint, Mapping):
+            inner_os_context_hint = _inner_os_expression_context_line(expression_hint)
+            if inner_os_context_hint:
+                context_for_step = f"{inner_os_context_hint}\n\n{context.strip()}" if context else inner_os_context_hint
+        self._last_gate_context["inner_os_expression_hint"] = dict(expression_hint) if isinstance(expression_hint, Mapping) else {}
+        payload = self.step(
+            user_text=user_text,
+            intent=intent,
+            context=context_for_step,
+            fast_only=fast_only,
+            image_path=image_path,
+        )
+        result = RuntimeTurnResult.from_payload(payload)
+        result.metrics.setdefault("inner_os/stress", round(float(pre_hook.state.stress), 4))
+        result.metrics.setdefault("inner_os/recovery_need", round(float(pre_hook.state.recovery_need), 4))
+        result.metrics.setdefault(
+            "inner_os/temporal_pressure_before",
+            round(float(pre_hook.state.temporal_pressure), 4),
+        )
+
+        visual_cue = ""
+        retrieval_summary = None
+        if result.response is not None:
+            retrieval_summary = dict(result.response.retrieval_summary or {})
+            if isinstance(result.response.perception_summary, dict):
+                visual_cue = str(result.response.perception_summary.get("text") or "").strip()
+        recall_state = pre_hook.state.to_dict()
+        conscious_memory = getattr(self, "_conscious_memory", None)
+        if conscious_memory is not None and hasattr(conscious_memory, "tail"):
+            try:
+                tail = list(conscious_memory.tail(6))
+            except Exception:
+                tail = []
+            recall_state["conscious_mosaic_density"] = round(min(len(tail) / 6.0, 1.0), 4)
+            recall_state["conscious_mosaic_recentness"] = round(1.0 if tail else 0.0, 4)
+        recall_hook = self._integration_hooks.memory_recall(
+            text_cue=str(user_text or "").strip(),
+            visual_cue=visual_cue,
+            world_cue=str(self._surface_world_state.get("zone_id") or "").strip(),
+            current_state=recall_state,
+            retrieval_summary=retrieval_summary,
+        )
+        current_state = pre_hook.state.to_dict()
+        current_state.update(self._inner_os_relational_context(sensor_metrics))
+        current_state["memory_anchor"] = recall_hook.recall_payload.get("memory_anchor")
+        current_state["mode"] = self._surface_mode()
+        current_state["recalled_tentative_bias"] = float(recall_hook.recall_payload.get("tentative_bias") or 0.0)
+        current_state["route"] = str(result.response_route or pre_hook.state.route)
+        current_state["talk_mode"] = str(result.talk_mode or pre_hook.state.talk_mode)
+        response_hook = self._integration_hooks.response_gate(
+            draft={"text": getattr(result.response, "text", None)},
+            current_state=current_state,
+            safety_signals={"safety_bias": safety_bias},
+        )
+        if result.response is not None:
+            result.response = self._apply_inner_os_surface_policy(
+                result.response,
+                response_hook.expression_hints,
+                response_hook.conscious_access,
+            )
+            merged_retrieval = dict(result.response.retrieval_summary or {})
+            merged_retrieval.setdefault("inner_os", {})
+            merged_retrieval["inner_os"].update(recall_hook.ignition_hints)
+            result.response.retrieval_summary = merged_retrieval
+            merged_controls = dict(result.response.controls or {})
+            inner_os_controls = response_hook.to_dict()
+            inner_os_controls["surface_policy_level"] = self._inner_os_surface_policy_level(getattr(result.response, "controls_used", {}) or {})
+            inner_os_controls["surface_policy_intent"] = self._inner_os_surface_policy_intent(getattr(result.response, "controls_used", {}) or {})
+            merged_controls["inner_os"] = inner_os_controls
+            result.response.controls = merged_controls
+        result.qualia_gate.setdefault("inner_os", response_hook.to_dict())
+        result.metrics.setdefault(
+            "inner_os/allowed_surface_intensity",
+            round(float(response_hook.allowed_surface_intensity), 4),
+        )
+        result.metrics.setdefault(
+            "inner_os/hesitation_bias",
+            round(float(response_hook.hesitation_bias), 4),
+        )
+        surface_policy_level = self._inner_os_surface_policy_level(getattr(result.response, "controls_used", {}) if result.response is not None else {})
+        surface_policy_intent = self._inner_os_surface_policy_intent(getattr(result.response, "controls_used", {}) if result.response is not None else {}) or ""
+        result.metrics.setdefault("inner_os/surface_policy_active", 0.0 if surface_policy_level == "none" else 1.0)
+        result.metrics.setdefault("inner_os/surface_policy_layered", 1.0 if surface_policy_level == "layered" else 0.0)
+        result.metrics.setdefault("inner_os/surface_policy_intent_clarify", 1.0 if surface_policy_intent == "clarify" else 0.0)
+        result.metrics.setdefault("inner_os/surface_policy_intent_check_in", 1.0 if surface_policy_intent == "check_in" else 0.0)
+        current_state["surface_policy_active"] = 0.0 if surface_policy_level == "none" else 1.0
+        current_state["surface_policy_level"] = surface_policy_level
+        current_state["surface_policy_intent"] = surface_policy_intent or None
+        memory_write_candidates = collect_runtime_memory_candidates(
+            recall_payload=recall_hook.recall_payload,
+            memory_reference=result.memory_reference,
+            vision_entry=getattr(self, "_last_observed_vision_entry", None),
+            relational_context=current_state,
+        )
+        post_hook = self._integration_hooks.post_turn_update(
+            user_input={"text": user_text or ""},
+            output={"reply_text": getattr(result.response, "text", None)},
+            current_state=current_state,
+            memory_write_candidates=memory_write_candidates or None,
+            recall_payload=recall_hook.recall_payload,
+            transferred_lessons=transferred_lessons or None,
+        )
+        self._last_gate_context["inner_os_temporal_pressure"] = float(post_hook.state.temporal_pressure)
+        self._last_gate_context["inner_os_route"] = str(post_hook.state.route)
+        self._last_gate_context["inner_os_social_update_strength"] = float(post_hook.state.social_update_strength)
+        self._last_gate_context["inner_os_identity_update_strength"] = float(post_hook.state.identity_update_strength)
+        self._last_gate_context["inner_os_interaction_afterglow"] = float(post_hook.state.interaction_afterglow)
+        self._last_gate_context["inner_os_interaction_afterglow_intent"] = post_hook.state.interaction_afterglow_intent
+        self._last_gate_context["inner_os_replay_intensity"] = float(post_hook.state.replay_intensity)
+        self._last_gate_context["inner_os_anticipation_tension"] = float(post_hook.state.anticipation_tension)
+        self._last_gate_context["inner_os_stabilization_drive"] = float(post_hook.state.stabilization_drive)
+        self._last_gate_context["inner_os_relational_clarity"] = float(post_hook.state.relational_clarity)
+        self._last_gate_context["inner_os_meaning_inertia"] = float(post_hook.state.meaning_inertia)
+        self._last_gate_context["inner_os_recovery_reopening"] = float(post_hook.state.recovery_reopening)
+        result.metrics.setdefault(
+            "inner_os/temporal_pressure_after",
+            round(float(post_hook.state.temporal_pressure), 4),
+        )
+        result.metrics.setdefault(
+            "inner_os/transferred_lessons_used",
+            float(len(transferred_lessons or [])),
+        )
+        result.metrics.setdefault(
+            "inner_os/interaction_afterglow",
+            round(float(post_hook.state.interaction_afterglow), 4),
+        )
+        result.metrics.setdefault(
+            "inner_os/replay_intensity",
+            round(float(post_hook.state.replay_intensity), 4),
+        )
+        result.metrics.setdefault(
+            "inner_os/anticipation_tension",
+            round(float(post_hook.state.anticipation_tension), 4),
+        )
+        result.metrics.setdefault(
+            "inner_os/recovery_reopening",
+            round(float(post_hook.state.recovery_reopening), 4),
+        )
+        result.metrics.setdefault(
+            "inner_os/object_affordance_bias",
+            round(float(post_hook.state.object_affordance_bias), 4),
+        )
+        result.metrics.setdefault(
+            "inner_os/defensive_salience",
+            round(float(post_hook.state.defensive_salience), 4),
+        )
+        result.metrics.setdefault(
+            "inner_os/reachability",
+            round(float(post_hook.state.reachability), 4),
+        )
+        result.metrics.setdefault(
+            "inner_os/consolidation_priority",
+            round(float(post_hook.state.consolidation_priority), 4),
+        )
+        result.metrics.setdefault(
+            "inner_os/interference_pressure",
+            round(float(post_hook.state.interference_pressure), 4),
+        )
+        result.metrics.setdefault(
+            "inner_os/prospective_memory_pull",
+            round(float(post_hook.state.prospective_memory_pull), 4),
+        )
+        result.metrics.setdefault(
+            "inner_os/reuse_trajectory",
+            round(float(post_hook.state.reuse_trajectory), 4),
+        )
+        result.persona_meta.setdefault("inner_os", {})
+        result.persona_meta["inner_os"].update(
+            {
+                "route": post_hook.state.route,
+                "talk_mode": post_hook.state.talk_mode,
+                "memory_anchor": post_hook.state.memory_anchor,
+                "culture_id": current_state.get("culture_id"),
+                "community_id": current_state.get("community_id"),
+                "social_role": current_state.get("social_role"),
+                "continuity_score": round(float(post_hook.state.continuity_score), 4),
+                "social_grounding": round(float(post_hook.state.social_grounding), 4),
+                "recent_strain": round(float(post_hook.state.recent_strain), 4),
+                "culture_resonance": round(float(post_hook.state.culture_resonance), 4),
+                "community_resonance": round(float(post_hook.state.community_resonance), 4),
+                "meaning_pacing": response_hook.expression_hints.get("meaning_pacing"),
+                "interaction_pacing": response_hook.expression_hints.get("interaction_pacing"),
+                "recalled_tentative_bias": round(float(post_hook.state.recalled_tentative_bias), 4),
+                "tentative_bias": response_hook.expression_hints.get("tentative_bias"),
+                "question_bias": response_hook.expression_hints.get("question_bias"),
+                "surface_policy_level": self._inner_os_surface_policy_level(getattr(result.response, "controls_used", {}) if result.response is not None else {}),
+                "surface_policy_intent": self._inner_os_surface_policy_intent(getattr(result.response, "controls_used", {}) if result.response is not None else {}),
+                "social_update_strength": round(float(post_hook.state.social_update_strength), 4),
+                "identity_update_strength": round(float(post_hook.state.identity_update_strength), 4),
+                "interaction_afterglow": round(float(post_hook.state.interaction_afterglow), 4),
+                "interaction_afterglow_intent": post_hook.state.interaction_afterglow_intent,
+                "replay_intensity": round(float(post_hook.state.replay_intensity), 4),
+                "anticipation_tension": round(float(post_hook.state.anticipation_tension), 4),
+                "stabilization_drive": round(float(post_hook.state.stabilization_drive), 4),
+                "relational_clarity": round(float(post_hook.state.relational_clarity), 4),
+                "meaning_inertia": round(float(post_hook.state.meaning_inertia), 4),
+                "recovery_reopening": round(float(post_hook.state.recovery_reopening), 4),
+                "terrain_transition_roughness": round(float(post_hook.state.terrain_transition_roughness), 4),
+                "object_affordance_bias": round(float(post_hook.state.object_affordance_bias), 4),
+                "fragility_guard": round(float(post_hook.state.fragility_guard), 4),
+                "defensive_salience": round(float(post_hook.state.defensive_salience), 4),
+                "reachability": round(float(post_hook.state.reachability), 4),
+                "reuse_trajectory": round(float(post_hook.state.reuse_trajectory), 4),
+                "interference_pressure": round(float(post_hook.state.interference_pressure), 4),
+                "consolidation_priority": round(float(post_hook.state.consolidation_priority), 4),
+                "prospective_memory_pull": round(float(post_hook.state.prospective_memory_pull), 4),
+            }
+        )
+        return result
+
+    def serialize_2d_state(self) -> Dict[str, Any]:
+        timestamp = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        sensor_snapshot = getattr(self._runtime_sensors, "snapshot", None)
+        sensor_metrics = getattr(sensor_snapshot, "metrics", {}) if sensor_snapshot is not None else {}
+        world_state = self._relational_world_core.snapshot()
+        self._surface_world_state = dict(world_state)
+        memory_anchor = self._dominant_memory_anchor()
+        nearby_entities = self._nearby_entities_from_sensor(sensor_metrics)
+        access = self._conscious_access_core.snapshot(
+            talk_mode=self._talk_mode.name.lower(),
+            route=str(self._last_gate_context.get("response_route") or "watch"),
+            mode=self._relational_world_core.mode(),
+            memory_anchor=memory_anchor,
+            replay_active=bool(self._last_future_risk or self._last_future_hope),
+        )
+        state = ProjectATRI2DState(
+            schema="project_atri_2d_state/v1",
+            timestamp=timestamp,
+            identity={
+                "entity_id": self._session_id or "atri_core_01",
+                "mode": self._relational_world_core.mode(),
+                "talk_mode": self._talk_mode.name.lower(),
+            },
+            world={
+                "world_id": world_state.get("world_id") or "harbor_town",
+                "world_type": world_state.get("world_type") or "infrastructure",
+                "zone_id": world_state.get("zone_id") or "market",
+                "time_phase": world_state.get("time_phase") or "day",
+                "weather": world_state.get("weather") or "clear",
+                "culture_id": world_state.get("culture_id") or "default",
+                "community_id": world_state.get("community_id") or "local",
+                "social_role": world_state.get("social_role") or "companion",
+                "place_memory_anchor": world_state.get("place_memory_anchor") or memory_anchor,
+            },
+            body={
+                "energy": round(float(getattr(self._self_model, "current_energy", 0.0) or 0.0), 4),
+                "stress": round(float(self._surface_stress(sensor_metrics)), 4),
+                "love": round(float(getattr(self._self_model, "attachment_to_user", 0.0) or 0.0), 4),
+                "arousal": round(float(self.perceived_affect.get("arousal", 0.0) or 0.0), 4),
+                "recovery_need": round(float(self._surface_recovery_need(sensor_metrics)), 4),
+                "attention_density": round(float(self._surface_attention_density(sensor_metrics)), 4),
+            },
+            sensing={
+                "person_count": int(sensor_metrics.get("person_count", 0) or 0),
+                "voice_level": round(float(sensor_metrics.get("voice_level", 0.0) or 0.0), 4),
+                "breath_rate": round(float(sensor_metrics.get("breath_rate", 0.0) or 0.0), 4),
+                "body_stress_index": round(float(sensor_metrics.get("body_stress_index", 0.0) or 0.0), 4),
+                "autonomic_balance": round(float(sensor_metrics.get("autonomic_balance", 0.0) or 0.0), 4),
+                "place_id": str(sensor_metrics.get("place_id") or world_state.get("zone_id") or ""),
+                "privacy_tags": [str(tag) for tag in (sensor_metrics.get("privacy_tags") or [])[:4]],
+                "body_state_flag": str(sensor_metrics.get("body_state_flag") or "normal"),
+                "scene_density": round(float(sensor_metrics.get("motion_score", 0.0) or 0.0), 4),
+            },
+            activity={
+                "state": access.surface_state,
+                "target": "user" if self._last_speaker == "user" else "world",
+                "intent": access.intent,
+                "route": access.route,
+                "streaming": self._relational_world_core.mode() == "streaming",
+                "replay_active": access.replay_active,
+                "recall_active": access.recall_active,
+            },
+            social={
+                "nearby_entities": nearby_entities,
+                "bond_strength": {"user": round(float(getattr(self._self_model, "attachment_to_user", 0.0) or 0.0), 4)},
+                "safety_bias": round(float(self._surface_safety_bias()), 4),
+                "nearby_objects": self._inner_os_relational_context(sensor_metrics).get("nearby_objects") or [],
+            },
+            memory={
+                "dominant_anchor": memory_anchor,
+                "recent_recall_ids": self._surface_recent_recall_ids(),
+                "perception_available": bool(self._last_observed_vision_entry),
+                "retrieval_hit_count": int(self._last_gate_context.get("retrieval_hit_count") or 0),
+            },
+            simulation={
+                "enabled": bool(world_state.get("simulation_enabled", False)),
+                "episode_id": world_state.get("simulation_episode_id"),
+                "transfer_pending": bool(world_state.get("simulation_transfer_pending", False)),
+                "world_source": world_state.get("world_source") or "runtime",
+            },
+            last_event=dict(self._last_2d_event) if isinstance(self._last_2d_event, dict) else None,
+        )
+        return state.to_dict()
+
+    def ingest_2d_event(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+        event = ProjectATRI2DEvent.from_mapping(payload)
+        event_payload = dict(event.payload)
+        world_state = self._relational_world_core.ingest_surface_event(
+            event_type=event.event_type,
+            payload=event_payload,
+            world_id=event.world_id,
+        )
+        self._surface_world_state = dict(world_state)
+        self._last_2d_event = event.to_dict()
+        return {
+            "status": "accepted",
+            "event_type": event.event_type,
+            "mode": self._relational_world_core.mode(),
+            "world_id": world_state.get("world_id"),
+            "zone_id": world_state.get("zone_id"),
+        }
+
+    def shutdown(self) -> None:
+        self.save_state()
+
+    def run_forever(
+        self,
+        *,
+        context: Optional[str] = None,
+        intent: Optional[str] = None,
+        fast_only: bool = False,
+        image_path: Optional[str] = None,
+        prompt: str = "> ",
+        render_fn: Optional[Callable[[RuntimeTurnResult], None]] = None,
+        stop_commands: Tuple[str, ...] = ("/quit", "/exit"),
+    ) -> int:
+        renderer = render_fn or (lambda result: print(result.to_dict()))
+        try:
+            while True:
+                try:
+                    user_text = input(prompt).strip()
+                except (EOFError, KeyboardInterrupt):
+                    print()
+                    return 0
+                if not user_text:
+                    continue
+                if user_text.lower() in stop_commands:
+                    return 0
+                result = self.process_turn(
+                    user_text=user_text,
+                    context=context,
+                    intent=intent,
+                    fast_only=fast_only,
+                    image_path=image_path,
+                )
+                renderer(result)
+        finally:
+            self.shutdown()
+
+    def _surface_mode(self) -> str:
+        mode = str(self._surface_world_state.get("mode") or "reality").strip().lower()
+        if mode not in {"reality", "streaming", "simulation"}:
+            return "reality"
+        return mode
+
+    def _surface_activity_state(self) -> str:
+        mapping = {
+            TalkMode.WATCH: "watch",
+            TalkMode.ASK: "attend",
+            TalkMode.TALK: "talk",
+            TalkMode.SOOTHE: "sync",
+            TalkMode.PRESENCE: "rest",
+        }
+        base = mapping.get(self._talk_mode, "idle")
+        if self._surface_mode() == "streaming":
+            return "stream"
+        if self._surface_mode() == "simulation":
+            return "simulate"
+        if self._last_future_risk or self._last_future_hope:
+            return "replay"
+        if self._dominant_memory_anchor():
+            return "recall"
+        return base
+
+    def _surface_intent_label(self) -> str:
+        route = str(self._last_gate_context.get("response_route") or "watch")
+        if route == "conscious":
+            return "engage"
+        if route == "reflex":
+            return "guard"
+        if self._dominant_memory_anchor():
+            return "remember"
+        return "listen"
+
+    def _surface_stress(self, sensor_metrics: Mapping[str, Any]) -> float:
+        return self._pain_stress_core.stress(
+            sensor_metrics=sensor_metrics,
+            last_shadow_estimate=self._last_shadow_estimate,
+            last_gate_context=self._last_gate_context,
+        )
+
+    def _surface_recovery_need(self, sensor_metrics: Mapping[str, Any]) -> float:
+        stress = self._surface_stress(sensor_metrics)
+        energy = float(getattr(self._self_model, "current_energy", 0.0) or 0.0)
+        return self._recovery_core.recovery_need(
+            stress=stress,
+            current_energy=energy,
+        )
+
+    def _surface_attention_density(self, sensor_metrics: Mapping[str, Any]) -> float:
+        return self._recovery_core.attention_density(
+            sensor_metrics=sensor_metrics,
+            last_gate_context=self._last_gate_context,
+        )
+
+    def _surface_safety_bias(self) -> float:
+        vg = self._value_gradient_snapshot()
+        return self._boundary_core.safety_bias(
+            value_gradient=vg,
+            safety_lens=self._safety_lens,
+        )
+
+    def _dominant_memory_anchor(self) -> Optional[str]:
+        if isinstance(self._last_memory_hint_meta, Mapping):
+            anchor = self._last_memory_hint_meta.get("anchor")
+            if isinstance(anchor, str) and anchor.strip():
+                return anchor.strip()
+        if isinstance(self._last_2d_event, Mapping):
+            payload = self._last_2d_event.get("payload")
+            if isinstance(payload, Mapping):
+                anchor = payload.get("anchor") or payload.get("memory_anchor")
+                if isinstance(anchor, str) and anchor.strip():
+                    return anchor.strip()
+        return None
+
+    def _surface_recent_recall_ids(self) -> List[str]:
+        ids: List[str] = []
+        if isinstance(self._last_observed_vision_entry, Mapping):
+            identifier = self._last_observed_vision_entry.get("id")
+            if isinstance(identifier, str) and identifier.strip():
+                ids.append(identifier.strip())
+        return ids
+
+    def _nearby_entities_from_sensor(self, sensor_metrics: Mapping[str, Any]) -> List[str]:
+        entities: List[str] = []
+        person_count = int(sensor_metrics.get("person_count", 0) or 0)
+        if person_count > 0:
+            entities.append("user")
+            for idx in range(1, min(person_count, 4)):
+                entities.append(f"person_{idx}")
+        object_counts = sensor_metrics.get("object_counts")
+        if isinstance(object_counts, Mapping):
+            for key in sorted(object_counts.keys()):
+                if len(entities) >= 6:
+                    break
+                entities.append(str(key))
+        if not entities:
+            entities.append("world")
+        return entities
+
+    def _describe_image_if_available(
+        self,
+        image_path: Optional[str],
+        user_text: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        if not image_path:
+            return None
+        adapter = getattr(self, "_vlm_adapter", None)
+        if adapter is None:
+            adapter = LMStudioVLMAdapter()
+            self._vlm_adapter = adapter
+        if not adapter.enabled:
+            return None
+        try:
+            payload = adapter.describe_image(image_path, user_text=user_text)
+            return payload or None
+        except Exception as exc:
+            return {
+                "backend": "lmstudio_vlm",
+                "image_path": image_path,
+                "error": "vision_error",
+                "detail": str(exc),
+            }
+
+    def _append_vision_memory(
+        self,
+        perception_summary: Optional[Dict[str, Any]],
+        *,
+        user_text: Optional[str],
+        image_path: Optional[str],
+        route_value: str,
+    ) -> None:
+        self._last_observed_vision_entry = self._vision_memory_store.append_observed(
+            perception_summary=perception_summary,
+            turn_id=self._turn_id,
+            session_id=self._session_id,
+            talk_mode=self._talk_mode.name.lower(),
+            response_route=route_value,
+            user_text=user_text,
+            image_path=image_path,
+        )
 
     def observe_video(
         self, frame: np.ndarray, timestamp: Optional[float] = None
@@ -899,6 +1518,7 @@ class EmotionalHubRuntime:
         context: Optional[str] = None,
         intent: Optional[str] = None,
         fast_only: bool = False,
+        image_path: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Produce the latest controls/response.
@@ -910,7 +1530,7 @@ class EmotionalHubRuntime:
         context:
             Optional contextual text (e.g., RAG snippets).
         intent:
-            Intent label for the hub router (qa/chitchat/code遯ｶ・ｽE・ｽ).
+            Intent label for the hub router (qa/chitchat/code鬩包ｽｯ繝ｻ・ｶ郢晢ｽｻ繝ｻ・ｽE郢晢ｽｻ繝ｻ・ｽ).
         fast_only:
             When true, skips heavy operations (memory reference lookup, LLM call)
             so that the caller can issue a quick acknowledgement before the full
@@ -1129,12 +1749,29 @@ class EmotionalHubRuntime:
 
         response: Optional[HubResponse] = None
         memory_reference: Optional[Dict[str, Any]] = None
+        retrieval_summary: Optional[Dict[str, Any]] = None
         persona_meta: Dict[str, Any] = {}
-
+        perception_summary = self._normalize_perception_summary(self._describe_image_if_available(image_path, user_text))
+        self._append_vision_memory(
+            perception_summary,
+            user_text=user_text,
+            image_path=image_path,
+            route_value=route.value,
+        )
+        metrics["perception/available"] = 1.0 if perception_summary and isinstance(perception_summary.get("text"), str) else 0.0
+        metrics["perception/degraded"] = 1.0 if perception_summary and str(perception_summary.get("status") or "") == "degraded" else 0.0
+        if perception_summary and isinstance(perception_summary.get("text"), str):
+            visual_text = perception_summary["text"].strip()
+            if visual_text:
+                visual_context = f"[vision]\n{visual_text}"
+                context = f"{visual_context}\n\n{context.strip()}" if context else visual_context
         if fast_only:
             ack_payload = ack_for_fast or route_response or ack_text
             if ack_payload:
                 response = self._wrap_ack_response(ack_payload, self._talk_mode)
+            if response is not None:
+                response = self._attach_visual_reflection(response, perception_summary)
+                response.retrieval_summary = retrieval_summary
             if response and response.text:
                 self._last_speaker = "ai"
             eqframe = self._record_eqframe(None, persona_meta)
@@ -1162,12 +1799,32 @@ class EmotionalHubRuntime:
                 "persona_meta": persona_meta,
                 "response_route": route.value,
                 "shadow": self._last_shadow_estimate,
+                "perception_summary": perception_summary,
+                "retrieval_summary": retrieval_summary,
             }
 
         if route_response and response is None:
             response = self._wrap_ack_response(route_response, self._talk_mode)
+            response = self._attach_visual_reflection(response, perception_summary)
+            response.retrieval_summary = retrieval_summary
 
         behavior_mod: Optional[BehaviorMod] = None
+        memory_cue_text = self._memory_cue_text(user_text, perception_summary)
+        retrieval_summary = self._retrieve_from_memory_cue(memory_cue_text)
+        metrics["memory/visual_cue"] = 1.0 if memory_cue_text != (user_text or "").strip() else 0.0
+        if isinstance(retrieval_summary, dict):
+            metrics["retrieval/sse_hit_count"] = float(len(retrieval_summary.get("hits") or []))
+            self._last_gate_context["retrieval_hit_count"] = int(len(retrieval_summary.get("hits") or []))
+            if not context and retrieval_summary.get("hits"):
+                hit_lines = []
+                for hit in retrieval_summary.get("hits") or []:
+                    if not isinstance(hit, dict):
+                        continue
+                    hit_text = str(hit.get("text") or "").strip()
+                    if hit_text:
+                        hit_lines.append(f"- {hit_text}")
+                if hit_lines:
+                    context = "[sse-recall]\n" + "\n".join(hit_lines)
         should_call_llm = (
             text_input
             and self._talk_mode == TalkMode.TALK
@@ -1180,9 +1837,9 @@ class EmotionalHubRuntime:
             and self._memory_hint_cfg
             and getattr(self._memory_hint_cfg, "enable", False)
         ):
-            _ = self._maybe_memory_reference(user_text)
+            _ = self._maybe_memory_reference(memory_cue_text)
         if should_call_llm:
-            memory_reference = self._maybe_memory_reference(user_text or "")
+            memory_reference = self._maybe_memory_reference(memory_cue_text)
             if (
                 memory_reference
                 and memory_reference.get("reply")
@@ -1206,6 +1863,9 @@ class EmotionalHubRuntime:
                     "prosody_energy": controls.prosody_energy,
                     "spoiler_mode": "warn",
                 }
+                inner_os_expression_hint = self._last_gate_context.get("inner_os_expression_hint")
+                if isinstance(inner_os_expression_hint, Mapping):
+                    llm_controls = _apply_inner_os_expression_controls(llm_controls, inner_os_expression_hint)
                 behavior_mod = None
                 try:
                     culture_state = compute_culture_state(
@@ -1270,7 +1930,9 @@ class EmotionalHubRuntime:
                     controls=llm_controls,
                     intent=intent or self.llm.config.default_intent,
                     slos={"p95_ms": 180.0},
+                    image_path=None,
                 )
+                response = self._attach_visual_reflection(response, perception_summary)
         elif response is None and ack_text:
             response = self._wrap_ack_response(ack_text, self._talk_mode)
         if self.robot_bridge:
@@ -1297,6 +1959,9 @@ class EmotionalHubRuntime:
             metrics=metrics,
             prediction_error=prediction_error,
         )
+        if response is not None:
+            response = self._attach_visual_reflection(response, perception_summary)
+            response.retrieval_summary = retrieval_summary
         self._last_persona_meta = dict(persona_meta)
         if not fast_only:
             context_snapshot = self._build_context_payload(
@@ -1342,6 +2007,8 @@ class EmotionalHubRuntime:
             "response_route": route.value,
             "shadow": self._last_shadow_estimate,
             "qualia_gate": dict(self._last_qualia_gate),
+            "perception_summary": perception_summary,
+            "retrieval_summary": retrieval_summary,
         }
 
     # ------------------------------------------------------------------ #
@@ -1396,29 +2063,17 @@ class EmotionalHubRuntime:
     ) -> Tuple[float, float]:
         """Update the synthetic heart oscillator from the latest arousal."""
 
-        now = time.time()
-        dt = 0.0
-        if self._heart_last_ts is not None:
-            dt = max(now - self._heart_last_ts, 0.0)
-        self._heart_last_ts = now
-        arousal_unit = float(np.clip(arousal, 0.0, 1.0))
-        rate = float(
-            np.clip(self._heart_base_rate + self._heart_gain * arousal_unit, 0.2, 3.0)
+        rate, phase, phi_vec = self._heartbeat_core.update(
+            arousal,
+            emotion_step=self._emotion_core.step,
+            noise_scale=noise_scale,
+            damp=damp,
         )
         self._heart_rate = rate
-        phase = float((self._heart_phase + rate * min(dt, 2.0)) % 1.0)
         self._heart_phase = phase
-        noise_val = (
-            noise_scale
-            if noise_scale is not None
-            else max(0.02, 0.01 + 0.02 * abs(arousal))
-        )
-        phi_vec = self._emotion_core.step(
-            self._heart_base_rate,
-            self._heart_gain,
-            noise_scale=noise_val,
-            damp=float(max(damp, 0.0)),
-        )
+        self._heart_last_ts = self._heartbeat_core.state.last_ts
+        self._heart_base_rate = float(self._heartbeat_core.config.base_rate)
+        self._heart_gain = float(self._heartbeat_core.config.gain)
         self._last_E = np.array(phi_vec, copy=True)
         return rate, phase
 
@@ -2067,6 +2722,8 @@ class EmotionalHubRuntime:
             "safety": dict(response.safety),
             "confidence": float(response.confidence),
             "uncertainty_reason": list(response.uncertainty_reason),
+            "perception_summary": dict(response.perception_summary) if isinstance(response.perception_summary, dict) else None,
+            "retrieval_summary": dict(response.retrieval_summary) if isinstance(response.retrieval_summary, dict) else None,
         }
 
     def _current_culture_tag(self) -> str:
@@ -2189,22 +2846,22 @@ class EmotionalHubRuntime:
 
     def _culture_behavior_hint(self, behavior: BehaviorMod) -> str:
         tone_hints = {
-            "polite": "声の端を少し丁寧にして、言い回しも和らげてください。",
-            "casual": "肩の力を抜いた柔らかい語尾で、距離を縮めるように話してください。",
-            "neutral": "標準的な語尾で、落ち着いたトーンを保ってください。",
+            "polite": "Use a gentle, respectful tone and avoid abrupt wording.",
+            "casual": "Keep the atmosphere warm and relaxed while staying considerate.",
+            "neutral": "Use a steady, readable tone with balanced emotional distance.",
         }
         tone_line = tone_hints.get(behavior.tone, tone_hints["neutral"])
 
         empathy_line = (
-            "気持ちの背景を一度言葉にすると安心します。"
+            "Prioritize emotional attunement and acknowledge the other person's state."
             if behavior.empathy_level >= 0.65
-            else "共感は一言添える程度で十分です。"
+            else "Keep empathy present, but avoid over-reading or excessive reassurance."
         )
 
         joke_line = (
-            "軽いユーモアを1行だけ差し込んでも大丈夫です。"
+            "A small amount of light humor is acceptable if the moment supports it."
             if behavior.joke_ratio >= 0.4
-            else "冗談は控えめにして、落ち着いた語り口にしてください。"
+            else "Keep humor restrained and preserve clarity over playfulness."
         )
 
         return (
@@ -2576,6 +3233,225 @@ class EmotionalHubRuntime:
             controls_used={"mode": mode.name.lower()},
             safety={"rating": "G", "ack": "true"},
         )
+
+    def _normalize_perception_summary(
+        self, perception_summary: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        if not isinstance(perception_summary, dict):
+            return None
+        normalized = dict(perception_summary)
+        text = normalized.get("text")
+        if isinstance(text, str) and text.strip():
+            normalized["status"] = str(normalized.get("status") or "observed")
+            normalized["memory_eligible"] = True
+            return normalized
+
+        error_code = str(normalized.get("error") or "vision_unavailable")
+        detail = str(normalized.get("detail") or "").strip().lower()
+        error_kind = "unavailable"
+        surface_text = "I cannot read the scene clearly yet, so I am staying tentative."
+        if "timeout" in detail:
+            error_kind = "timeout"
+            surface_text = "The scene is still fuzzy to me, so I am holding back from guessing."
+        elif "404" in detail or "not found" in detail:
+            error_kind = "missing_image"
+            surface_text = "The image did not arrive clearly, so I am waiting before I describe it."
+        elif "500" in detail or "connection" in detail or "refused" in detail:
+            error_kind = "backend"
+            surface_text = "My visual read did not settle, so I am keeping the scene uncertain for now."
+
+        normalized["status"] = "degraded"
+        normalized["error"] = error_code
+        normalized["error_kind"] = error_kind
+        normalized["memory_eligible"] = False
+        normalized["surface_text"] = surface_text
+        return normalized
+
+    def _visual_reflection_line(
+        self, perception_summary: Optional[Dict[str, Any]]
+    ) -> Optional[str]:
+        if not isinstance(perception_summary, dict):
+            return None
+        text = perception_summary.get("text")
+        if isinstance(text, str) and text.strip():
+            snippet = text.strip().splitlines()[0].strip()
+            if not snippet:
+                return None
+            if len(snippet) > 96:
+                snippet = snippet[:93].rstrip() + "..."
+            return f"I am also seeing this: {snippet}"
+        if str(perception_summary.get("status") or "") == "degraded":
+            surface_text = perception_summary.get("surface_text")
+            if isinstance(surface_text, str) and surface_text.strip():
+                return surface_text.strip()
+        return None
+
+    def _apply_inner_os_surface_policy(
+        self,
+        response: Optional[HubResponse],
+        expression_hint: Optional[Mapping[str, Any]],
+        conscious_access: Optional[Mapping[str, Any]] = None,
+    ) -> Optional[HubResponse]:
+        if response is None or not isinstance(expression_hint, Mapping):
+            return response
+        if not bool(expression_hint.get("clarify_first", False)):
+            return response
+        existing = (response.text or "").strip()
+        intent = str((conscious_access or {}).get("intent") or "").strip().lower()
+        if intent == "check_in":
+            prefix = "Let me check in gently before I go further."
+        elif intent == "clarify":
+            prefix = "Let me check one small thing before I go further."
+        else:
+            prefix = "Let me pause for one brief check before I go further."
+        question_bias = max(0.0, min(1.0, float(expression_hint.get("question_bias", 0.0) or 0.0)))
+        closing = self._inner_os_surface_closing(intent=intent, question_bias=question_bias)
+        shaped_existing = self._shape_inner_os_surface_text(existing, intent=intent)
+        probe = self._inner_os_surface_probe(intent=intent, expression_hint=expression_hint, question_bias=question_bias)
+        if probe:
+            shaped_existing = self._compose_inner_os_surface_text(probe, shaped_existing, "")
+        reopening_line = self._inner_os_surface_reopening_line(intent=intent, expression_hint=expression_hint)
+        if reopening_line:
+            shaped_existing = self._compose_inner_os_surface_text(reopening_line, shaped_existing, "")
+        response.text = self._compose_inner_os_surface_text(prefix, shaped_existing, closing)
+        controls_used = dict(getattr(response, "controls_used", {}) or {})
+        controls_used["inner_os_surface_policy"] = f"clarify_first_prefix:{intent or 'generic'}"
+        response.controls_used = controls_used
+        return response
+
+    def _inner_os_surface_probe(self, *, intent: str = "", expression_hint: Optional[Mapping[str, Any]] = None, question_bias: float = 0.0) -> str:
+        if intent != "check_in" or not isinstance(expression_hint, Mapping):
+            return ""
+        if not bool(expression_hint.get("carry_gentleness", False)):
+            return ""
+        if str(expression_hint.get("interaction_afterglow_intent") or "").strip().lower() != "check_in":
+            return ""
+        if question_bias < INNER_OS_SURFACE_THRESHOLDS["probe_question_bias"]:
+            return ""
+        return "Would it help if I stay close to what is visible first?"
+
+    def _inner_os_surface_reopening_line(self, *, intent: str = "", expression_hint: Optional[Mapping[str, Any]] = None) -> str:
+        if not isinstance(expression_hint, Mapping):
+            return ""
+        if not bool(expression_hint.get("allow_reopening", False)):
+            return ""
+        if float(expression_hint.get("recovery_reopening", 0.0) or 0.0) < INNER_OS_SURFACE_THRESHOLDS["reopening_recovery"]:
+            return ""
+        if intent == "check_in":
+            return "I think we can open this a little more carefully now."
+        if intent == "clarify":
+            return "I think we can open this a little more clearly now."
+        return "I think we can open this a little more carefully now."
+
+    def _inner_os_surface_policy_level(self, controls_used: Optional[Mapping[str, Any]]) -> str:
+        policy = str((controls_used or {}).get("inner_os_surface_policy") or "").strip()
+        if not policy:
+            return "none"
+        return "layered" if ":" in policy else "prefix_only"
+
+    def _inner_os_surface_policy_intent(self, controls_used: Optional[Mapping[str, Any]]) -> Optional[str]:
+        policy = str((controls_used or {}).get("inner_os_surface_policy") or "").strip()
+        if ":" not in policy:
+            return None
+        return policy.split(":", 1)[1].strip() or None
+
+    def _compose_inner_os_surface_text(self, prefix: str, body: str, closing: str) -> str:
+        lines = []
+        for part in (prefix, body, closing):
+            value = str(part or "").strip()
+            if value and value not in lines:
+                lines.append(value)
+        return "\n".join(lines)
+
+    def _inner_os_surface_closing(self, *, intent: str = "", question_bias: float = 0.0) -> str:
+        if question_bias < INNER_OS_SURFACE_THRESHOLDS["closing_question_bias"]:
+            return ""
+        if intent == "check_in":
+            return "I want to stay with this gently first."
+        if intent == "clarify":
+            return "Then I can answer a little more cleanly."
+        return "Then I can continue a bit more carefully."
+
+    def _shape_inner_os_surface_text(self, text: str, *, intent: str = "") -> str:
+        cleaned = str(text or "").strip()
+        if not cleaned:
+            return ""
+        if intent != "check_in":
+            return cleaned
+        first_line = cleaned.splitlines()[0].strip()
+        if not first_line:
+            return cleaned
+        for marker in (". ", "? ", "! "):
+            if marker in first_line:
+                return first_line.split(marker, 1)[0].strip() + marker[0]
+        return first_line
+
+    def _attach_visual_reflection(
+        self,
+        response: Optional[HubResponse],
+        perception_summary: Optional[Dict[str, Any]],
+    ) -> Optional[HubResponse]:
+        if response is None:
+            return None
+        response.perception_summary = perception_summary
+        line = self._visual_reflection_line(perception_summary)
+        if not line:
+            return response
+        existing = (response.text or "").strip()
+        if not existing:
+            response.text = line
+            return response
+        if line in existing:
+            return response
+        response.text = f"{existing}\n{line}"
+        return response
+
+    def _memory_cue_text(
+        self,
+        user_text: Optional[str],
+        perception_summary: Optional[Dict[str, Any]],
+    ) -> str:
+        base = (user_text or "").strip()
+        if not isinstance(perception_summary, dict):
+            return base
+        visual_text = perception_summary.get("text")
+        if not isinstance(visual_text, str) or not visual_text.strip():
+            return base
+        cue = visual_text.strip().splitlines()[0].strip()
+        if len(cue) > 160:
+            cue = cue[:157].rstrip() + "..."
+        if not base:
+            return cue
+        return f"{base}\n[vision-cue] {cue}"
+
+    def _retrieve_from_memory_cue(
+        self,
+        memory_cue_text: str,
+    ) -> Optional[Dict[str, Any]]:
+        query = (memory_cue_text or "").strip()
+        if not query:
+            return None
+        adapter = getattr(self, "_sse_adapter", None)
+        if adapter is None:
+            adapter = SSESearchAdapter()
+            self._sse_adapter = adapter
+        if not adapter.enabled:
+            return None
+        try:
+            hits = adapter.search(query)
+        except Exception as exc:
+            return {
+                "backend": "sse",
+                "error": "sse_error",
+                "detail": str(exc),
+            }
+        if not hits:
+            return {
+                "backend": "sse",
+                "hit_count": 0,
+                "hits": [],
+            }
+        return adapter.summarize_hits(hits)
 
     def _wrap_memory_response(
         self, text: str, *, controls_used: Optional[Dict[str, Any]] = None
@@ -3065,6 +3941,8 @@ class EmotionalHubRuntime:
             "recall_render_mode": meta.get("recall_render_mode"),
             "cue_label": meta.get("cue_label"),
             "memory_kind": meta.get("memory_kind"),
+            "record_kind": meta.get("record_kind"),
+            "record_provenance": meta.get("record_provenance"),
             "source_class": meta.get("source_class"),
             "audit_event": meta.get("audit_event"),
             "evidence_keys": meta.get("evidence_keys"),
@@ -3120,3 +3998,67 @@ class EmotionalHubRuntime:
                     handle.write("\n")
             except Exception:
                 pass
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def _apply_inner_os_expression_controls(controls: Mapping[str, Any], expression_hint: Mapping[str, Any]) -> Dict[str, Any]:
+    out = dict(controls)
+    if not isinstance(expression_hint, Mapping):
+        return out
+    tentative_bias = max(0.0, min(1.0, float(expression_hint.get("tentative_bias", 0.0) or 0.0)))
+    assertiveness_cap = max(0.2, min(1.0, float(expression_hint.get("assertiveness_cap", 1.0) or 1.0)))
+    question_bias = max(0.0, min(1.0, float(expression_hint.get("question_bias", 0.0) or 0.0)))
+    directness = float(out.get("directness", 0.0) or 0.0)
+    temperature = float(out.get("temperature", 0.0) or 0.0)
+    top_p = float(out.get("top_p", 0.0) or 0.0)
+    out["directness"] = max(-0.6, min(directness * assertiveness_cap - tentative_bias * 0.08 - question_bias * 0.04, 0.6))
+    out["temperature"] = max(0.2, min(temperature - tentative_bias * 0.08, 1.0))
+    out["top_p"] = max(0.5, min(top_p - tentative_bias * 0.05, 1.0))
+    out["inner_os_tentative_bias"] = round(tentative_bias, 4)
+    out["inner_os_question_bias"] = round(question_bias, 4)
+    out["inner_os_assertiveness_cap"] = round(assertiveness_cap, 4)
+    return out
+
+def _inner_os_expression_context_line(expression_hint: Mapping[str, Any]) -> str:
+    if not isinstance(expression_hint, Mapping):
+        return ""
+    if bool(expression_hint.get("clarify_first", False)):
+        return "[inner-os] Context is still settling. Prefer grounded observations, avoid definitive interpretations, and ask one brief clarifying question before deeper interpretation."
+    return "[inner-os] Context is still settling. Prefer grounded observations, avoid definitive interpretations, and keep wording tentative."

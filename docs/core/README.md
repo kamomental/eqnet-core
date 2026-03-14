@@ -8,4 +8,4 @@ Minimal, auditable core loop and guardrails.
 - Forgetting runbook (ops checks): `docs/forgetting_runbook.md`
 - Core validation summary: `docs/eqnet_core_validation_summary.md`
 - Heart OS overview (core stack): `docs/eqnet_heart_os_overview.md`
-
+- Inverse-problem operating model: `docs/eqnet_inverse_problem_operating_model.md`
