@@ -44,3 +44,40 @@ def test_personality_core_reads_community_resonance() -> None:
     )
     assert high.affiliation_bias > low.affiliation_bias
     assert high.caution_bias < low.caution_bias
+
+
+def test_personality_core_reads_field_estimate_residue() -> None:
+    core = PersonalityIndexCore()
+    calm = core.snapshot(
+        current_state={
+            "continuity_score": 0.6,
+            "social_grounding": 0.58,
+            "culture_resonance": 0.3,
+            "community_resonance": 0.34,
+            "roughness_level": 0.06,
+            "roughness_dwell": 0.0,
+            "defensive_level": 0.04,
+            "defensive_dwell": 0.0,
+        },
+        development={"trust_bias": 0.52, "belonging": 0.5, "norm_pressure": 0.48, "role_commitment": 0.46},
+        relationship={"attachment": 0.55, "familiarity": 0.52, "rupture_sensitivity": 0.35, "trust_memory": 0.54, "role_alignment": 0.5},
+        environment_pressure={"hazard_pressure": 0.2, "resource_pressure": 0.2, "institutional_pressure": 0.35, "ritual_pressure": 0.3},
+    )
+    rough = core.snapshot(
+        current_state={
+            "continuity_score": 0.6,
+            "social_grounding": 0.58,
+            "culture_resonance": 0.3,
+            "community_resonance": 0.34,
+            "roughness_level": 0.58,
+            "roughness_dwell": 0.72,
+            "defensive_level": 0.44,
+            "defensive_dwell": 0.66,
+        },
+        development={"trust_bias": 0.52, "belonging": 0.5, "norm_pressure": 0.48, "role_commitment": 0.46},
+        relationship={"attachment": 0.55, "familiarity": 0.52, "rupture_sensitivity": 0.35, "trust_memory": 0.54, "role_alignment": 0.5},
+        environment_pressure={"hazard_pressure": 0.2, "resource_pressure": 0.2, "institutional_pressure": 0.35, "ritual_pressure": 0.3},
+    )
+    assert rough.caution_bias > calm.caution_bias
+    assert rough.affiliation_bias < calm.affiliation_bias
+    assert rough.exploration_bias < calm.exploration_bias

@@ -35,6 +35,10 @@ class PersistenceCore:
         previous_culture_resonance = _float_from(current_state, "culture_resonance", 0.0)
         previous_community_resonance = _float_from(current_state, "community_resonance", 0.0)
         transition_intensity = _float_from(transition_signal, "transition_intensity", 0.0)
+        roughness_level = _float_from(current_state, "roughness_level", _float_from(current_state, "terrain_transition_roughness", 0.0))
+        roughness_dwell = _float_from(current_state, "roughness_dwell", 0.0)
+        defensive_level = _float_from(current_state, "defensive_level", _float_from(current_state, "defensive_salience", 0.0))
+        defensive_dwell = _float_from(current_state, "defensive_dwell", 0.0)
 
         belonging = _float_from(development, "belonging", _float_from(current_state, "belonging", 0.45))
         trust_bias = _float_from(development, "trust_bias", _float_from(current_state, "trust_bias", 0.45))
@@ -55,6 +59,10 @@ class PersistenceCore:
             + familiarity * 0.1
             + belonging * 0.08
             + trust_bias * 0.06
+            - roughness_level * 0.04
+            - roughness_dwell * 0.05
+            - defensive_level * 0.05
+            - defensive_dwell * 0.04
         )
         recent_strain = _clamp(
             previous_strain * 0.68
@@ -64,6 +72,10 @@ class PersistenceCore:
             + scarcity * 0.08
             + institutional * 0.05
             + transition_intensity * 0.12
+            + roughness_level * 0.08
+            + roughness_dwell * 0.05
+            + defensive_level * 0.08
+            + defensive_dwell * 0.05
         )
         culture_resonance = _clamp(
             previous_culture_resonance * (0.78 - transition_intensity * 0.08)
@@ -71,6 +83,8 @@ class PersistenceCore:
             + norm_pressure * 0.12
             + (1.0 - scarcity) * 0.03
             + institutional * 0.04
+            - roughness_level * 0.02
+            - defensive_level * 0.02
         )
         community_resonance = _clamp(
             previous_community_resonance * (0.78 - transition_intensity * 0.12)
@@ -79,6 +93,8 @@ class PersistenceCore:
             + attachment * 0.08
             + familiarity * 0.06
             - recent_strain * 0.04
+            - roughness_dwell * 0.02
+            - defensive_dwell * 0.03
         )
         continuity_score = _clamp(
             previous_continuity * 0.74
@@ -89,6 +105,8 @@ class PersistenceCore:
             - transition_intensity * 0.06
             - caution_bias * 0.03
             - norm_pressure * 0.02
+            - roughness_dwell * 0.04
+            - defensive_dwell * 0.05
         )
         return PersistenceState(
             continuity_score=continuity_score,

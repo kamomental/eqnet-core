@@ -195,6 +195,45 @@ class EpisodicMemory:
             "samples": len(energies),
         }
 
+    @staticmethod
+    def _aggregate_working_memory_promotion(cluster: list[dict]) -> dict:
+        promotions = []
+        for item in cluster:
+            context = item.get("context") or {}
+            promotion = context.get("working_memory_promotion")
+            if isinstance(promotion, dict):
+                promotions.append(promotion)
+        if not promotions:
+            return {}
+        focus_counts = defaultdict(int)
+        anchor_counts = defaultdict(int)
+        readiness = []
+        auto_pressure = []
+        pending = []
+        carryover = []
+        for row in promotions:
+            focus = str(row.get("current_focus") or "").strip()
+            anchor = str(row.get("focus_anchor") or "").strip()
+            if focus:
+                focus_counts[focus] += 1
+            if anchor:
+                anchor_counts[anchor] += 1
+            readiness.append(float(row.get("promotion_readiness", 0.0)))
+            auto_pressure.append(float(row.get("autobiographical_pressure", 0.0)))
+            pending.append(float(row.get("pending_meaning", 0.0)))
+            carryover.append(float(row.get("carryover_load", 0.0)))
+        dominant_focus = max(focus_counts.items(), key=lambda item: item[1])[0] if focus_counts else ""
+        dominant_anchor = max(anchor_counts.items(), key=lambda item: item[1])[0] if anchor_counts else ""
+        return {
+            "source_count": len(promotions),
+            "dominant_focus": dominant_focus,
+            "dominant_anchor": dominant_anchor,
+            "promotion_readiness_mean": float(np.mean(readiness)) if readiness else 0.0,
+            "autobiographical_pressure_mean": float(np.mean(auto_pressure)) if auto_pressure else 0.0,
+            "pending_meaning_mean": float(np.mean(pending)) if pending else 0.0,
+            "carryover_load_mean": float(np.mean(carryover)) if carryover else 0.0,
+        }
+
     def distill_from_raw(self, raws: list[dict]) -> None:
         for cluster in self._cluster_by_emotion(raws):
             episode = {
@@ -209,6 +248,9 @@ class EpisodicMemory:
             qualia_profile = self._aggregate_qualia(cluster)
             if qualia_profile:
                 episode["qualia_profile"] = qualia_profile
+            working_memory_promotion = self._aggregate_working_memory_promotion(cluster)
+            if working_memory_promotion:
+                episode["working_memory_promotion"] = working_memory_promotion
             self.episodes.append(episode)
 
 
@@ -227,7 +269,11 @@ class SemanticMemory:
         denominator = float(np.linalg.norm(a) * np.linalg.norm(b) + 1e-8)
         return numerator / denominator
 
-    def abstract_from_episodes(self, episodes: list[dict]) -> None:
+    def abstract_from_episodes(
+        self,
+        episodes: list[dict],
+        replay_carryover: Optional[dict] = None,
+    ) -> None:
         if not episodes:
             return
 
@@ -250,16 +296,35 @@ class SemanticMemory:
             centers = np.array([item["emotion_pattern"]["center"] for item in group], dtype=float)
             signature = centers.mean(axis=0)
             qualia_signature = self._combine_qualia_profiles(group)
+            working_memory_signature = self._combine_working_memory_promotions(group)
+            replay_signature = self._combine_replay_carryover(group, replay_carryover)
+            recurrence_weight = self._pattern_recurrence_weight(
+                group,
+                replay_signature=replay_signature,
+            )
             pattern = {
                 "id": str(uuid.uuid4()),
                 "type": "recurring",
                 "occurrences": len(group),
+                "recurrence_weight": recurrence_weight,
                 "emotion_signature": signature.tolist(),
                 "abstract_description": " / ".join(item["summary"] for item in group[:3]),
                 "source_episodes": [item["id"] for item in group],
             }
             if qualia_signature:
                 pattern["qualia_signature"] = qualia_signature
+            if working_memory_signature:
+                pattern["working_memory_signature"] = working_memory_signature
+            if replay_signature:
+                pattern["working_memory_replay_signature"] = replay_signature
+            long_term_theme = self._derive_long_term_theme(
+                working_memory_signature=working_memory_signature,
+                replay_signature=replay_signature,
+                recurrence_weight=recurrence_weight,
+                abstract_description=pattern["abstract_description"],
+            )
+            if long_term_theme:
+                pattern["long_term_theme"] = long_term_theme
             self.patterns.append(pattern)
 
             grid_point = self.terrain._to_grid(signature)
@@ -292,6 +357,129 @@ class SemanticMemory:
             "enthalpy_mean": float(np.mean(enthalpy_mean)),
             "enthalpy_var": float(np.mean(enthalpy_var)),
             "samples": samples,
+        }
+
+    @staticmethod
+    def _combine_working_memory_promotions(group: list[dict]) -> dict:
+        promotions = [ep.get("working_memory_promotion") for ep in group if ep.get("working_memory_promotion")]
+        if not promotions:
+            return {}
+        focus_counts = defaultdict(int)
+        anchor_counts = defaultdict(int)
+        readiness = []
+        auto_pressure = []
+        pending = []
+        carryover = []
+        for item in promotions:
+            focus = str(item.get("dominant_focus") or item.get("current_focus") or "").strip()
+            anchor = str(item.get("dominant_anchor") or item.get("focus_anchor") or "").strip()
+            if focus:
+                focus_counts[focus] += 1
+            if anchor:
+                anchor_counts[anchor] += 1
+            readiness.append(float(item.get("promotion_readiness_mean", item.get("promotion_readiness", 0.0))))
+            auto_pressure.append(float(item.get("autobiographical_pressure_mean", item.get("autobiographical_pressure", 0.0))))
+            pending.append(float(item.get("pending_meaning_mean", item.get("pending_meaning", 0.0))))
+            carryover.append(float(item.get("carryover_load_mean", item.get("carryover_load", 0.0))))
+        dominant_focus = max(focus_counts.items(), key=lambda pair: pair[1])[0] if focus_counts else ""
+        dominant_anchor = max(anchor_counts.items(), key=lambda pair: pair[1])[0] if anchor_counts else ""
+        return {
+            "source_count": len(promotions),
+            "dominant_focus": dominant_focus,
+            "dominant_anchor": dominant_anchor,
+            "promotion_readiness_mean": float(np.mean(readiness)) if readiness else 0.0,
+            "autobiographical_pressure_mean": float(np.mean(auto_pressure)) if auto_pressure else 0.0,
+            "pending_meaning_mean": float(np.mean(pending)) if pending else 0.0,
+            "carryover_load_mean": float(np.mean(carryover)) if carryover else 0.0,
+        }
+
+    @staticmethod
+    def _combine_replay_carryover(group: list[dict], replay_carryover: Optional[dict]) -> dict:
+        if not isinstance(replay_carryover, dict):
+            return {}
+        focus = str(replay_carryover.get("focus") or "").strip()
+        anchor = str(replay_carryover.get("anchor") or "").strip()
+        strength = float(replay_carryover.get("strength") or 0.0)
+        if strength <= 0.0 or (not focus and not anchor):
+            return {}
+        matches = 0
+        for item in group:
+            promotion = item.get("working_memory_promotion") or {}
+            dominant_focus = str(promotion.get("dominant_focus") or promotion.get("current_focus") or "").strip()
+            dominant_anchor = str(promotion.get("dominant_anchor") or promotion.get("focus_anchor") or "").strip()
+            if (focus and dominant_focus == focus) or (anchor and dominant_anchor == anchor):
+                matches += 1
+        if matches <= 0:
+            return {}
+        return {
+            "focus": focus,
+            "anchor": anchor,
+            "strength": strength,
+            "matched_episodes": matches,
+            "source_matched_events": int(replay_carryover.get("matched_events") or 0),
+            "conscious_memory_strength": float(replay_carryover.get("conscious_memory_strength") or 0.0),
+            "conscious_memory_overlap": float(replay_carryover.get("conscious_memory_overlap") or 0.0),
+            "long_term_theme_summary": str(replay_carryover.get("long_term_theme_summary") or "").strip(),
+            "long_term_theme_alignment": float(replay_carryover.get("long_term_theme_alignment") or 0.0),
+            "long_term_theme_reinforcement": float(replay_carryover.get("long_term_theme_reinforcement") or 0.0),
+        }
+
+    @staticmethod
+    def _pattern_recurrence_weight(group: list[dict], *, replay_signature: Optional[dict] = None) -> float:
+        base = float(len(group))
+        if not isinstance(replay_signature, dict) or not replay_signature:
+            return round(base, 4)
+        strength = float(replay_signature.get("strength") or 0.0)
+        matched = int(replay_signature.get("matched_episodes") or 0)
+        matched_ratio = matched / max(len(group), 1)
+        conscious_strength = float(replay_signature.get("conscious_memory_strength") or 0.0)
+        conscious_overlap = float(replay_signature.get("conscious_memory_overlap") or 0.0)
+        long_term_theme_reinforcement = float(replay_signature.get("long_term_theme_reinforcement") or 0.0)
+        reinforcement = max(
+            0.0,
+            min(
+                1.0,
+                strength * 0.55
+                + matched_ratio * 0.35
+                + conscious_strength * conscious_overlap * 0.1,
+            ),
+        )
+        recurrence_boost = reinforcement * 0.5 + long_term_theme_reinforcement * 0.18
+        return round(base + recurrence_boost, 4)
+
+    @staticmethod
+    def _derive_long_term_theme(
+        *,
+        working_memory_signature: Optional[dict],
+        replay_signature: Optional[dict],
+        recurrence_weight: float,
+        abstract_description: str,
+    ) -> dict:
+        signature = working_memory_signature if isinstance(working_memory_signature, dict) else {}
+        replay = replay_signature if isinstance(replay_signature, dict) else {}
+        focus = str(replay.get("focus") or signature.get("dominant_focus") or "").strip()
+        anchor = str(replay.get("anchor") or signature.get("dominant_anchor") or "").strip()
+        if not focus and not anchor:
+            return {}
+        promotion_readiness = float(signature.get("promotion_readiness_mean") or 0.0)
+        autobiographical_pressure = float(signature.get("autobiographical_pressure_mean") or 0.0)
+        replay_strength = float(replay.get("strength") or 0.0)
+        theme_strength = max(
+            0.0,
+            min(
+                1.0,
+                recurrence_weight * 0.16
+                + promotion_readiness * 0.24
+                + autobiographical_pressure * 0.24
+                + replay_strength * 0.18,
+            ),
+        )
+        return {
+            "focus": focus,
+            "anchor": anchor,
+            "kind": focus or ("place" if anchor else "ambient"),
+            "strength": round(theme_strength, 4),
+            "summary": str(abstract_description or "").strip()[:160],
         }
 
 

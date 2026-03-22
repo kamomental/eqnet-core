@@ -33,6 +33,8 @@ MEMORY_RERANK_WEIGHTS = {
     "relationship_replay": 0.04,
     "relationship_clarity": 0.05,
     "relationship_reopening": 0.04,
+    "relationship_person_match": 0.08,
+    "identity_person_match": 0.05,
     "community_culture": 0.08,
     "community_resonance_trace": 0.1,
     "community_terrain": 0.05,
@@ -67,6 +69,23 @@ MEMORY_RERANK_WEIGHTS = {
     "consolidation_verified": 0.04,
     "prospective_verified": 0.03,
     "interference_reconstructed_penalty": 0.05,
+    "working_memory_verified": 0.04,
+    "working_memory_observed": 0.03,
+    "working_memory_reconstructed_penalty": 0.05,
+    "working_memory_social_trace": 0.04,
+    "working_memory_identity_trace": 0.04,
+    "working_memory_replay_focus_match": 0.06,
+    "working_memory_replay_anchor_match": 0.08,
+    "working_memory_replay_strength_scale": 0.08,
+    "working_memory_seed_focus_match": 0.04,
+    "working_memory_seed_anchor_match": 0.05,
+    "working_memory_seed_strength_scale": 0.05,
+    "long_term_theme_focus_match": 0.05,
+    "long_term_theme_anchor_match": 0.06,
+    "long_term_theme_summary_match": 0.04,
+    "long_term_theme_strength_scale": 0.06,
+    "partner_seed_summary_match": 0.07,
+    "partner_social_interpretation_match": 0.05,
 }
 
 RECALL_ALLOCATION_WEIGHTS = {
@@ -227,6 +246,7 @@ class MemoryCore:
         community_id: str | None = None,
         social_role: str | None = None,
         memory_anchor: str | None = None,
+        related_person_id: str | None = None,
     ) -> Dict[str, Any]:
         if not self.path.exists():
             return {}
@@ -252,6 +272,8 @@ class MemoryCore:
                         continue
                     if memory_anchor and str(record.get("memory_anchor") or "") != memory_anchor:
                         continue
+                    if related_person_id and str(record.get("related_person_id") or "") != related_person_id:
+                        continue
                     latest = record
         except OSError:
             return {}
@@ -263,12 +285,14 @@ class MemoryCore:
         culture_id: str | None = None,
         community_id: str | None = None,
         social_role: str | None = None,
+        related_person_id: str | None = None,
     ) -> Dict[str, Any]:
         return self.load_latest_profile_record(
             kind="identity_trace",
             culture_id=culture_id,
             community_id=community_id,
             social_role=social_role,
+            related_person_id=related_person_id,
         )
 
     def build_recall_payload(
@@ -326,12 +350,14 @@ class MemoryCore:
             "culture_id": top.get("culture_id"),
             "community_id": top.get("community_id"),
             "social_role": top.get("social_role"),
+            "related_person_id": top.get("related_person_id"),
         }
 
     def _rerank_hits(self, hits: List[MemorySearchHit], *, bias_context: Mapping[str, Any]) -> List[MemorySearchHit]:
         culture_id = str(bias_context.get("culture_id") or "").strip()
         community_id = str(bias_context.get("community_id") or "").strip()
         social_role = str(bias_context.get("social_role") or "").strip()
+        related_person_id = str(bias_context.get("related_person_id") or "").strip()
         memory_anchor = str(bias_context.get("memory_anchor") or bias_context.get("place_memory_anchor") or "").strip()
         culture_resonance = _safe_float(bias_context.get("culture_resonance"), 0.0)
         community_resonance = _safe_float(bias_context.get("community_resonance"), 0.0)
@@ -352,6 +378,21 @@ class MemoryCore:
         meaning_inertia = _safe_float(bias_context.get("meaning_inertia"), 0.0)
         recovery_reopening = _safe_float(bias_context.get("recovery_reopening"), 0.0)
         forgetting_pressure = _safe_float(bias_context.get("forgetting_pressure"), 0.0)
+        working_memory_pressure = _safe_float(bias_context.get("working_memory_pressure"), 0.0)
+        pending_meaning = _safe_float(bias_context.get("pending_meaning"), 0.0)
+        current_focus = str(bias_context.get("current_focus") or "").strip()
+        replay_signature_focus = str(bias_context.get("replay_signature_focus") or "").strip()
+        replay_signature_anchor = str(bias_context.get("replay_signature_anchor") or "").strip()
+        replay_signature_strength = _safe_float(bias_context.get("replay_signature_strength"), 0.0)
+        semantic_seed_focus = str(bias_context.get("semantic_seed_focus") or "").strip()
+        semantic_seed_anchor = str(bias_context.get("semantic_seed_anchor") or "").strip()
+        semantic_seed_strength = _safe_float(bias_context.get("semantic_seed_strength"), 0.0)
+        long_term_theme_focus = str(bias_context.get("long_term_theme_focus") or "").strip()
+        long_term_theme_anchor = str(bias_context.get("long_term_theme_anchor") or "").strip()
+        long_term_theme_summary = str(bias_context.get("long_term_theme_summary") or "").strip()
+        long_term_theme_strength = _safe_float(bias_context.get("long_term_theme_strength"), 0.0)
+        relation_seed_summary = str(bias_context.get("relation_seed_summary") or "").strip()
+        partner_social_interpretation = str(bias_context.get("partner_social_interpretation") or "").strip()
         replay_horizon = max(1, int(_safe_float(bias_context.get("replay_horizon"), 3.0)))
         monument_salience = _safe_float(bias_context.get("monument_salience"), 0.0)
         conscious_mosaic_density = _safe_float(bias_context.get("conscious_mosaic_density"), 0.0)
@@ -391,6 +432,31 @@ class MemoryCore:
                 bonus += MEMORY_RERANK_WEIGHTS["role_match"]
             if memory_anchor and str(record.get("memory_anchor") or "") == memory_anchor:
                 bonus += MEMORY_RERANK_WEIGHTS["anchor_match"]
+            if replay_signature_focus and _record_matches_replay_signature_focus(record, replay_signature_focus):
+                bonus += MEMORY_RERANK_WEIGHTS["working_memory_replay_focus_match"]
+                bonus += replay_signature_strength * MEMORY_RERANK_WEIGHTS["working_memory_replay_strength_scale"]
+            if replay_signature_anchor and str(record.get("memory_anchor") or "").strip() == replay_signature_anchor:
+                bonus += MEMORY_RERANK_WEIGHTS["working_memory_replay_anchor_match"]
+                bonus += replay_signature_strength * MEMORY_RERANK_WEIGHTS["working_memory_replay_strength_scale"]
+            if semantic_seed_focus and _record_matches_replay_signature_focus(record, semantic_seed_focus):
+                bonus += MEMORY_RERANK_WEIGHTS["working_memory_seed_focus_match"]
+                bonus += semantic_seed_strength * MEMORY_RERANK_WEIGHTS["working_memory_seed_strength_scale"]
+            if semantic_seed_anchor and str(record.get("memory_anchor") or "").strip() == semantic_seed_anchor:
+                bonus += MEMORY_RERANK_WEIGHTS["working_memory_seed_anchor_match"]
+                bonus += semantic_seed_strength * MEMORY_RERANK_WEIGHTS["working_memory_seed_strength_scale"]
+            if long_term_theme_focus and _record_matches_replay_signature_focus(record, long_term_theme_focus):
+                bonus += MEMORY_RERANK_WEIGHTS["long_term_theme_focus_match"]
+                bonus += long_term_theme_strength * MEMORY_RERANK_WEIGHTS["long_term_theme_strength_scale"]
+            if long_term_theme_anchor and str(record.get("memory_anchor") or "").strip() == long_term_theme_anchor:
+                bonus += MEMORY_RERANK_WEIGHTS["long_term_theme_anchor_match"]
+                bonus += long_term_theme_strength * MEMORY_RERANK_WEIGHTS["long_term_theme_strength_scale"]
+            if long_term_theme_summary and _record_matches_theme_summary(record, long_term_theme_summary):
+                bonus += MEMORY_RERANK_WEIGHTS["long_term_theme_summary_match"]
+                bonus += long_term_theme_strength * MEMORY_RERANK_WEIGHTS["long_term_theme_strength_scale"]
+            if relation_seed_summary and _record_matches_theme_summary(record, relation_seed_summary):
+                bonus += MEMORY_RERANK_WEIGHTS["partner_seed_summary_match"]
+            if partner_social_interpretation and _record_matches_partner_social_interpretation(record, partner_social_interpretation):
+                bonus += MEMORY_RERANK_WEIGHTS["partner_social_interpretation_match"]
 
             kind = str(record.get("kind") or "")
             if kind in {"verified", "observed_real"}:
@@ -410,12 +476,15 @@ class MemoryCore:
                 bonus += (reachability + defensive_salience) * MEMORY_RERANK_WEIGHTS["peripersonal_observed"]
                 bonus += consolidation_priority * MEMORY_RERANK_WEIGHTS["consolidation_verified"]
                 bonus += prospective_memory_pull * MEMORY_RERANK_WEIGHTS["prospective_verified"]
+                bonus += working_memory_pressure * (MEMORY_RERANK_WEIGHTS["working_memory_verified"] if kind == "verified" else MEMORY_RERANK_WEIGHTS["working_memory_observed"])
             if kind in {"reconstructed", "relationship_trace", "identity_trace", "community_profile_trace"}:
                 bonus += affiliation_bias * MEMORY_RERANK_WEIGHTS["trace_affiliation"]
                 bonus += ritual_pressure * MEMORY_RERANK_WEIGHTS["trace_ritual"]
                 bonus += institutional_pressure * MEMORY_RERANK_WEIGHTS["trace_institution"]
                 bonus += access_count * MEMORY_ACCESS_WEIGHTS["access_scale"]
             if kind == "relationship_trace":
+                if related_person_id and str(record.get("related_person_id") or "") == related_person_id:
+                    bonus += MEMORY_RERANK_WEIGHTS["relationship_person_match"]
                 bonus += institutional_pressure * MEMORY_RERANK_WEIGHTS["relationship_institution"]
                 bonus += interaction_afterglow * (MEMORY_RERANK_WEIGHTS["relationship_check_in_afterglow"] if interaction_afterglow_intent == "check_in" else MEMORY_RERANK_WEIGHTS["relationship_afterglow"])
                 bonus += replay_intensity * MEMORY_RERANK_WEIGHTS["relationship_replay"] + relational_clarity * MEMORY_RERANK_WEIGHTS["relationship_clarity"]
@@ -425,10 +494,14 @@ class MemoryCore:
                 bonus += conscious_mosaic_density * MEMORY_RERANK_WEIGHTS["mosaic_relationship"]
                 bonus += object_attachment * MEMORY_RERANK_WEIGHTS["object_relationship"]
                 bonus += defensive_salience * MEMORY_RERANK_WEIGHTS["peripersonal_relationship"]
+                if current_focus == "social":
+                    bonus += MEMORY_RERANK_WEIGHTS["working_memory_social_trace"]
             if kind == "community_profile_trace":
                 bonus += culture_resonance * MEMORY_RERANK_WEIGHTS["community_culture"] + community_resonance * MEMORY_RERANK_WEIGHTS["community_resonance_trace"]
                 bonus += terrain_transition_roughness * MEMORY_RERANK_WEIGHTS["community_terrain"]
             if kind == "identity_trace":
+                if related_person_id and str(record.get("related_person_id") or "") == related_person_id:
+                    bonus += MEMORY_RERANK_WEIGHTS["identity_person_match"]
                 bonus += terrain_transition_roughness * MEMORY_RERANK_WEIGHTS["identity_terrain"]
                 bonus += interaction_afterglow * MEMORY_RERANK_WEIGHTS["identity_clarify_afterglow"] if interaction_afterglow_intent == "clarify" else 0.0
                 bonus += relational_clarity * MEMORY_RERANK_WEIGHTS["identity_clarity"] + meaning_inertia * MEMORY_RERANK_WEIGHTS["identity_inertia"]
@@ -436,6 +509,8 @@ class MemoryCore:
                 bonus += priming_gain * MEMORY_ACCESS_WEIGHTS["primed_identity_bonus"]
                 bonus += monument_salience * MEMORY_RERANK_WEIGHTS["monument_identity"]
                 bonus += object_attachment * MEMORY_RERANK_WEIGHTS["object_identity"]
+                if current_focus == "meaning":
+                    bonus += MEMORY_RERANK_WEIGHTS["working_memory_identity_trace"]
             if kind == "reconstructed":
                 bonus += ritual_pressure * MEMORY_RERANK_WEIGHTS["reconstructed_ritual"]
                 bonus -= terrain_transition_roughness * MEMORY_RERANK_WEIGHTS["reconstructed_terrain_penalty"]
@@ -455,6 +530,7 @@ class MemoryCore:
                 bonus -= (fragility_guard + object_avoidance) * MEMORY_RERANK_WEIGHTS["object_reconstructed_penalty"]
                 bonus -= (near_body_risk + defensive_salience) * MEMORY_RERANK_WEIGHTS["peripersonal_reconstructed_penalty"]
                 bonus -= interference_pressure * MEMORY_RERANK_WEIGHTS["interference_reconstructed_penalty"]
+                bonus -= pending_meaning * MEMORY_RERANK_WEIGHTS["working_memory_reconstructed_penalty"]
             bonus += continuity_score * MEMORY_RERANK_WEIGHTS["continuity"]
             bonus -= resource_pressure * MEMORY_RERANK_WEIGHTS["reconstructed_resource_penalty"] if kind == "reconstructed" else 0.0
             bonus += _safe_float(kind_biases.get(kind), 0.0)
@@ -537,6 +613,65 @@ def _score_terms(query_terms: List[str], haystack: str) -> float:
         if term in content:
             score += 1.0 / max(len(query_terms), 1)
     return float(score)
+
+
+def _record_matches_replay_signature_focus(record: Mapping[str, Any], focus: str) -> bool:
+    target = str(focus or "").strip().lower()
+    if not target:
+        return False
+    haystack = " ".join(
+        str(record.get(key) or "")
+        for key in (
+            "summary",
+            "text",
+            "cue_text",
+            "memory_anchor",
+            "environment_summary",
+            "reinterpretation_summary",
+        )
+    ).lower()
+    return target in haystack
+
+
+def _record_matches_theme_summary(record: Mapping[str, Any], summary: str) -> bool:
+    tokens = _terms(summary)
+    if not tokens:
+        return False
+    haystack = " ".join(
+        str(record.get(key) or "")
+        for key in (
+            "summary",
+            "text",
+            "cue_text",
+            "memory_anchor",
+            "environment_summary",
+            "reinterpretation_summary",
+        )
+    ).lower()
+    if not haystack:
+        return False
+    hits = sum(1 for token in tokens[:4] if token and token in haystack)
+    return hits >= 2 or (hits >= 1 and len(tokens) == 1)
+
+
+def _record_matches_partner_social_interpretation(record: Mapping[str, Any], social_interpretation: str) -> bool:
+    target = str(social_interpretation or "").strip().lower()
+    if not target:
+        return False
+    haystack = " ".join(
+        str(record.get(key) or "")
+        for key in (
+            "social_interpretation",
+            "address_hint",
+            "timing_hint",
+            "stance_hint",
+            "summary",
+            "text",
+        )
+    ).lower()
+    if not haystack:
+        return False
+    return target in haystack
 
 
 def _clamp01(value: float) -> float:

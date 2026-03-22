@@ -13,6 +13,8 @@ DEVELOPMENT_SNAPSHOT_WEIGHTS = {
     "belonging_familiarity": 0.04,
     "belonging_resource_penalty": 0.04,
     "belonging_ritual": 0.03,
+    "belonging_roughness_penalty": 0.04,
+    "belonging_defensive_penalty": 0.03,
     "trust_previous": 0.74,
     "trust_community": 0.1,
     "trust_body_regulation": 0.06,
@@ -20,6 +22,8 @@ DEVELOPMENT_SNAPSHOT_WEIGHTS = {
     "trust_memory": 0.06,
     "trust_hazard_penalty": 0.05,
     "trust_ritual": 0.03,
+    "trust_roughness_penalty": 0.04,
+    "trust_defensive_penalty": 0.06,
     "norm_previous": 0.7,
     "norm_culture": 0.12,
     "norm_role": 0.1,
@@ -28,6 +32,8 @@ DEVELOPMENT_SNAPSHOT_WEIGHTS = {
     "norm_ritual": 0.08,
     "norm_institution": 0.09,
     "norm_density": 0.04,
+    "norm_roughness": 0.04,
+    "norm_defensive": 0.04,
     "role_previous": 0.72,
     "role_presence": 0.1,
     "role_community": 0.08,
@@ -35,6 +41,7 @@ DEVELOPMENT_SNAPSHOT_WEIGHTS = {
     "role_alignment": 0.05,
     "role_ritual": 0.06,
     "role_institution": 0.08,
+    "role_roughness_penalty": 0.04,
 }
 
 DEVELOPMENT_POST_WEIGHTS = {
@@ -46,25 +53,34 @@ DEVELOPMENT_POST_WEIGHTS = {
     "belonging_strain_penalty": 0.04,
     "belonging_resource_penalty": 0.03,
     "belonging_ritual": 0.02,
+    "belonging_roughness_penalty": 0.04,
+    "belonging_defensive_penalty": 0.03,
     "trust_previous": 0.8,
     "trust_success": 0.07,
     "trust_memory": 0.05,
     "trust_strain_penalty": 0.05,
     "trust_hazard_penalty": 0.04,
     "trust_ritual": 0.02,
+    "trust_roughness_penalty": 0.04,
+    "trust_defensive_penalty": 0.05,
     "norm_previous": 0.83,
     "norm_role": 0.05,
     "norm_community": 0.03,
     "norm_ritual": 0.05,
     "norm_institution": 0.06,
+    "norm_defensive": 0.05,
+    "norm_roughness": 0.04,
     "role_previous": 0.84,
     "role_presence": 0.06,
     "role_success": 0.03,
     "role_institution": 0.04,
     "role_alignment": 0.04,
+    "role_roughness_penalty": 0.04,
     "social_roughness_penalty": 0.18,
+    "social_defensive_penalty": 0.12,
     "social_tentative_penalty": 0.22,
     "identity_roughness_penalty": 0.28,
+    "identity_defensive_penalty": 0.18,
     "identity_tentative_penalty": 0.34,
     "belonging_blend_floor": 0.48,
     "trust_blend_floor": 0.44,
@@ -129,16 +145,20 @@ class DevelopmentCore:
         familiarity = _float_from(current_state, 'familiarity', 0.35)
         trust_memory = _float_from(current_state, 'trust_memory', 0.45)
         role_alignment = _float_from(current_state, 'role_alignment', 0.4)
+        roughness_level = _float_from(current_state, 'roughness_level', _float_from(current_state, 'terrain_transition_roughness', 0.0))
+        roughness_dwell = _float_from(current_state, 'roughness_dwell', 0.0)
+        defensive_level = _float_from(current_state, 'defensive_level', _float_from(current_state, 'defensive_salience', 0.0))
+        defensive_dwell = _float_from(current_state, 'defensive_dwell', 0.0)
         resource_pressure = _float_from(environment_pressure, 'resource_pressure', 0.0)
         hazard_pressure = _float_from(environment_pressure, 'hazard_pressure', 0.0)
         ritual_pressure = _float_from(environment_pressure, 'ritual_pressure', 0.0)
         institutional_pressure = _float_from(environment_pressure, 'institutional_pressure', 0.0)
         social_density = _float_from(environment_pressure, 'social_density', 0.0)
 
-        belonging = _clamp(prev_belonging * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_previous'] + culture_present * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_culture'] + community_present * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_community'] + min(person_count, 2) * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_person_count'] + attachment * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_attachment'] + familiarity * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_familiarity'] - resource_pressure * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_resource_penalty'] + ritual_pressure * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_ritual'])
-        trust_bias = _clamp(prev_trust * DEVELOPMENT_SNAPSHOT_WEIGHTS['trust_previous'] + community_present * DEVELOPMENT_SNAPSHOT_WEIGHTS['trust_community'] + max(0.0, 1.0 - body_stress) * DEVELOPMENT_SNAPSHOT_WEIGHTS['trust_body_regulation'] + min(voice_level, 1.0) * DEVELOPMENT_SNAPSHOT_WEIGHTS['trust_voice'] + trust_memory * DEVELOPMENT_SNAPSHOT_WEIGHTS['trust_memory'] - hazard_pressure * DEVELOPMENT_SNAPSHOT_WEIGHTS['trust_hazard_penalty'] + ritual_pressure * DEVELOPMENT_SNAPSHOT_WEIGHTS['trust_ritual'])
-        norm_pressure = _clamp(prev_norm * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_previous'] + culture_present * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_culture'] + role_present * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_role'] + private_mode * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_privacy'] + safety_bias * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_safety'] + ritual_pressure * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_ritual'] + institutional_pressure * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_institution'] + social_density * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_density'])
-        role_commitment = _clamp(prev_role * DEVELOPMENT_SNAPSHOT_WEIGHTS['role_previous'] + role_present * DEVELOPMENT_SNAPSHOT_WEIGHTS['role_presence'] + community_present * DEVELOPMENT_SNAPSHOT_WEIGHTS['role_community'] + culture_present * DEVELOPMENT_SNAPSHOT_WEIGHTS['role_culture'] + role_alignment * DEVELOPMENT_SNAPSHOT_WEIGHTS['role_alignment'] + ritual_pressure * DEVELOPMENT_SNAPSHOT_WEIGHTS['role_ritual'] + institutional_pressure * DEVELOPMENT_SNAPSHOT_WEIGHTS['role_institution'])
+        belonging = _clamp(prev_belonging * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_previous'] + culture_present * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_culture'] + community_present * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_community'] + min(person_count, 2) * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_person_count'] + attachment * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_attachment'] + familiarity * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_familiarity'] - resource_pressure * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_resource_penalty'] + ritual_pressure * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_ritual'] - roughness_dwell * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_roughness_penalty'] - defensive_dwell * DEVELOPMENT_SNAPSHOT_WEIGHTS['belonging_defensive_penalty'])
+        trust_bias = _clamp(prev_trust * DEVELOPMENT_SNAPSHOT_WEIGHTS['trust_previous'] + community_present * DEVELOPMENT_SNAPSHOT_WEIGHTS['trust_community'] + max(0.0, 1.0 - body_stress) * DEVELOPMENT_SNAPSHOT_WEIGHTS['trust_body_regulation'] + min(voice_level, 1.0) * DEVELOPMENT_SNAPSHOT_WEIGHTS['trust_voice'] + trust_memory * DEVELOPMENT_SNAPSHOT_WEIGHTS['trust_memory'] - hazard_pressure * DEVELOPMENT_SNAPSHOT_WEIGHTS['trust_hazard_penalty'] + ritual_pressure * DEVELOPMENT_SNAPSHOT_WEIGHTS['trust_ritual'] - roughness_level * DEVELOPMENT_SNAPSHOT_WEIGHTS['trust_roughness_penalty'] - defensive_level * DEVELOPMENT_SNAPSHOT_WEIGHTS['trust_defensive_penalty'])
+        norm_pressure = _clamp(prev_norm * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_previous'] + culture_present * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_culture'] + role_present * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_role'] + private_mode * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_privacy'] + safety_bias * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_safety'] + ritual_pressure * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_ritual'] + institutional_pressure * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_institution'] + social_density * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_density'] + roughness_level * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_roughness'] + defensive_level * DEVELOPMENT_SNAPSHOT_WEIGHTS['norm_defensive'])
+        role_commitment = _clamp(prev_role * DEVELOPMENT_SNAPSHOT_WEIGHTS['role_previous'] + role_present * DEVELOPMENT_SNAPSHOT_WEIGHTS['role_presence'] + community_present * DEVELOPMENT_SNAPSHOT_WEIGHTS['role_community'] + culture_present * DEVELOPMENT_SNAPSHOT_WEIGHTS['role_culture'] + role_alignment * DEVELOPMENT_SNAPSHOT_WEIGHTS['role_alignment'] + ritual_pressure * DEVELOPMENT_SNAPSHOT_WEIGHTS['role_ritual'] + institutional_pressure * DEVELOPMENT_SNAPSHOT_WEIGHTS['role_institution'] - roughness_dwell * DEVELOPMENT_SNAPSHOT_WEIGHTS['role_roughness_penalty'])
 
         return DevelopmentState(
             belonging=belonging,
@@ -175,21 +195,25 @@ class DevelopmentCore:
         familiarity = _float_from(previous, 'familiarity', 0.35)
         trust_memory = _float_from(previous, 'trust_memory', 0.45)
         role_alignment = _float_from(previous, 'role_alignment', 0.4)
+        roughness_level = max(_float_from(previous, 'roughness_level', 0.0), _clamp(terrain_transition_roughness))
+        roughness_dwell = _float_from(previous, 'roughness_dwell', 0.0)
+        defensive_level = _float_from(previous, 'defensive_level', _float_from(previous, 'defensive_salience', 0.0))
+        defensive_dwell = _float_from(previous, 'defensive_dwell', 0.0)
         hazard_pressure = _float_from(environment_pressure, 'hazard_pressure', 0.0)
         ritual_pressure = _float_from(environment_pressure, 'ritual_pressure', 0.0)
         institutional_pressure = _float_from(environment_pressure, 'institutional_pressure', 0.0)
         resource_pressure = _float_from(environment_pressure, 'resource_pressure', 0.0)
 
-        raw_belonging = _clamp(prev_belonging * DEVELOPMENT_POST_WEIGHTS['belonging_previous'] + community_present * DEVELOPMENT_POST_WEIGHTS['belonging_community'] + success * DEVELOPMENT_POST_WEIGHTS['belonging_success'] + attachment * DEVELOPMENT_POST_WEIGHTS['belonging_attachment'] + familiarity * DEVELOPMENT_POST_WEIGHTS['belonging_familiarity'] - strain * DEVELOPMENT_POST_WEIGHTS['belonging_strain_penalty'] - resource_pressure * DEVELOPMENT_POST_WEIGHTS['belonging_resource_penalty'] + ritual_pressure * DEVELOPMENT_POST_WEIGHTS['belonging_ritual'])
-        raw_trust = _clamp(prev_trust * DEVELOPMENT_POST_WEIGHTS['trust_previous'] + success * DEVELOPMENT_POST_WEIGHTS['trust_success'] + trust_memory * DEVELOPMENT_POST_WEIGHTS['trust_memory'] - strain * DEVELOPMENT_POST_WEIGHTS['trust_strain_penalty'] - hazard_pressure * DEVELOPMENT_POST_WEIGHTS['trust_hazard_penalty'] + ritual_pressure * DEVELOPMENT_POST_WEIGHTS['trust_ritual'])
-        raw_norm = _clamp(prev_norm * DEVELOPMENT_POST_WEIGHTS['norm_previous'] + role_present * DEVELOPMENT_POST_WEIGHTS['norm_role'] + community_present * DEVELOPMENT_POST_WEIGHTS['norm_community'] + ritual_pressure * DEVELOPMENT_POST_WEIGHTS['norm_ritual'] + institutional_pressure * DEVELOPMENT_POST_WEIGHTS['norm_institution'])
-        raw_role = _clamp(prev_role * DEVELOPMENT_POST_WEIGHTS['role_previous'] + role_present * DEVELOPMENT_POST_WEIGHTS['role_presence'] + success * DEVELOPMENT_POST_WEIGHTS['role_success'] + institutional_pressure * DEVELOPMENT_POST_WEIGHTS['role_institution'] + role_alignment * DEVELOPMENT_POST_WEIGHTS['role_alignment'])
+        raw_belonging = _clamp(prev_belonging * DEVELOPMENT_POST_WEIGHTS['belonging_previous'] + community_present * DEVELOPMENT_POST_WEIGHTS['belonging_community'] + success * DEVELOPMENT_POST_WEIGHTS['belonging_success'] + attachment * DEVELOPMENT_POST_WEIGHTS['belonging_attachment'] + familiarity * DEVELOPMENT_POST_WEIGHTS['belonging_familiarity'] - strain * DEVELOPMENT_POST_WEIGHTS['belonging_strain_penalty'] - resource_pressure * DEVELOPMENT_POST_WEIGHTS['belonging_resource_penalty'] + ritual_pressure * DEVELOPMENT_POST_WEIGHTS['belonging_ritual'] - roughness_dwell * DEVELOPMENT_POST_WEIGHTS['belonging_roughness_penalty'] - defensive_dwell * DEVELOPMENT_POST_WEIGHTS['belonging_defensive_penalty'])
+        raw_trust = _clamp(prev_trust * DEVELOPMENT_POST_WEIGHTS['trust_previous'] + success * DEVELOPMENT_POST_WEIGHTS['trust_success'] + trust_memory * DEVELOPMENT_POST_WEIGHTS['trust_memory'] - strain * DEVELOPMENT_POST_WEIGHTS['trust_strain_penalty'] - hazard_pressure * DEVELOPMENT_POST_WEIGHTS['trust_hazard_penalty'] + ritual_pressure * DEVELOPMENT_POST_WEIGHTS['trust_ritual'] - roughness_level * DEVELOPMENT_POST_WEIGHTS['trust_roughness_penalty'] - defensive_level * DEVELOPMENT_POST_WEIGHTS['trust_defensive_penalty'])
+        raw_norm = _clamp(prev_norm * DEVELOPMENT_POST_WEIGHTS['norm_previous'] + role_present * DEVELOPMENT_POST_WEIGHTS['norm_role'] + community_present * DEVELOPMENT_POST_WEIGHTS['norm_community'] + ritual_pressure * DEVELOPMENT_POST_WEIGHTS['norm_ritual'] + institutional_pressure * DEVELOPMENT_POST_WEIGHTS['norm_institution'] + defensive_level * DEVELOPMENT_POST_WEIGHTS['norm_defensive'] + roughness_level * DEVELOPMENT_POST_WEIGHTS['norm_roughness'])
+        raw_role = _clamp(prev_role * DEVELOPMENT_POST_WEIGHTS['role_previous'] + role_present * DEVELOPMENT_POST_WEIGHTS['role_presence'] + success * DEVELOPMENT_POST_WEIGHTS['role_success'] + institutional_pressure * DEVELOPMENT_POST_WEIGHTS['role_institution'] + role_alignment * DEVELOPMENT_POST_WEIGHTS['role_alignment'] - roughness_dwell * DEVELOPMENT_POST_WEIGHTS['role_roughness_penalty'])
 
         transition_roughness = _clamp(terrain_transition_roughness)
         tentative_bias = _clamp(recalled_tentative_bias)
         reopening = _clamp(recovery_reopening)
-        social_update_strength = _clamp(1.0 - transition_roughness * DEVELOPMENT_POST_WEIGHTS['social_roughness_penalty'] - tentative_bias * DEVELOPMENT_POST_WEIGHTS['social_tentative_penalty'] + reopening * DEVELOPMENT_REOPENING_WEIGHTS['social_recovery_boost'])
-        identity_update_strength = _clamp(1.0 - transition_roughness * DEVELOPMENT_POST_WEIGHTS['identity_roughness_penalty'] - tentative_bias * DEVELOPMENT_POST_WEIGHTS['identity_tentative_penalty'] + reopening * DEVELOPMENT_REOPENING_WEIGHTS['identity_recovery_boost'])
+        social_update_strength = _clamp(1.0 - transition_roughness * DEVELOPMENT_POST_WEIGHTS['social_roughness_penalty'] - defensive_dwell * DEVELOPMENT_POST_WEIGHTS['social_defensive_penalty'] - tentative_bias * DEVELOPMENT_POST_WEIGHTS['social_tentative_penalty'] + reopening * DEVELOPMENT_REOPENING_WEIGHTS['social_recovery_boost'])
+        identity_update_strength = _clamp(1.0 - transition_roughness * DEVELOPMENT_POST_WEIGHTS['identity_roughness_penalty'] - defensive_dwell * DEVELOPMENT_POST_WEIGHTS['identity_defensive_penalty'] - tentative_bias * DEVELOPMENT_POST_WEIGHTS['identity_tentative_penalty'] + reopening * DEVELOPMENT_REOPENING_WEIGHTS['identity_recovery_boost'])
 
         belonging = _blend(prev_belonging, raw_belonging, max(DEVELOPMENT_POST_WEIGHTS['belonging_blend_floor'], social_update_strength + reopening * DEVELOPMENT_REOPENING_WEIGHTS['belonging_recovery_blend']))
         trust_bias = _blend(prev_trust, raw_trust, max(DEVELOPMENT_POST_WEIGHTS['trust_blend_floor'], social_update_strength + reopening * DEVELOPMENT_REOPENING_WEIGHTS['trust_recovery_blend']))

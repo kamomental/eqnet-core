@@ -123,6 +123,209 @@ def test_nightly_json_matches_schema(tmp_path) -> None:
             },
         },
         "policy_feedback_history_path": "reports/policy_feedback_history.jsonl",
+        "inner_os_sleep_snapshot_path": "reports/nightly_inner_os_sleep.json",
+        "inner_os_sleep_mode": "reconsolidate",
+        "inner_os_working_memory_snapshot_path": "reports/inner_os_working_memory_snapshot.json",
+        "inner_os_working_memory_focus": "meaning",
+        "inner_os_working_memory_readiness": 0.64,
+        "inner_os_working_memory_replay_bias": {
+            "focus": "meaning",
+            "anchor": "harbor slope",
+            "strength": 0.58,
+            "matched_events": 2,
+            "boost_mean": 0.041,
+            "boost_max": 0.062,
+            "top_matches": [
+                {"id": "trace-1", "alignment": 0.82, "boost": 0.062},
+            ],
+        },
+        "inner_os_long_term_theme_summary": {
+            "focus": "meaning",
+            "anchor": "harbor slope",
+            "kind": "meaning",
+            "summary": "fragile harbor promise",
+            "strength": 0.63,
+        },
+        "inner_os_memory_class_summary": {
+            "dominant_class": "bond_protection",
+            "dominant_reason": "bond_protection_pressure",
+            "counts": {"bond_protection": 3, "episodic": 1},
+            "weighted_counts": {"bond_protection": 2.4, "episodic": 0.8},
+            "recent_records": 4,
+            "lookback_hours": 120,
+        },
+        "inner_os_agenda_summary": {
+            "dominant_agenda": "repair",
+            "dominant_reason": "repair_trace",
+            "state_counts": {"repair": 3, "hold": 1},
+            "weighted_state_counts": {"repair": 1.7, "hold": 0.4},
+            "agenda_carry_bias": 0.33,
+            "recent_records": 4,
+            "lookback_hours": 120,
+        },
+        "inner_os_commitment_summary": {
+            "dominant_target": "repair",
+            "dominant_state": "commit",
+            "dominant_reason": "repair_trace",
+            "target_counts": {"repair": 3, "hold": 1},
+            "state_counts": {"commit": 2, "settle": 1, "waver": 1},
+            "weighted_target_counts": {"repair": 1.7, "hold": 0.4},
+            "commitment_carry_bias": 0.34,
+            "commitment_followup_focus": "reopen_softly",
+            "commitment_mode_focus": "repair",
+            "recent_records": 4,
+            "lookback_hours": 120,
+        },
+        "inner_os_insight_summary": {
+            "dominant_insight_class": "reframed_relation",
+            "dominant_reframed_topic": "harbor thread",
+            "insight_class_counts": {"reframed_relation": 2, "insight_trace": 1},
+            "weighted_class_counts": {"reframed_relation": 1.8, "insight_trace": 0.6},
+            "insight_link_counts": {"bond:user|memory:harbor_thread": 3},
+            "association_reweighting_bias": 0.36,
+            "association_reweighting_focus": "reframed_links",
+            "association_reweighting_reason": "reframed_relation",
+            "insight_reframing_bias": 0.28,
+            "insight_terrain_shape_bias": 0.16,
+            "insight_terrain_shape_reason": "reframed_relation",
+            "insight_terrain_shape_target": "soft_relation",
+            "insight_anchor_center": [0.16, -0.04, 0.12],
+            "insight_anchor_dispersion": 0.27,
+            "recent_records": 3,
+            "lookback_hours": 120,
+        },
+        "inner_os_partner_relation_summary": {
+            "person_id": "user",
+            "summary": "gentle harbor companion thread",
+            "memory_anchor": "harbor slope",
+            "social_role": "companion",
+            "social_interpretation": "familiar:companion:open",
+            "address_hint": "companion",
+            "timing_hint": "open",
+            "stance_hint": "familiar",
+            "attachment": 0.72,
+            "familiarity": 0.68,
+            "trust_memory": 0.7,
+            "strength": 0.71,
+        },
+        "inner_os_partner_relation_registry_summary": {
+            "dominant_person_id": "user",
+            "top_person_ids": ["user", "friend"],
+            "total_people": 2,
+            "uncertainty": 0.12,
+            "persons": {
+                "user": {
+                    "person_id": "user",
+                    "adaptive_traits": {
+                        "attachment": 0.72,
+                        "familiarity": 0.68,
+                        "trust_memory": 0.7,
+                        "continuity_score": 0.66,
+                        "social_grounding": 0.61
+                    }
+                }
+            }
+        },
+        "inner_os_group_thread_registry_summary": {
+            "dominant_thread_id": "threaded_group:user|friend",
+            "top_thread_ids": ["threaded_group:user|friend"],
+            "total_threads": 1,
+            "thread_scores": {"threaded_group:user|friend": 0.71},
+            "uncertainty": 0.19,
+            "threads": {
+                "threaded_group:user|friend": {
+                    "thread_id": "threaded_group:user|friend",
+                    "dominant_person_id": "user",
+                    "top_person_ids": ["user", "friend"],
+                    "total_people": 2,
+                    "continuity_score": 0.66,
+                }
+            },
+        },
+        "inner_os_daily_carry_summary": {
+            "summary_version": "v1",
+            "same_turn_focus": {
+                "memory_class": "bond_protection",
+                "commitment_target": "repair",
+                "commitment_state": "commit",
+                "insight_class": "reframed_relation",
+                "group_thread_dominant_thread": "threaded_group:user|friend",
+                "group_thread_total_threads": 1,
+            },
+            "overnight_focus": {
+                "memory_class_focus": "bond_protection",
+                "commitment_target_focus": "repair",
+                "association_focus": "reframed_links",
+                "terrain_shape_target": "soft_relation",
+                "temperament_focus": "forward",
+                "body_homeostasis_focus": "recovering",
+                "relational_continuity_focus": "reopening",
+                "group_thread_focus": "threaded_group",
+                "expressive_style_focus": "warm_companion",
+            },
+            "carry_strengths": {
+                "terrain_reweighting": 0.44,
+                "commitment_carry": 0.37,
+                "association_reweighting": 0.38,
+                "insight_reframing": 0.31,
+                "insight_terrain_shape": 0.19,
+                "body_homeostasis_carry": 0.14,
+                "relational_continuity_carry": 0.11,
+                "group_thread_carry": 0.1,
+                "temperament_forward": 0.11,
+            },
+            "active_carry_channels": ["terrain_reweighting", "commitment_carry", "association_reweighting"],
+            "dominant_carry_channel": "terrain_reweighting",
+            "carry_alignment": {
+                "memory_carry_visible": True,
+                "commitment_carry_visible": True,
+                "insight_carry_visible": True,
+                "body_homeostasis_carry_visible": True,
+                "relational_continuity_carry_visible": True,
+                "group_thread_carry_visible": True,
+                "group_thread_registry_visible": True,
+            },
+        },
+        "inner_os_sleep_memory_class_focus": "bond_protection",
+        "inner_os_sleep_terrain_reweighting_bias": 0.44,
+        "inner_os_sleep_agenda_focus": "repair",
+        "inner_os_sleep_agenda_bias": 0.33,
+        "inner_os_sleep_agenda_reason": "repair_trace",
+        "inner_os_sleep_commitment_target_focus": "repair",
+        "inner_os_sleep_commitment_state_focus": "commit",
+        "inner_os_sleep_commitment_carry_bias": 0.37,
+        "inner_os_sleep_commitment_followup_focus": "reopen_softly",
+        "inner_os_sleep_commitment_mode_focus": "repair",
+        "inner_os_sleep_commitment_carry_reason": "commit:repair",
+        "inner_os_sleep_body_homeostasis_focus": "recovering",
+        "inner_os_sleep_body_homeostasis_carry_bias": 0.14,
+        "inner_os_sleep_homeostasis_budget_focus": "recovering",
+        "inner_os_sleep_homeostasis_budget_bias": 0.09,
+        "inner_os_sleep_relational_continuity_focus": "reopening",
+        "inner_os_sleep_relational_continuity_carry_bias": 0.11,
+        "inner_os_sleep_group_thread_focus": "threaded_group",
+        "inner_os_sleep_group_thread_carry_bias": 0.1,
+        "inner_os_sleep_expressive_style_focus": "warm_companion",
+        "inner_os_sleep_expressive_style_carry_bias": 0.1,
+        "inner_os_sleep_expressive_style_history_focus": "warm_companion",
+        "inner_os_sleep_expressive_style_history_bias": 0.08,
+        "inner_os_sleep_banter_style_focus": "gentle_tease",
+        "inner_os_sleep_lexical_variation_carry_bias": 0.11,
+        "inner_os_sleep_insight_class_focus": "reframed_relation",
+        "inner_os_sleep_insight_reframing_bias": 0.31,
+        "inner_os_sleep_association_reweighting_bias": 0.38,
+        "inner_os_sleep_association_reweighting_focus": "reframed_links",
+        "inner_os_sleep_association_reweighting_reason": "reframed_relation",
+        "inner_os_sleep_insight_terrain_shape_bias": 0.19,
+        "inner_os_sleep_insight_terrain_shape_reason": "reframed_relation",
+        "inner_os_sleep_insight_terrain_shape_target": "soft_relation",
+        "inner_os_sleep_insight_anchor_center": [0.14, -0.02, 0.11],
+        "inner_os_sleep_insight_anchor_dispersion": 0.24,
+        "inner_os_sleep_temperament_focus": "forward",
+        "inner_os_sleep_temperament_forward_bias": 0.11,
+        "inner_os_sleep_temperament_guard_bias": 0.03,
+        "inner_os_sleep_temperament_bond_bias": 0.05,
+        "inner_os_sleep_temperament_recovery_bias": 0.02,
         "alerts": ["demo_alert"],
         "alerts_detail": [
             {"kind": "culture.high_abs_valence", "tag": "JP_basic", "value": 0.12, "threshold": 0.6}
@@ -151,6 +354,64 @@ def test_nightly_json_matches_schema(tmp_path) -> None:
     assert payload.get("alerts_detail")
     assert payload.get("policy_feedback")
     assert payload.get("policy_feedback_history_path")
+    assert payload.get("inner_os_sleep_snapshot_path")
+    assert payload.get("inner_os_sleep_mode") == "reconsolidate"
+    assert payload.get("inner_os_working_memory_snapshot_path")
+    assert payload.get("inner_os_working_memory_focus") == "meaning"
+    assert payload.get("inner_os_working_memory_readiness") == 0.64
+    assert payload.get("inner_os_working_memory_replay_bias", {}).get("anchor") == "harbor slope"
+    assert payload.get("inner_os_working_memory_replay_bias", {}).get("matched_events") == 2
+    assert payload.get("inner_os_long_term_theme_summary", {}).get("summary") == "fragile harbor promise"
+    assert payload.get("inner_os_memory_class_summary", {}).get("dominant_class") == "bond_protection"
+    assert payload.get("inner_os_agenda_summary", {}).get("dominant_agenda") == "repair"
+    assert payload.get("inner_os_commitment_summary", {}).get("dominant_target") == "repair"
+    assert payload.get("inner_os_insight_summary", {}).get("dominant_insight_class") == "reframed_relation"
+    assert payload.get("inner_os_partner_relation_summary", {}).get("person_id") == "user"
+    assert payload.get("inner_os_partner_relation_registry_summary", {}).get("total_people") == 2
+    assert payload.get("inner_os_group_thread_registry_summary", {}).get("total_threads") == 1
+    assert payload.get("inner_os_daily_carry_summary", {}).get("same_turn_focus", {}).get("memory_class") == "bond_protection"
+    assert payload.get("inner_os_daily_carry_summary", {}).get("overnight_focus", {}).get("commitment_target_focus") == "repair"
+    assert payload.get("inner_os_daily_carry_summary", {}).get("overnight_focus", {}).get("group_thread_focus") == "threaded_group"
+    assert payload.get("inner_os_sleep_memory_class_focus") == "bond_protection"
+    assert payload.get("inner_os_sleep_terrain_reweighting_bias") == 0.44
+    assert payload.get("inner_os_sleep_agenda_focus") == "repair"
+    assert payload.get("inner_os_sleep_agenda_bias") == 0.33
+    assert payload.get("inner_os_sleep_agenda_reason") == "repair_trace"
+    assert payload.get("inner_os_sleep_commitment_target_focus") == "repair"
+    assert payload.get("inner_os_sleep_commitment_state_focus") == "commit"
+    assert payload.get("inner_os_sleep_commitment_carry_bias") == 0.37
+    assert payload.get("inner_os_sleep_commitment_followup_focus") == "reopen_softly"
+    assert payload.get("inner_os_sleep_commitment_mode_focus") == "repair"
+    assert payload.get("inner_os_sleep_commitment_carry_reason") == "commit:repair"
+    assert payload.get("inner_os_sleep_body_homeostasis_focus") == "recovering"
+    assert payload.get("inner_os_sleep_body_homeostasis_carry_bias") == 0.14
+    assert payload.get("inner_os_sleep_homeostasis_budget_focus") == "recovering"
+    assert payload.get("inner_os_sleep_homeostasis_budget_bias") == 0.09
+    assert payload.get("inner_os_sleep_relational_continuity_focus") == "reopening"
+    assert payload.get("inner_os_sleep_relational_continuity_carry_bias") == 0.11
+    assert payload.get("inner_os_sleep_group_thread_focus") == "threaded_group"
+    assert payload.get("inner_os_sleep_group_thread_carry_bias") == 0.1
+    assert payload.get("inner_os_sleep_expressive_style_focus") == "warm_companion"
+    assert payload.get("inner_os_sleep_expressive_style_carry_bias") == 0.1
+    assert payload.get("inner_os_sleep_expressive_style_history_focus") == "warm_companion"
+    assert payload.get("inner_os_sleep_expressive_style_history_bias") == 0.08
+    assert payload.get("inner_os_sleep_banter_style_focus") == "gentle_tease"
+    assert payload.get("inner_os_sleep_lexical_variation_carry_bias") == 0.11
+    assert payload.get("inner_os_sleep_insight_class_focus") == "reframed_relation"
+    assert payload.get("inner_os_sleep_insight_reframing_bias") == 0.31
+    assert payload.get("inner_os_sleep_association_reweighting_bias") == 0.38
+    assert payload.get("inner_os_sleep_association_reweighting_focus") == "reframed_links"
+    assert payload.get("inner_os_sleep_association_reweighting_reason") == "reframed_relation"
+    assert payload.get("inner_os_sleep_insight_terrain_shape_bias") == 0.19
+    assert payload.get("inner_os_sleep_insight_terrain_shape_reason") == "reframed_relation"
+    assert payload.get("inner_os_sleep_insight_terrain_shape_target") == "soft_relation"
+    assert payload.get("inner_os_sleep_insight_anchor_center") == [0.14, -0.02, 0.11]
+    assert payload.get("inner_os_sleep_insight_anchor_dispersion") == 0.24
+    assert payload.get("inner_os_sleep_temperament_focus") == "forward"
+    assert payload.get("inner_os_sleep_temperament_forward_bias") == 0.11
+    assert payload.get("inner_os_sleep_temperament_guard_bias") == 0.03
+    assert payload.get("inner_os_sleep_temperament_bond_bias") == 0.05
+    assert payload.get("inner_os_sleep_temperament_recovery_bias") == 0.02
     assert "vision_adjustment" in payload["policy_feedback"]
     normalisers = payload["policy_feedback"]["vision_adjustment"].get("normalisers", {})
     assert "events" in normalisers

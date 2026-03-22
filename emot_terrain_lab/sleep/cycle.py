@@ -10,17 +10,21 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from .inner_os_bridge import write_inner_os_sleep_snapshot_for_system
+
 
 def nightly_consolidate(
     *,
     replay_log_path: str = "logs/replay_firings.jsonl",
     mem: Optional[object] = None,
     self_model: Optional[object] = None,
+    legacy_system: Optional[object] = None,
     value_weights: Optional[Dict[str, float]] = None,
     half_life_tau_hours: float = 6.0,
     ewc_lambda: float = 0.0,
     lora_lr: float = 0.0,
     out_path: str = "logs/nightly_summary.json",
+    inner_os_sleep_out_path: Optional[str] = None,
 ) -> Dict[str, object]:
     """
     Aggregate replay firings and snapshot narrative coherence for inspection.
@@ -85,6 +89,20 @@ def nightly_consolidate(
         "decay_applied": decay_applied,
     }
 
+    if legacy_system is not None:
+        inner_os_path = inner_os_sleep_out_path or _derive_inner_os_sleep_path(out_path)
+        sleep_snapshot = write_inner_os_sleep_snapshot_for_system(
+            legacy_system,
+            out_path=inner_os_path,
+            nightly_summary=summary,
+        )
+        summary["inner_os_sleep_snapshot_path"] = inner_os_path
+        summary["inner_os_sleep_mode"] = (
+            (sleep_snapshot.get("snapshot") or {}).get("mode")
+            if isinstance(sleep_snapshot, dict)
+            else None
+        )
+
     out_file = Path(out_path)
     out_file.parent.mkdir(parents=True, exist_ok=True)
     with out_file.open("w", encoding="utf-8") as fh:
@@ -93,3 +111,8 @@ def nightly_consolidate(
 
 
 __all__ = ["nightly_consolidate"]
+
+
+def _derive_inner_os_sleep_path(out_path: str) -> str:
+    base = Path(out_path)
+    return str(base.with_name(f"{base.stem}_inner_os_sleep{base.suffix or '.json'}"))

@@ -1,0 +1,24 @@
+default:
+  warmth_bias: 0.0
+  directness_bias: 0.0
+  joke_ratio_bias: 0.0
+  public_restraint: 0.0
+  hierarchy_restraint: 0.0
+  group_harmony: 0.0
+  compaction_bias: 0.0
+ja-JP:
+  warmth_bias: 0.05
+  directness_bias: -0.08
+  joke_ratio_bias: -0.10
+  public_restraint: 0.16
+  hierarchy_restraint: 0.18
+  group_harmony: 0.14
+  compaction_bias: 0.08
+en-US:
+  warmth_bias: 0.02
+  directness_bias: 0.08
+  joke_ratio_bias: 0.08
+  public_restraint: 0.05
+  hierarchy_restraint: 0.08
+  group_harmony: 0.08
+  compaction_bias: -0.04

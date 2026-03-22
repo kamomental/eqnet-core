@@ -18,6 +18,42 @@ class ForgettingSnapshot:
         }
 
 
+@dataclass(frozen=True)
+class _Advice:
+    lstm: dict[str, Any]
+    ssm: dict[str, Any]
+    intero: dict[str, Any]
+    replay: dict[str, Any]
+    persona: dict[str, Any]
+
+
+class _HeuristicForgettingController:
+    def advise(
+        self,
+        *,
+        tau_rate: float,
+        inflammation: float,
+        uncertainty: float,
+        novelty: float,
+        cfl: float,
+    ) -> _Advice:
+        del tau_rate, cfl
+        forget_bias_delta = _clamp01(inflammation * 0.38 + uncertainty * 0.34 + novelty * 0.18)
+        replay_horizon = 3
+        if uncertainty >= 0.42 or inflammation >= 0.52:
+            replay_horizon = 2
+        if uncertainty >= 0.72 or inflammation >= 0.78:
+            replay_horizon = 1
+        halflife_tau = max(8.0, 24.0 - inflammation * 8.0 - uncertainty * 5.0 - novelty * 3.0)
+        return _Advice(
+            lstm={"forget_bias_delta": round(forget_bias_delta, 4)},
+            ssm={},
+            intero={},
+            replay={"horizon": replay_horizon},
+            persona={"halflife_tau": round(halflife_tau, 4)},
+        )
+
+
 class ForgettingCore:
     def __init__(self, controller: Optional[Any] = None) -> None:
         self._controller = controller
@@ -55,8 +91,7 @@ class ForgettingCore:
 
     @staticmethod
     def _build_default_controller() -> Any:
-        from emot_terrain_lab.hub.forgetting_controller import ForgettingController
-        return ForgettingController({})
+        return _HeuristicForgettingController()
 
 
 def _clamp01(value: float) -> float:

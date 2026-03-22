@@ -11,6 +11,16 @@ def test_normalize_memory_record_preserves_memory_classes() -> None:
     transferred = normalize_memory_record({"kind": "transferred_learning", "summary": "pause before commitment"})
     identity = normalize_memory_record({"kind": "identity_trace", "summary": "slow trace", "continuity_score": 0.62})
     relation = normalize_memory_record({"kind": "relationship_trace", "summary": "slow relation", "attachment": 0.68, "profile_scope": "community_role_place", "access_count": 2, "primed_weight": 0.31})
+    context_shift = normalize_memory_record({"kind": "context_shift_trace", "summary": "slow context shift", "transition_intensity": 0.52})
+    community_profile = normalize_memory_record({
+        "kind": "community_profile_trace",
+        "summary": "slow communal pattern",
+        "culture_resonance": 0.71,
+        "community_resonance": 0.75,
+        "ritual_memory": 0.62,
+        "institutional_memory": 0.58,
+        "community_profile_pressure": 0.68,
+    })
 
     assert observed["kind"] == "observed_real"
     assert observed["culture_id"] == "coastal"
@@ -22,6 +32,10 @@ def test_normalize_memory_record_preserves_memory_classes() -> None:
     assert identity["continuity_score"] == 0.62
     assert relation["provenance"] == "inner_relation"
     assert relation["attachment"] == 0.68
+    assert context_shift["provenance"] == "inner_context"
+    assert context_shift["transition_intensity"] == 0.52
+    assert community_profile["provenance"] == "inner_community"
+    assert community_profile["community_profile_pressure"] == 0.68
     assert relation["access_count"] == 2
     assert relation["primed_weight"] == 0.31
 
@@ -71,18 +85,28 @@ def test_memory_core_load_latest_profile_record(tmp_path: Path) -> None:
     core = MemoryCore(path=tmp_path / "inner_os_memory.jsonl")
     core.append_records([
         {"kind": "relationship_trace", "summary": "relation one", "culture_id": "coastal", "community_id": "harbor_collective", "social_role": "companion", "memory_anchor": "harbor slope", "attachment": 0.58},
-        {"kind": "relationship_trace", "summary": "relation two", "culture_id": "coastal", "community_id": "harbor_collective", "social_role": "companion", "memory_anchor": "harbor slope", "attachment": 0.69},
+        {"kind": "relationship_trace", "summary": "relation two", "culture_id": "coastal", "community_id": "harbor_collective", "social_role": "companion", "memory_anchor": "harbor slope", "attachment": 0.69, "related_person_id": "user"},
     ])
     latest = core.load_latest_profile_record(kind="relationship_trace", culture_id="coastal", community_id="harbor_collective", social_role="companion", memory_anchor="harbor slope")
     assert latest["summary"] == "relation two"
     assert latest["attachment"] == 0.69
+    person_latest = core.load_latest_profile_record(
+        kind="relationship_trace",
+        culture_id="coastal",
+        community_id="harbor_collective",
+        social_role="companion",
+        memory_anchor="harbor slope",
+        related_person_id="user",
+    )
+    assert person_latest["summary"] == "relation two"
+    assert person_latest["related_person_id"] == "user"
 
 
 def test_memory_core_build_recall_payload_biases_toward_relational_match(tmp_path: Path) -> None:
     core = MemoryCore(path=tmp_path / "inner_os_memory.jsonl")
     core.append_records([
         {"kind": "verified", "summary": "generic harbor memory", "text": "generic harbor memory", "memory_anchor": "harbor", "culture_id": "default", "community_id": "other", "social_role": "visitor"},
-        {"kind": "relationship_trace", "summary": "harbor slope relation", "text": "harbor slope relation", "memory_anchor": "harbor slope", "culture_id": "coastal", "community_id": "harbor_collective", "social_role": "companion"},
+        {"kind": "relationship_trace", "summary": "harbor slope relation", "text": "harbor slope relation", "memory_anchor": "harbor slope", "culture_id": "coastal", "community_id": "harbor_collective", "social_role": "companion", "related_person_id": "user"},
     ])
     payload = core.build_recall_payload(
         "harbor slope",
@@ -90,6 +114,7 @@ def test_memory_core_build_recall_payload_biases_toward_relational_match(tmp_pat
             "culture_id": "coastal",
             "community_id": "harbor_collective",
             "social_role": "companion",
+            "related_person_id": "user",
             "memory_anchor": "harbor slope",
             "caution_bias": 0.42,
             "affiliation_bias": 0.68,
@@ -98,6 +123,7 @@ def test_memory_core_build_recall_payload_biases_toward_relational_match(tmp_pat
     )
     assert payload["record_kind"] == "relationship_trace"
     assert payload["memory_anchor"] == "harbor slope"
+    assert payload["related_person_id"] == "user"
 
 
 def test_memory_core_build_recall_payload_biases_by_environment_pressure(tmp_path: Path) -> None:

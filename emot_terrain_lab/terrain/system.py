@@ -580,6 +580,12 @@ class EmotionalMemorySystem:
 
     def daily_consolidation(self):
         cand = self.l1.distillation_candidates()
+        wm_cand = self._working_memory_promotion_candidates(datetime.utcnow())
+        if wm_cand:
+            merged = {str(item.get("id") or ""): item for item in cand}
+            for item in wm_cand:
+                merged.setdefault(str(item.get("id") or ""), item)
+            cand = list(merged.values())
         if cand:
             self.l2.distill_from_raw(cand)
         if self.ethics.preferences.allow_forgetting:
@@ -590,7 +596,10 @@ class EmotionalMemorySystem:
         self.save_state()
 
     def weekly_abstraction(self):
-        self.l3.abstract_from_episodes(self.l2.episodes[-8:])
+        self.l3.abstract_from_episodes(
+            self._weekly_abstraction_candidates(),
+            replay_carryover=self._latest_nightly_working_memory_replay_summary(),
+        )
         self.save_state()
 
     def _rest_active(self, timestamp: datetime) -> bool:
@@ -671,6 +680,10 @@ class EmotionalMemorySystem:
         catalysts = self._catalyst_highlights_for_day(timestamp.date())
         quotes = self._gentle_quotes_for_day(timestamp.date())
         rest_snapshot = self.rest_state()
+        working_memory_summary = self._working_memory_summary_for_day(timestamp.date())
+        working_memory_signature_summary = self._working_memory_signature_summary()
+        working_memory_replay_summary = self._latest_nightly_working_memory_replay_summary()
+        long_term_theme_summary = self._long_term_theme_summary()
         use_llm = os.getenv("USE_LLM", "0") != "0"
         self.diary.record_daily_entry(
             timestamp.date(),
@@ -683,7 +696,175 @@ class EmotionalMemorySystem:
             self._fatigue_active,
             use_llm,
             culture_stats=culture_stats,
+            working_memory_summary=working_memory_summary,
+            working_memory_signature_summary=working_memory_signature_summary,
+            working_memory_replay_summary=working_memory_replay_summary,
+            long_term_theme_summary=long_term_theme_summary,
         )
+
+    def _working_memory_summary_for_day(self, day: date) -> Optional[Dict[str, Any]]:
+        try:
+            from emot_terrain_lab.memory.inner_os_working_memory_bridge import (
+                build_inner_os_working_memory_snapshot,
+                derive_working_memory_seed_from_signature,
+                merge_working_memory_snapshot_with_seed,
+            )
+        except Exception:
+            return None
+        memory_path = os.getenv("INNER_OS_MEMORY_PATH") or None
+        try:
+            payload = build_inner_os_working_memory_snapshot(
+                memory_path=memory_path,
+                day=day,
+                now=datetime.combine(day, datetime.max.time()),
+            )
+        except Exception:
+            return None
+        snapshot = payload.get("snapshot") if isinstance(payload, dict) else None
+        if not isinstance(snapshot, dict):
+            return None
+        semantic_seed = derive_working_memory_seed_from_signature(
+            self._working_memory_signature_summary(),
+            self._latest_nightly_working_memory_replay_summary(),
+        )
+        return merge_working_memory_snapshot_with_seed(snapshot, semantic_seed)
+
+    def _working_memory_promotion_candidates(self, now: datetime) -> List[dict]:
+        try:
+            from emot_terrain_lab.memory.inner_os_working_memory_bridge import (
+                derive_working_memory_seed_from_signature,
+                select_working_memory_promotion_candidates,
+            )
+        except Exception:
+            return []
+        memory_path = os.getenv("INNER_OS_MEMORY_PATH") or None
+        used_ids = {
+            str(source_id)
+            for episode in getattr(self.l2, "episodes", [])
+            for source_id in (episode.get("source_ids") or [])
+        }
+        try:
+            semantic_seed = derive_working_memory_seed_from_signature(
+                self._working_memory_signature_summary(),
+                self._latest_nightly_working_memory_replay_summary(),
+            )
+            candidates = select_working_memory_promotion_candidates(
+                experiences=self.l1.experiences,
+                memory_path=memory_path,
+                day=now.date(),
+                now=now,
+                semantic_seed=semantic_seed,
+            )
+        except Exception:
+            return []
+        return [item for item in candidates if str(item.get("id") or "") not in used_ids]
+
+    def _weekly_abstraction_candidates(self) -> List[dict]:
+        try:
+            from emot_terrain_lab.memory.inner_os_working_memory_bridge import prioritize_weekly_abstraction_episodes
+        except Exception:
+            return list(self.l2.episodes[-8:])
+        summary = self._latest_nightly_working_memory_replay_summary()
+        try:
+            return prioritize_weekly_abstraction_episodes(
+                episodes=self.l2.episodes,
+                replay_summary=summary,
+                limit=8,
+                lookback=16,
+            )
+        except Exception:
+            return list(self.l2.episodes[-8:])
+
+    def _working_memory_signature_summary(self) -> Optional[Dict[str, Any]]:
+        patterns = getattr(self.l3, "patterns", [])
+        if not patterns:
+            return None
+        best_signature: Optional[Dict[str, Any]] = None
+        best_weight = -1.0
+        replay_summary = self._latest_nightly_working_memory_replay_summary()
+        for pattern in patterns:
+            signature = pattern.get("working_memory_signature")
+            if not isinstance(signature, dict) or not signature:
+                continue
+            recurrence_weight = float(pattern.get("recurrence_weight") or pattern.get("occurrences") or 0.0)
+            if recurrence_weight >= best_weight:
+                candidate = dict(signature)
+                candidate["recurrence_weight"] = round(recurrence_weight, 4)
+                if isinstance(pattern.get("long_term_theme"), dict):
+                    candidate["long_term_theme"] = dict(pattern.get("long_term_theme") or {})
+                semantic_seed = derive_working_memory_seed_from_signature(candidate, replay_summary)
+                if semantic_seed:
+                    candidate["semantic_seed_strength"] = float(semantic_seed.get("semantic_seed_strength") or 0.0)
+                best_signature = candidate
+                best_weight = recurrence_weight
+        if best_signature:
+            return best_signature
+        return None
+
+    def _long_term_theme_summary(self) -> Optional[Dict[str, Any]]:
+        signature = self._working_memory_signature_summary()
+        if not isinstance(signature, dict):
+            return None
+        theme = signature.get("long_term_theme")
+        if not isinstance(theme, dict):
+            return None
+        focus = str(theme.get("focus") or signature.get("dominant_focus") or "").strip()
+        anchor = str(theme.get("anchor") or signature.get("dominant_anchor") or "").strip()
+        kind = str(theme.get("kind") or "").strip()
+        summary = str(theme.get("summary") or "").strip()
+        strength = float(theme.get("strength") or 0.0)
+        seed_strength = float(signature.get("semantic_seed_strength") or 0.0)
+        recurrence_weight = float(signature.get("recurrence_weight") or 0.0)
+        if not focus and not anchor and not summary:
+            return None
+        return {
+            "focus": focus,
+            "anchor": anchor,
+            "kind": kind,
+            "summary": summary,
+            "strength": round(strength, 4),
+            "seed_strength": round(seed_strength, 4),
+            "recurrence_weight": round(recurrence_weight, 4),
+        }
+
+    def _latest_nightly_working_memory_replay_summary(self) -> Optional[Dict[str, Any]]:
+        nightly_summary: Optional[Dict[str, Any]] = None
+        for candidate in (Path("reports/nightly.json"), Path("reports/nightly") / "nightly.json"):
+            if not candidate.exists():
+                continue
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            summary = payload.get("inner_os_working_memory_replay_bias")
+            if isinstance(summary, dict) and summary:
+                nightly_summary = dict(summary)
+                break
+        try:
+            from emot_terrain_lab.memory.inner_os_working_memory_bridge import (
+                derive_reconstructed_replay_carryover,
+                merge_conscious_working_memory_seed,
+                merge_replay_carryover_summaries,
+            )
+        except Exception:
+            return nightly_summary
+        reconstructed_summary = derive_reconstructed_replay_carryover()
+        merged = merge_replay_carryover_summaries(nightly_summary, reconstructed_summary)
+        conscious_summary = self._latest_conscious_working_memory_seed()
+        final_summary = merge_conscious_working_memory_seed(merged or nightly_summary, conscious_summary)
+        return final_summary or merged or nightly_summary
+
+    def _latest_conscious_working_memory_seed(self) -> Optional[Dict[str, Any]]:
+        memory_path = os.getenv("CONSCIOUS_MEMORY_PATH", "logs/conscious_episodes.jsonl")
+        try:
+            from eqnet_core.memory.mosaic import MemoryMosaic
+        except Exception:
+            return None
+        try:
+            summary = MemoryMosaic(memory_path).latest_working_memory_seed(12)
+        except Exception:
+            return None
+        return dict(summary) if isinstance(summary, dict) and summary else None
 
 def _aggregate_metrics_for_day(self, day: date) -> Dict[str, float]:
     entries = []

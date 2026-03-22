@@ -42,15 +42,19 @@ class PersonalityIndexCore:
         recent_strain = _float_from(current_state, 'recent_strain', 0.32)
         culture_resonance = _float_from(current_state, 'culture_resonance', 0.0)
         community_resonance = _float_from(current_state, 'community_resonance', 0.0)
+        roughness_level = _float_from(current_state, 'roughness_level', _float_from(current_state, 'terrain_transition_roughness', 0.0))
+        roughness_dwell = _float_from(current_state, 'roughness_dwell', 0.0)
+        defensive_level = _float_from(current_state, 'defensive_level', _float_from(current_state, 'defensive_salience', 0.0))
+        defensive_dwell = _float_from(current_state, 'defensive_dwell', 0.0)
         hazard = _float_from(environment_pressure, 'hazard_pressure', 0.0)
         scarcity = _float_from(environment_pressure, 'resource_pressure', 0.0)
         institutional = _float_from(environment_pressure, 'institutional_pressure', 0.0)
         ritual = _float_from(environment_pressure, 'ritual_pressure', 0.0)
 
-        caution_bias = _clamp(0.18 + stress * 0.22 + temporal_pressure * 0.12 + hazard * 0.18 + scarcity * 0.1 + rupture * 0.15 + norm_pressure * 0.12 + recent_strain * 0.1 - continuity_score * 0.05 - community_resonance * 0.04)
-        affiliation_bias = _clamp(0.18 + attachment * 0.22 + belonging * 0.2 + trust_bias * 0.18 + familiarity * 0.1 + trust_memory * 0.08 + social_grounding * 0.08 + culture_resonance * 0.08 + community_resonance * 0.12)
-        exploration_bias = _clamp(0.22 + (1.0 - caution_bias) * 0.22 + trust_bias * 0.14 + familiarity * 0.06 + role_alignment * 0.06 + continuity_score * 0.06 + community_resonance * 0.04 + (1.0 - institutional) * 0.1 - hazard * 0.12 - recent_strain * 0.05)
-        reflective_bias = _clamp(0.18 + temporal_pressure * 0.18 + norm_pressure * 0.16 + role_commitment * 0.14 + ritual * 0.1 + institutional * 0.08 + continuity_score * 0.05 + social_grounding * 0.04 + culture_resonance * 0.06)
+        caution_bias = _clamp(0.18 + stress * 0.22 + temporal_pressure * 0.12 + hazard * 0.18 + scarcity * 0.1 + rupture * 0.15 + norm_pressure * 0.12 + recent_strain * 0.1 + roughness_level * 0.12 + roughness_dwell * 0.08 + defensive_level * 0.14 + defensive_dwell * 0.09 - continuity_score * 0.05 - community_resonance * 0.04)
+        affiliation_bias = _clamp(0.18 + attachment * 0.22 + belonging * 0.2 + trust_bias * 0.18 + familiarity * 0.1 + trust_memory * 0.08 + social_grounding * 0.08 + culture_resonance * 0.08 + community_resonance * 0.12 - roughness_dwell * 0.05 - defensive_level * 0.06 - defensive_dwell * 0.04)
+        exploration_bias = _clamp(0.22 + (1.0 - caution_bias) * 0.22 + trust_bias * 0.14 + familiarity * 0.06 + role_alignment * 0.06 + continuity_score * 0.06 + community_resonance * 0.04 + (1.0 - institutional) * 0.1 - hazard * 0.12 - recent_strain * 0.05 - roughness_level * 0.08 - defensive_dwell * 0.08)
+        reflective_bias = _clamp(0.18 + temporal_pressure * 0.18 + norm_pressure * 0.16 + role_commitment * 0.14 + ritual * 0.1 + institutional * 0.08 + continuity_score * 0.05 + social_grounding * 0.04 + culture_resonance * 0.06 + roughness_dwell * 0.05 + defensive_dwell * 0.04)
 
         return PersonalityIndexState(
             caution_bias=caution_bias,

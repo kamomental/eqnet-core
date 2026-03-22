@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Iterable, Optional
 
 
@@ -149,6 +151,38 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     .network-card {{
       grid-template-columns: 1fr;
       position: relative;
+    }}
+    .inner-os-card {{
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }}
+    .inner-os-block {{
+      background: #13161b;
+      border: 1px solid #262c36;
+      border-radius: 10px;
+      padding: 0.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }}
+    .inner-os-block strong {{
+      font-size: 0.92rem;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: #d7e6ff;
+    }}
+    .inner-os-kv {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.3rem;
+      font-size: 0.9rem;
+    }}
+    .inner-os-kv div {{
+      display: flex;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }}
+    .inner-os-kv span:first-child {{
+      opacity: 0.7;
     }}
     #budCanvas {{
       width: 100%;
@@ -300,12 +334,47 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <canvas id="rSpark" width="360" height="80"></canvas>
   </section>
 
+  <section class="card inner-os-card">
+    <h2>Inner OS Continuity</h2>
+    <div class="inner-os-block">
+      <strong>Same Turn</strong>
+      <div class="inner-os-kv">
+        <div><span>mode</span><span id="iosMode">--</span></div>
+        <div><span>commitment</span><span id="iosCommitment">--</span></div>
+        <div><span>body</span><span id="iosBody">--</span></div>
+        <div><span>relation</span><span id="iosRelation">--</span></div>
+        <div><span>topology</span><span id="iosTopology">--</span></div>
+      </div>
+    </div>
+    <div class="inner-os-block">
+      <strong>Overnight</strong>
+      <div class="inner-os-kv">
+        <div><span>carry</span><span id="iosCarry">--</span></div>
+        <div><span>homeostasis</span><span id="iosHomeostasis">--</span></div>
+        <div><span>relation focus</span><span id="iosRelationFocus">--</span></div>
+        <div><span>temperament</span><span id="iosTemperament">--</span></div>
+        <div><span>association</span><span id="iosAssociation">--</span></div>
+      </div>
+    </div>
+    <div class="inner-os-block">
+      <strong>Transfer</strong>
+      <div class="inner-os-kv">
+        <div><span>model</span><span id="iosModel">--</span></div>
+        <div><span>migration</span><span id="iosMigration">--</span></div>
+        <div><span>semantic seed</span><span id="iosSeed">--</span></div>
+        <div><span>commitment carry</span><span id="iosCommitmentCarry">--</span></div>
+        <div><span>target</span><span id="iosTargetModel">--</span></div>
+      </div>
+    </div>
+  </section>
+
   <footer>
     Hotkeys: F9 繧ｻ繝・す繝ｧ繝ｳ / F10 髻ｳ莉句・荳譎ょ●豁｢ / F11 繝ｭ繧ｰ繝槭・繧ｫ繝ｼ 繝ｻ Ctrl+R 縺ｧ config reload
   </footer>
 
   <script>
     const BUS_WS = "ws://{bus_host}:{bus_port}";
+    const INNER_OS_API = "/api/inner-os";
     const sigmaHistory = [];
     const psiHistory = [];
     const MAX_HISTORY = 180;
@@ -337,6 +406,13 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     const lightRho = document.getElementById("lightRho");
     let budLightTimer = null;
     let lastRho = 0.0;
+
+    function setInnerOSText(id, value) {{
+      const el = document.getElementById(id);
+      if (!el) return;
+      const text = String(value || "").trim();
+      el.textContent = text || "--";
+    }}
 
     function drawSparkline(canvas, series, color) {{
       const ctx = canvas.getContext("2d");
@@ -629,6 +705,38 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       }}
     }}
 
+    async function refreshInnerOSSnapshot() {{
+      try {{
+        const response = await fetch(INNER_OS_API, {{ cache: "no-store" }});
+        const payload = await response.json();
+        const sameTurn = payload.same_turn || {{}};
+        const overnight = payload.overnight || {{}};
+        const transfer = payload.transfer || {{}};
+        const model = payload.model || {{}};
+        setInnerOSText("iosMode", sameTurn.protection_mode);
+        setInnerOSText("iosCommitment", sameTurn.commitment_target);
+        setInnerOSText("iosBody", sameTurn.body_homeostasis_state || sameTurn.homeostasis_budget_state);
+        setInnerOSText("iosRelation", sameTurn.relational_continuity_state || sameTurn.relation_competition_state);
+        setInnerOSText("iosTopology", sameTurn.social_topology_state);
+        setInnerOSText("iosCarry", payload.dominant_carry_channel);
+        setInnerOSText("iosHomeostasis", overnight.homeostasis_budget_focus || overnight.body_homeostasis_focus);
+        setInnerOSText("iosRelationFocus", overnight.relational_continuity_focus);
+        setInnerOSText("iosTemperament", overnight.temperament_focus);
+        setInnerOSText("iosAssociation", overnight.association_focus);
+        const modelLabel = [model.name, model.source].filter(Boolean).join(" / ");
+        setInnerOSText("iosModel", modelLabel);
+        setInnerOSText(
+          "iosMigration",
+          transfer.migration_active ? (transfer.from_legacy ? "legacy->v1" : "active") : "none",
+        );
+        setInnerOSText("iosSeed", transfer.semantic_seed_visible ? "visible" : "none");
+        setInnerOSText("iosCommitmentCarry", transfer.commitment_carry_visible ? "visible" : "none");
+        setInnerOSText("iosTargetModel", transfer.target_model_requested);
+      }} catch (err) {{
+        console.error("Failed to load inner os snapshot", err);
+      }}
+    }}
+
     function connectStream(path, handler) {{
       let socket;
       const connect = () => {{
@@ -671,6 +779,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     setLight(lightR, null);
     setLight(lightRho, null);
     drawNetwork();
+    refreshInnerOSSnapshot();
+    setInterval(refreshInnerOSSnapshot, 2500);
   </script>
 </body>
 </html>
@@ -685,11 +795,21 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         "--bus-host", type=str, default="127.0.0.1", help="EQNet bus host"
     )
     parser.add_argument("--bus-port", type=int, default=8765, help="EQNet bus port")
+    parser.add_argument(
+        "--snapshot-path",
+        type=str,
+        default="logs/inner_os/dashboard_snapshot.json",
+        help="Inner OS dashboard snapshot JSON path",
+    )
     parser.add_argument("--log-level", type=str, default="INFO", help="Logging level")
     return parser.parse_args(argv)
 
 
-def make_handler(bus_host: str, bus_port: int) -> type[BaseHTTPRequestHandler]:
+def make_handler(
+    bus_host: str,
+    bus_port: int,
+    snapshot_path: Optional[Path] = None,
+) -> type[BaseHTTPRequestHandler]:
     html = DASHBOARD_HTML.format(bus_host=bus_host, bus_port=bus_port).encode("utf-8")
 
     class DashboardHandler(BaseHTTPRequestHandler):
@@ -700,6 +820,24 @@ def make_handler(bus_host: str, bus_port: int) -> type[BaseHTTPRequestHandler]:
                 self.send_header("Content-Length", str(len(html)))
                 self.end_headers()
                 self.wfile.write(html)
+            elif self.path == "/api/inner-os":
+                payload = {"available": False}
+                if snapshot_path is not None and snapshot_path.exists():
+                    try:
+                        payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+                        payload["available"] = True
+                    except Exception:
+                        logging.getLogger("eqnet.dashboard.http").exception(
+                            "Failed to read inner os snapshot from %s",
+                            snapshot_path,
+                        )
+                        payload = {"available": False, "error": "snapshot_read_failed"}
+                raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
             else:
                 self.send_error(404, "Not Found")
 
@@ -717,7 +855,8 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         level=getattr(logging, args.log_level.upper(), logging.INFO),
         format="[%(levelname)s] %(asctime)s %(name)s: %(message)s",
     )
-    handler_cls = make_handler(args.bus_host, args.bus_port)
+    snapshot_path = Path(args.snapshot_path) if args.snapshot_path else None
+    handler_cls = make_handler(args.bus_host, args.bus_port, snapshot_path)
     server = ThreadingHTTPServer((args.listen_host, args.listen_port), handler_cls)
     logging.getLogger("eqnet.dashboard").info(
         "Dashboard available at http://%s:%s (bus ws://%s:%s)",

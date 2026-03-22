@@ -35,6 +35,9 @@ except Exception:  # fallback to headless/no-op
     plt = None
 
 from emot_terrain_lab.memory.go_sc import extract_features, weighted_score
+from emot_terrain_lab.memory.inner_os_working_memory_bridge import (
+    derive_working_memory_replay_bias,
+)
 from emot_terrain_lab.utils.fastpath_config import (
     FASTPATH_OVERRIDE_PATH,
     fail_safe_settings,
@@ -51,6 +54,8 @@ from telemetry import plot_affective_map
 from calendar import monthrange
 
 MEMORY_REF_LOG_PATH = Path("logs/memory_ref.jsonl")
+INNER_OS_SLEEP_SCHEMA = "inner_os_sleep_consolidation_snapshot/v1"
+INNER_OS_WORKING_MEMORY_SCHEMA = "inner_os_working_memory_snapshot/v1"
 
 from emot_terrain_lab.ops.care_canary import select_canary_ids
 from emot_terrain_lab.ops.monthly_highlights import generate_value_influence_highlights
@@ -58,6 +63,12 @@ from emot_terrain_lab.ops.pain_loop import VALUE_INFLUENCE_LOG, evaluate_and_for
 from eqnet.logs.moment_log import iter_moment_entries_for_day
 from eqnet.logs.moment_log import iter_moment_entries
 from eqnet.memory.store import MemoryStore
+from inner_os.group_thread_registry import (
+    build_group_thread_key,
+    summarize_group_thread_registry_snapshot,
+)
+from inner_os.memory_core import MemoryCore
+from inner_os.daily_carry_summary import DailyCarrySummaryBuilder
 
 def _dump_events_if_requested(events):
     out_path = os.getenv("EQNET_DUMP_REPLAY_EVENTS_JSONL", "").strip()
@@ -91,6 +102,53 @@ def _softmax_probs(weights: List[float]) -> List[float]:
     if total <= 0:
         return [1.0 / len(weights)] * len(weights)
     return [val / total for val in exps]
+
+
+def _working_memory_event_text(event: Mapping[str, Any]) -> str:
+    parts: List[str] = []
+    for key in ("text", "dialogue", "summary", "label", "tag"):
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            parts.append(value.strip())
+    meta = event.get("meta")
+    if isinstance(meta, Mapping):
+        for key in ("text", "dialogue", "summary", "label", "tag", "anchor", "memory_anchor"):
+            value = meta.get(key)
+            if isinstance(value, str) and value.strip():
+                parts.append(value.strip())
+    return " ".join(parts)
+
+
+def _working_memory_alignment_score(
+    event: Mapping[str, Any],
+    bias: Optional[Mapping[str, Any]],
+) -> float:
+    if not isinstance(bias, Mapping):
+        return 0.0
+    terms = bias.get("terms")
+    if not isinstance(terms, list) or not terms:
+        return 0.0
+    text = _working_memory_event_text(event).lower()
+    if not text:
+        return 0.0
+    hits = sum(1 for term in terms if isinstance(term, str) and term and term in text)
+    if hits <= 0:
+        return 0.0
+    return float(hits / max(1, len(terms)))
+
+
+def _working_memory_event_identifier(event: Mapping[str, Any]) -> str:
+    for key in ("id", "trace_id", "episode_id"):
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    meta = event.get("meta")
+    if isinstance(meta, Mapping):
+        for key in ("trace_id", "episode_id", "memory_anchor", "anchor", "id"):
+            value = meta.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return ""
 
 def _evaluate_monument_floor_test(
     events: List[Dict[str, Any]],
@@ -718,6 +776,7 @@ def run(hub, cfg: Dict[str, Any] | None = None) -> Dict[str, Any]:
     """Perform nightly housekeeping using a live hub instance."""
     cfg = dict(cfg or {})
     report: Dict[str, Any] = {"ts": time.time()}
+    working_memory_bias_payload: Optional[Dict[str, Any]] = None
 
     go_sc_cfg = cfg.get("go_sc", {}) or {}
     nightly_cfg = cfg.get("nightly", {}) or {}
@@ -730,6 +789,60 @@ def run(hub, cfg: Dict[str, Any] | None = None) -> Dict[str, Any]:
         fastpath_cfg.update(override_fastpath)
 
     artifact_dir = Path(cfg.get("nightly_artifacts_dir", "reports/nightly_artifacts"))
+    cfg_dict = _load_runtime_cfg_dict(Path("config/runtime.yaml"))
+    working_memory_snapshot_path, working_memory_snapshot_payload, working_memory_snapshot_warning = _resolve_inner_os_working_memory_snapshot(cfg_dict)
+    if working_memory_snapshot_warning:
+        report.setdefault("warnings", []).append(working_memory_snapshot_warning)
+    if working_memory_snapshot_path and isinstance(working_memory_snapshot_payload, dict):
+        report["inner_os_working_memory_snapshot_path"] = working_memory_snapshot_path
+        snapshot = working_memory_snapshot_payload.get("snapshot") or {}
+        if isinstance(snapshot, dict):
+            if snapshot.get("current_focus"):
+                report["inner_os_working_memory_focus"] = snapshot["current_focus"]
+            if snapshot.get("promotion_readiness") is not None:
+                report["inner_os_working_memory_readiness"] = snapshot["promotion_readiness"]
+            theme_focus = str(snapshot.get("long_term_theme_focus") or "").strip()
+            theme_anchor = str(snapshot.get("long_term_theme_anchor") or "").strip()
+            theme_summary = str(snapshot.get("long_term_theme_summary") or "").strip()
+            if theme_focus or theme_anchor or theme_summary:
+                report["inner_os_long_term_theme_summary"] = {
+                    "focus": theme_focus,
+                    "anchor": theme_anchor,
+                    "kind": str(snapshot.get("long_term_theme_kind") or "").strip(),
+                    "summary": theme_summary,
+                    "strength": float(snapshot.get("long_term_theme_strength") or 0.0),
+                }
+        working_memory_bias_payload = derive_working_memory_replay_bias(working_memory_snapshot_payload)
+    if working_memory_bias_payload:
+        report["inner_os_working_memory_replay_bias"] = {
+            "focus": str(working_memory_bias_payload.get("current_focus") or ""),
+            "anchor": str(working_memory_bias_payload.get("focus_anchor") or ""),
+            "strength": float(working_memory_bias_payload.get("strength") or 0.0),
+        }
+    memory_class_summary = _summarize_inner_os_memory_class(cfg_dict)
+    if memory_class_summary:
+        report["inner_os_memory_class_summary"] = memory_class_summary
+    agenda_summary = _summarize_inner_os_agenda_trace(cfg_dict)
+    if agenda_summary:
+        report["inner_os_agenda_summary"] = agenda_summary
+    commitment_summary = _summarize_inner_os_commitment_trace(cfg_dict)
+    if commitment_summary:
+        report["inner_os_commitment_summary"] = commitment_summary
+    insight_summary = _summarize_inner_os_insight_trace(cfg_dict)
+    if insight_summary:
+        report["inner_os_insight_summary"] = insight_summary
+    partner_relation_registry_summary = _summarize_inner_os_partner_relation_registry(cfg_dict)
+    if partner_relation_registry_summary:
+        report["inner_os_partner_relation_registry_summary"] = partner_relation_registry_summary
+    group_thread_registry_summary = _summarize_inner_os_group_thread_registry(cfg_dict)
+    if group_thread_registry_summary:
+        report["inner_os_group_thread_registry_summary"] = group_thread_registry_summary
+    partner_relation_summary = _summarize_inner_os_partner_relation(
+        cfg_dict,
+        registry_summary=partner_relation_registry_summary,
+    )
+    if partner_relation_summary:
+        report["inner_os_partner_relation_summary"] = partner_relation_summary
 
     def _hub_tau_now() -> float:
         tk = getattr(hub, "timekeeper", None)
@@ -758,6 +871,7 @@ def run(hub, cfg: Dict[str, Any] | None = None) -> Dict[str, Any]:
                     baseline_ttl_tau,
                     nightly_cfg,
                     fastpath_cfg,
+                    working_memory_bias_payload,
                 )
                 report["go_sc"] = go_report
                 if go_report.get("fastpath"):
@@ -766,6 +880,9 @@ def run(hub, cfg: Dict[str, Any] | None = None) -> Dict[str, Any]:
                     report["inner_replay"] = go_report["inner_replay"]
                 if "nightly_metrics" in go_report:
                     report["nightly_metrics"] = go_report["nightly_metrics"]
+                    wm_bias_report = (go_report.get("nightly_metrics") or {}).get("working_memory_replay_bias")
+                    if isinstance(wm_bias_report, dict):
+                        report["inner_os_working_memory_replay_bias"] = wm_bias_report
             kept, stats = hub.memory_ttl.gc(events)
             if kept is not None:
                 events = kept
@@ -926,6 +1043,7 @@ def _apply_go_sc_gate(
     baseline_ttl_tau: float,
     nightly_cfg: Dict[str, Any],
     fastpath_cfg: Optional[Dict[str, Any]] = None,
+    working_memory_bias: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     total_events = len(events)
     if total_events == 0:
@@ -989,6 +1107,11 @@ def _apply_go_sc_gate(
     reverse_ratios: List[float] = []
     total_extension = 0.0
     total_compression = 0.0
+    wm_strength = _safe_float((working_memory_bias or {}).get("strength"), 0.0) or 0.0
+    wm_boost_cap = min(0.12, wm_strength * 0.12)
+    wm_matches = 0
+    wm_boosts: List[float] = []
+    wm_match_details: List[Tuple[float, float, str]] = []
 
     # Ensure go_score/percentile populated for legacy traces.
     scored: List[Tuple[float, int]] = []
@@ -1004,7 +1127,20 @@ def _apply_go_sc_gate(
             features = extract_features(event)
             score = weighted_score(weights_cfg, features) if weights_cfg else 0.0
             meta["go_score"] = score
-        scored.append((float(score), idx))
+        score = float(score)
+        wm_alignment = _working_memory_alignment_score(event, working_memory_bias)
+        wm_boost = wm_alignment * wm_boost_cap if wm_boost_cap > 0.0 else 0.0
+        if wm_boost > 0.0:
+            wm_matches += 1
+            wm_boosts.append(float(wm_boost))
+            wm_match_details.append((float(wm_boost), float(wm_alignment), _working_memory_event_identifier(event)))
+            meta["working_memory_replay_bias"] = {
+                "alignment": round(float(wm_alignment), 4),
+                "boost": round(float(wm_boost), 6),
+                "focus": str((working_memory_bias or {}).get("current_focus") or ""),
+                "anchor": str((working_memory_bias or {}).get("focus_anchor") or ""),
+            }
+        scored.append((score + wm_boost, idx))
 
     sorted_scores = sorted(score for score, _ in scored)
     denom = max(1, len(sorted_scores) - 1)
@@ -1112,6 +1248,25 @@ def _apply_go_sc_gate(
         },
         "rescue_rate": rescued_total / max(1, masked_total) if masked_total else 0.0,
     }
+    if wm_boosts:
+        wm_match_details.sort(key=lambda item: item[0], reverse=True)
+        nightly_metrics["working_memory_replay_bias"] = {
+            "focus": str((working_memory_bias or {}).get("current_focus") or ""),
+            "anchor": str((working_memory_bias or {}).get("focus_anchor") or ""),
+            "strength": round(float(wm_strength), 4),
+            "matched_events": int(wm_matches),
+            "boost_mean": round(float(sum(wm_boosts) / len(wm_boosts)), 6),
+            "boost_max": round(float(max(wm_boosts)), 6),
+            "top_matches": [
+                {
+                    "id": item[2],
+                    "alignment": round(item[1], 4),
+                    "boost": round(item[0], 6),
+                }
+                for item in wm_match_details[:3]
+                if item[2]
+            ],
+        }
 
     ttl_report = {
         "extension_total": total_extension,
@@ -2245,8 +2400,99 @@ def _generate_telemetry_section(
     vision_summary = _summarize_vision_metrics(telemetry_log)
     if vision_summary:
         report["vision_snapshot"] = vision_summary
-    cfg_dict = _load_runtime_cfg_dict(Path("config/runtime.yaml"))
     report["config_snapshot"] = cfg_dict
+    sleep_snapshot_path, sleep_snapshot_payload, sleep_snapshot_warning = _resolve_inner_os_sleep_snapshot(cfg_dict)
+    if sleep_snapshot_warning:
+        report.setdefault("warnings", []).append(sleep_snapshot_warning)
+    if sleep_snapshot_path and isinstance(sleep_snapshot_payload, dict):
+        report["inner_os_sleep_snapshot_path"] = sleep_snapshot_path
+        snapshot = sleep_snapshot_payload.get("snapshot") or {}
+        if isinstance(snapshot, dict):
+            if snapshot.get("mode"):
+                report["inner_os_sleep_mode"] = snapshot["mode"]
+            if snapshot.get("memory_class_focus"):
+                report["inner_os_sleep_memory_class_focus"] = str(snapshot["memory_class_focus"])
+            if snapshot.get("agenda_focus"):
+                report["inner_os_sleep_agenda_focus"] = str(snapshot["agenda_focus"])
+            if snapshot.get("agenda_bias") is not None:
+                report["inner_os_sleep_agenda_bias"] = float(snapshot["agenda_bias"] or 0.0)
+            if snapshot.get("agenda_reason"):
+                report["inner_os_sleep_agenda_reason"] = str(snapshot["agenda_reason"])
+            if snapshot.get("commitment_target_focus"):
+                report["inner_os_sleep_commitment_target_focus"] = str(snapshot["commitment_target_focus"])
+            if snapshot.get("commitment_state_focus"):
+                report["inner_os_sleep_commitment_state_focus"] = str(snapshot["commitment_state_focus"])
+            if snapshot.get("commitment_carry_bias") is not None:
+                report["inner_os_sleep_commitment_carry_bias"] = float(snapshot["commitment_carry_bias"] or 0.0)
+            if snapshot.get("commitment_followup_focus"):
+                report["inner_os_sleep_commitment_followup_focus"] = str(snapshot["commitment_followup_focus"])
+            if snapshot.get("commitment_mode_focus"):
+                report["inner_os_sleep_commitment_mode_focus"] = str(snapshot["commitment_mode_focus"])
+            if snapshot.get("commitment_carry_reason"):
+                report["inner_os_sleep_commitment_carry_reason"] = str(snapshot["commitment_carry_reason"])
+            if snapshot.get("terrain_reweighting_bias") is not None:
+                report["inner_os_sleep_terrain_reweighting_bias"] = float(snapshot["terrain_reweighting_bias"] or 0.0)
+            if snapshot.get("insight_class_focus"):
+                report["inner_os_sleep_insight_class_focus"] = str(snapshot["insight_class_focus"])
+            if snapshot.get("insight_reframing_bias") is not None:
+                report["inner_os_sleep_insight_reframing_bias"] = float(snapshot["insight_reframing_bias"] or 0.0)
+            if snapshot.get("association_reweighting_bias") is not None:
+                report["inner_os_sleep_association_reweighting_bias"] = float(snapshot["association_reweighting_bias"] or 0.0)
+            if snapshot.get("association_reweighting_focus"):
+                report["inner_os_sleep_association_reweighting_focus"] = str(snapshot["association_reweighting_focus"])
+            if snapshot.get("association_reweighting_reason"):
+                report["inner_os_sleep_association_reweighting_reason"] = str(snapshot["association_reweighting_reason"])
+            if snapshot.get("insight_terrain_shape_bias") is not None:
+                report["inner_os_sleep_insight_terrain_shape_bias"] = float(snapshot["insight_terrain_shape_bias"] or 0.0)
+            if snapshot.get("insight_terrain_shape_reason"):
+                report["inner_os_sleep_insight_terrain_shape_reason"] = str(snapshot["insight_terrain_shape_reason"])
+            if snapshot.get("insight_terrain_shape_target"):
+                report["inner_os_sleep_insight_terrain_shape_target"] = str(snapshot["insight_terrain_shape_target"])
+            if snapshot.get("insight_anchor_center") is not None:
+                report["inner_os_sleep_insight_anchor_center"] = list(snapshot["insight_anchor_center"] or [])
+            if snapshot.get("insight_anchor_dispersion") is not None:
+                report["inner_os_sleep_insight_anchor_dispersion"] = float(snapshot["insight_anchor_dispersion"] or 0.0)
+            if snapshot.get("temperament_focus"):
+                report["inner_os_sleep_temperament_focus"] = str(snapshot["temperament_focus"])
+            if snapshot.get("temperament_forward_bias") is not None:
+                report["inner_os_sleep_temperament_forward_bias"] = float(snapshot["temperament_forward_bias"] or 0.0)
+            if snapshot.get("temperament_guard_bias") is not None:
+                report["inner_os_sleep_temperament_guard_bias"] = float(snapshot["temperament_guard_bias"] or 0.0)
+            if snapshot.get("temperament_bond_bias") is not None:
+                report["inner_os_sleep_temperament_bond_bias"] = float(snapshot["temperament_bond_bias"] or 0.0)
+            if snapshot.get("temperament_recovery_bias") is not None:
+                report["inner_os_sleep_temperament_recovery_bias"] = float(snapshot["temperament_recovery_bias"] or 0.0)
+            if snapshot.get("homeostasis_budget_focus"):
+                report["inner_os_sleep_homeostasis_budget_focus"] = str(snapshot["homeostasis_budget_focus"])
+            if snapshot.get("homeostasis_budget_bias") is not None:
+                report["inner_os_sleep_homeostasis_budget_bias"] = float(snapshot["homeostasis_budget_bias"] or 0.0)
+            if snapshot.get("body_homeostasis_focus"):
+                report["inner_os_sleep_body_homeostasis_focus"] = str(snapshot["body_homeostasis_focus"])
+            if snapshot.get("body_homeostasis_carry_bias") is not None:
+                report["inner_os_sleep_body_homeostasis_carry_bias"] = float(snapshot["body_homeostasis_carry_bias"] or 0.0)
+            if snapshot.get("relational_continuity_focus"):
+                report["inner_os_sleep_relational_continuity_focus"] = str(snapshot["relational_continuity_focus"])
+            if snapshot.get("relational_continuity_carry_bias") is not None:
+                report["inner_os_sleep_relational_continuity_carry_bias"] = float(snapshot["relational_continuity_carry_bias"] or 0.0)
+            if snapshot.get("group_thread_focus"):
+                report["inner_os_sleep_group_thread_focus"] = str(snapshot["group_thread_focus"])
+            if snapshot.get("group_thread_carry_bias") is not None:
+                report["inner_os_sleep_group_thread_carry_bias"] = float(snapshot["group_thread_carry_bias"] or 0.0)
+            if snapshot.get("expressive_style_focus"):
+                report["inner_os_sleep_expressive_style_focus"] = str(snapshot["expressive_style_focus"])
+            if snapshot.get("expressive_style_carry_bias") is not None:
+                report["inner_os_sleep_expressive_style_carry_bias"] = float(snapshot["expressive_style_carry_bias"] or 0.0)
+            if snapshot.get("expressive_style_history_focus"):
+                report["inner_os_sleep_expressive_style_history_focus"] = str(snapshot["expressive_style_history_focus"])
+            if snapshot.get("expressive_style_history_bias") is not None:
+                report["inner_os_sleep_expressive_style_history_bias"] = float(snapshot["expressive_style_history_bias"] or 0.0)
+            if snapshot.get("banter_style_focus"):
+                report["inner_os_sleep_banter_style_focus"] = str(snapshot["banter_style_focus"])
+            if snapshot.get("lexical_variation_carry_bias") is not None:
+                report["inner_os_sleep_lexical_variation_carry_bias"] = float(snapshot["lexical_variation_carry_bias"] or 0.0)
+    daily_carry_summary = DailyCarrySummaryBuilder().build(report).to_dict()
+    if daily_carry_summary.get("same_turn_focus") or daily_carry_summary.get("active_carry_channels"):
+        report["inner_os_daily_carry_summary"] = daily_carry_summary
     nightly_id = report.setdefault("nightly_id", dt.datetime.utcnow().strftime("N-%Y%m%d-%H%M%S"))
     tuning = _derive_tuning_suggestion(field_state, cfg_dict)
     if tuning:
@@ -3300,6 +3546,986 @@ def _load_runtime_cfg_dict(path: Path) -> Dict[str, Any]:
         return {}
 
 
+def _resolve_inner_os_sleep_snapshot(
+    cfg_dict: Mapping[str, Any],
+) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[str]]:
+    candidates: List[Path] = []
+    nightly_cfg = cfg_dict.get("nightly", {}) if isinstance(cfg_dict, Mapping) else {}
+    explicit = None
+    if isinstance(nightly_cfg, Mapping):
+        explicit = nightly_cfg.get("inner_os_sleep_snapshot_path")
+    if not explicit and isinstance(cfg_dict, Mapping):
+        explicit = cfg_dict.get("inner_os_sleep_snapshot_path")
+    if isinstance(explicit, str) and explicit.strip():
+        candidates.append(Path(explicit.strip()))
+
+    state_dir = cfg_dict.get("state_dir") if isinstance(cfg_dict, Mapping) else None
+    if isinstance(state_dir, str) and state_dir.strip():
+        candidates.append(Path(state_dir.strip()) / "inner_os_sleep_snapshot.json")
+
+    candidates.append(Path("data/state/inner_os_sleep_snapshot.json"))
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        if not candidate.exists():
+            continue
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return None, None, f"inner_os_sleep_snapshot_read_failed ({candidate}): {exc}"
+        if not isinstance(payload, dict):
+            return None, None, f"inner_os_sleep_snapshot_invalid_payload ({candidate})"
+        if str(payload.get("schema") or "") != INNER_OS_SLEEP_SCHEMA:
+            return None, None, f"inner_os_sleep_snapshot_schema_mismatch ({candidate})"
+        snapshot = payload.get("snapshot")
+        if not isinstance(snapshot, dict):
+            return None, None, f"inner_os_sleep_snapshot_missing_snapshot ({candidate})"
+        return str(candidate), payload, None
+    return None, None, None
+
+
+def _resolve_inner_os_working_memory_snapshot(
+    cfg_dict: Mapping[str, Any],
+) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[str]]:
+    candidates: List[Path] = []
+    nightly_cfg = cfg_dict.get("nightly", {}) if isinstance(cfg_dict, Mapping) else {}
+    explicit = None
+    if isinstance(nightly_cfg, Mapping):
+        explicit = nightly_cfg.get("inner_os_working_memory_snapshot_path")
+    if not explicit and isinstance(cfg_dict, Mapping):
+        explicit = cfg_dict.get("inner_os_working_memory_snapshot_path")
+    if isinstance(explicit, str) and explicit.strip():
+        candidates.append(Path(explicit.strip()))
+
+    state_dir = cfg_dict.get("state_dir") if isinstance(cfg_dict, Mapping) else None
+    if isinstance(state_dir, str) and state_dir.strip():
+        candidates.append(Path(state_dir.strip()) / "inner_os_working_memory_snapshot.json")
+
+    candidates.append(Path("data/state/inner_os_working_memory_snapshot.json"))
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        if not candidate.exists():
+            continue
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return None, None, f"inner_os_working_memory_snapshot_read_failed ({candidate}): {exc}"
+        if not isinstance(payload, dict):
+            return None, None, f"inner_os_working_memory_snapshot_invalid_payload ({candidate})"
+        if str(payload.get("schema") or "") != INNER_OS_WORKING_MEMORY_SCHEMA:
+            return None, None, f"inner_os_working_memory_snapshot_schema_mismatch ({candidate})"
+        snapshot = payload.get("snapshot")
+        if not isinstance(snapshot, dict):
+            return None, None, f"inner_os_working_memory_snapshot_missing_snapshot ({candidate})"
+        return str(candidate), payload, None
+    return None, None, None
+
+
+def _resolve_inner_os_memory_path(cfg_dict: Mapping[str, Any]) -> Path:
+    explicit = None
+    if isinstance(cfg_dict, Mapping):
+        explicit = cfg_dict.get("inner_os_memory_path")
+        nightly_cfg = cfg_dict.get("nightly")
+        if not explicit and isinstance(nightly_cfg, Mapping):
+            explicit = nightly_cfg.get("inner_os_memory_path")
+    if isinstance(explicit, str) and explicit.strip():
+        return Path(explicit.strip())
+    return MemoryCore().path
+
+
+def _summarize_inner_os_partner_relation_registry(
+    cfg_dict: Mapping[str, Any],
+    *,
+    now: Optional[dt.datetime] = None,
+    lookback_hours: int = 120,
+) -> Dict[str, Any]:
+    path = _resolve_inner_os_memory_path(cfg_dict)
+    if not path.exists():
+        return {}
+    current_time = now or dt.datetime.utcnow()
+    cutoff = current_time - dt.timedelta(hours=max(1, int(lookback_hours)))
+    grouped: Dict[str, Dict[str, Any]] = {}
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if str(payload.get("kind") or "") != "relationship_trace":
+                    continue
+                person_id = str(payload.get("related_person_id") or "").strip()
+                if not person_id:
+                    continue
+                stamp = _coerce_inner_os_record_time(payload.get("timestamp"))
+                if stamp is None or stamp < cutoff:
+                    continue
+                attachment = _safe_float(payload.get("attachment"), 0.0) or 0.0
+                familiarity = _safe_float(payload.get("familiarity"), 0.0) or 0.0
+                trust_memory = _safe_float(payload.get("trust_memory"), 0.0) or 0.0
+                social_pull = _safe_float(payload.get("candidate_social_pull"), 0.0) or 0.0
+                consolidation = _safe_float(payload.get("consolidation_priority"), 0.0) or 0.0
+                recency_hours = max(0.0, (current_time - stamp).total_seconds() / 3600.0)
+                recency_bonus = _clamp(1.0 - recency_hours / max(lookback_hours, 1), 0.0, 1.0)
+                score = (
+                    attachment * 0.3
+                    + familiarity * 0.24
+                    + trust_memory * 0.22
+                    + social_pull * 0.14
+                    + consolidation * 0.05
+                    + recency_bonus * 0.05
+                )
+                bucket = grouped.setdefault(
+                    person_id,
+                    {
+                        "count": 0,
+                        "score_sum": 0.0,
+                        "attachment_sum": 0.0,
+                        "familiarity_sum": 0.0,
+                        "trust_sum": 0.0,
+                        "social_pull_sum": 0.0,
+                        "consolidation_sum": 0.0,
+                        "recency_bonus_sum": 0.0,
+                        "best_score": -1.0,
+                        "best_record": {},
+                        "history": [],
+                    },
+                )
+                bucket["count"] += 1
+                bucket["score_sum"] += score
+                bucket["attachment_sum"] += attachment
+                bucket["familiarity_sum"] += familiarity
+                bucket["trust_sum"] += trust_memory
+                bucket["social_pull_sum"] += social_pull
+                bucket["consolidation_sum"] += consolidation
+                bucket["recency_bonus_sum"] += recency_bonus
+                history = bucket["history"]
+                history.append(
+                    {
+                        "observation": str(payload.get("summary") or payload.get("text") or "").strip()[:160],
+                        "memory_anchor": str(payload.get("memory_anchor") or "").strip()[:160],
+                        "timestamp": stamp.isoformat(),
+                    }
+                )
+                if len(history) > 3:
+                    del history[0 : len(history) - 3]
+                if score > float(bucket["best_score"] or -1.0):
+                    bucket["best_score"] = score
+                    bucket["best_record"] = payload
+    except OSError:
+        return {}
+    if not grouped:
+        return {}
+
+    persons: Dict[str, Any] = {}
+    ranking: list[tuple[str, float]] = []
+    for person_id, bucket in grouped.items():
+        count = max(1, int(bucket.get("count") or 0))
+        mean_score = float(bucket.get("score_sum") or 0.0) / count
+        attachment = _clamp(float(bucket.get("attachment_sum") or 0.0) / count, 0.0, 1.0)
+        familiarity = _clamp(float(bucket.get("familiarity_sum") or 0.0) / count, 0.0, 1.0)
+        trust_memory = _clamp(float(bucket.get("trust_sum") or 0.0) / count, 0.0, 1.0)
+        social_pull = _clamp(float(bucket.get("social_pull_sum") or 0.0) / count, 0.0, 1.0)
+        consolidation = _clamp(float(bucket.get("consolidation_sum") or 0.0) / count, 0.0, 1.0)
+        recency_bonus = _clamp(float(bucket.get("recency_bonus_sum") or 0.0) / count, 0.0, 1.0)
+        repeat_bonus = _clamp(min(count, 4) / 4.0, 0.0, 1.0)
+        best_record = dict(bucket.get("best_record") or {})
+        strength = _clamp(
+            mean_score * 0.76
+            + repeat_bonus * 0.16
+            + recency_bonus * 0.08,
+            0.0,
+            1.0,
+        )
+        continuity_score = _clamp(
+            strength * 0.52
+            + familiarity * 0.2
+            + trust_memory * 0.16
+            + repeat_bonus * 0.12,
+            0.0,
+            1.0,
+        )
+        social_grounding = _clamp(
+            strength * 0.44
+            + attachment * 0.16
+            + trust_memory * 0.16
+            + social_pull * 0.14
+            + consolidation * 0.1,
+            0.0,
+            1.0,
+        )
+        confidence = _clamp(
+            0.42 + strength * 0.34 + repeat_bonus * 0.14 + recency_bonus * 0.1,
+            0.0,
+            1.0,
+        )
+        persons[person_id] = {
+            "person_id": person_id,
+            "stable_traits": {
+                "community_marker": 1.0 if str(best_record.get("community_id") or "").strip() else 0.0,
+                "culture_marker": 1.0 if str(best_record.get("culture_id") or "").strip() else 0.0,
+                "role_marker": 1.0 if str(best_record.get("social_role") or "").strip() else 0.0,
+            },
+            "adaptive_traits": {
+                "attachment": round(attachment, 4),
+                "familiarity": round(familiarity, 4),
+                "trust_memory": round(trust_memory, 4),
+                "continuity_score": round(continuity_score, 4),
+                "social_grounding": round(social_grounding, 4),
+            },
+            "continuity_history": list(bucket.get("history") or []),
+            "confidence": round(confidence, 4),
+            "ambiguity_flag": False,
+            "summary": str(best_record.get("summary") or best_record.get("text") or "").strip()[:160],
+            "memory_anchor": str(best_record.get("memory_anchor") or "").strip()[:160],
+            "social_role": str(best_record.get("social_role") or "").strip(),
+            "social_interpretation": str(best_record.get("social_interpretation") or "").strip()[:160],
+            "address_hint": str(best_record.get("address_hint") or "").strip(),
+            "timing_hint": str(best_record.get("timing_hint") or "").strip(),
+            "stance_hint": str(best_record.get("stance_hint") or "").strip(),
+            "strength": round(strength, 4),
+        }
+        ranking.append((person_id, strength))
+    ranking.sort(key=lambda item: (item[1], item[0]), reverse=True)
+    top_person_ids = [person_id for person_id, _ in ranking[:4]]
+    dominant_person_id = top_person_ids[0] if top_person_ids else ""
+    dominant_strength = ranking[0][1] if ranking else 0.0
+    return {
+        "persons": persons,
+        "top_person_ids": top_person_ids,
+        "dominant_person_id": dominant_person_id,
+        "total_people": len(persons),
+        "uncertainty": round(_clamp(1.0 - dominant_strength * 0.72, 0.0, 1.0), 4),
+    }
+
+
+def _summarize_inner_os_group_thread_registry(
+    cfg_dict: Mapping[str, Any],
+    *,
+    now: Optional[dt.datetime] = None,
+    lookback_hours: int = 120,
+) -> Dict[str, Any]:
+    path = _resolve_inner_os_memory_path(cfg_dict)
+    if not path.exists():
+        return {}
+    current_time = now or dt.datetime.utcnow()
+    cutoff = current_time - dt.timedelta(hours=max(1, int(lookback_hours)))
+    grouped: Dict[str, Dict[str, Any]] = {}
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if str(payload.get("kind") or "") != "group_thread_trace":
+                    continue
+                stamp = _coerce_inner_os_record_time(payload.get("timestamp"))
+                if stamp is None or stamp < cutoff:
+                    continue
+                top_person_ids = [
+                    str(item).strip()
+                    for item in list(payload.get("top_person_ids") or [])
+                    if str(item).strip()
+                ]
+                dominant_person_id = str(payload.get("related_person_id") or "").strip()
+                focus = str(payload.get("group_thread_focus") or "").strip()
+                thread_id = str(payload.get("group_thread_id") or "").strip() or build_group_thread_key(
+                    topology_state=focus,
+                    top_person_ids=top_person_ids,
+                    dominant_person_id=dominant_person_id,
+                )
+                if not thread_id:
+                    continue
+                continuity_score = _safe_float(payload.get("continuity_score"), 0.0) or 0.0
+                social_grounding = _safe_float(payload.get("social_grounding"), 0.0) or 0.0
+                threading_pressure = _safe_float(payload.get("threading_pressure"), 0.0) or 0.0
+                visibility_pressure = _safe_float(payload.get("visibility_pressure"), 0.0) or 0.0
+                hierarchy_pressure = _safe_float(payload.get("hierarchy_pressure"), 0.0) or 0.0
+                total_people = max(int(payload.get("thread_total_people") or 0), len(top_person_ids))
+                recency_hours = max(0.0, (current_time - stamp).total_seconds() / 3600.0)
+                recency_bonus = _clamp(1.0 - recency_hours / max(lookback_hours, 1), 0.0, 1.0)
+                score = _clamp(
+                    continuity_score * 0.28
+                    + social_grounding * 0.2
+                    + threading_pressure * 0.18
+                    + visibility_pressure * 0.12
+                    + hierarchy_pressure * 0.1
+                    + recency_bonus * 0.12,
+                    0.0,
+                    1.0,
+                )
+                bucket = grouped.setdefault(
+                    thread_id,
+                    {
+                        "count": 0,
+                        "score_sum": 0.0,
+                        "continuity_sum": 0.0,
+                        "grounding_sum": 0.0,
+                        "threading_sum": 0.0,
+                        "visibility_sum": 0.0,
+                        "hierarchy_sum": 0.0,
+                        "people_max": 0,
+                        "top_people": [],
+                        "best_score": -1.0,
+                        "best_record": {},
+                    },
+                )
+                bucket["count"] += 1
+                bucket["score_sum"] += score
+                bucket["continuity_sum"] += continuity_score
+                bucket["grounding_sum"] += social_grounding
+                bucket["threading_sum"] += threading_pressure
+                bucket["visibility_sum"] += visibility_pressure
+                bucket["hierarchy_sum"] += hierarchy_pressure
+                bucket["people_max"] = max(int(bucket.get("people_max") or 0), total_people)
+                if top_person_ids:
+                    bucket["top_people"] = top_person_ids[:4]
+                if score > float(bucket.get("best_score") or -1.0):
+                    bucket["best_score"] = score
+                    bucket["best_record"] = payload
+    except OSError:
+        return {}
+    if not grouped:
+        return {}
+
+    threads: Dict[str, Any] = {}
+    dominant_strength = 0.0
+    for thread_id, bucket in grouped.items():
+        count = max(1, int(bucket.get("count") or 0))
+        best_record = dict(bucket.get("best_record") or {})
+        strength = _clamp(
+            float(bucket.get("score_sum") or 0.0) / count
+            + min(count, 4) / 4.0 * 0.08,
+            0.0,
+            1.0,
+        )
+        dominant_strength = max(dominant_strength, strength)
+        threads[thread_id] = {
+            "thread_id": thread_id,
+            "last_topology_state": str(best_record.get("group_thread_focus") or "").strip(),
+            "dominant_person_id": str(best_record.get("related_person_id") or "").strip(),
+            "top_person_ids": list(bucket.get("top_people") or []),
+            "total_people": int(bucket.get("people_max") or 0),
+            "continuity_score": round(float(bucket.get("continuity_sum") or 0.0) / count, 4),
+            "social_grounding": round(float(bucket.get("grounding_sum") or 0.0) / count, 4),
+            "threading_pressure": round(float(bucket.get("threading_sum") or 0.0) / count, 4),
+            "visibility_pressure": round(float(bucket.get("visibility_sum") or 0.0) / count, 4),
+            "hierarchy_pressure": round(float(bucket.get("hierarchy_sum") or 0.0) / count, 4),
+            "community_id": str(best_record.get("community_id") or "").strip(),
+            "culture_id": str(best_record.get("culture_id") or "").strip(),
+            "social_role": str(best_record.get("social_role") or "").strip(),
+            "count": count,
+            "confidence": round(_clamp(0.24 + min(count, 5) * 0.12, 0.0, 1.0), 4),
+        }
+    summary = summarize_group_thread_registry_snapshot(
+        {
+            "threads": threads,
+            "uncertainty": round(_clamp(1.0 - dominant_strength * 0.72, 0.0, 1.0), 4),
+        }
+    )
+    return {
+        "threads": threads,
+        "uncertainty": summary.get("uncertainty", 1.0),
+        **summary,
+        "lookback_hours": int(lookback_hours),
+    }
+
+
+def _summarize_inner_os_partner_relation(
+    cfg_dict: Mapping[str, Any],
+    *,
+    now: Optional[dt.datetime] = None,
+    lookback_hours: int = 120,
+    registry_summary: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    registry = dict(registry_summary or {})
+    if not registry:
+        registry = _summarize_inner_os_partner_relation_registry(
+            cfg_dict,
+            now=now,
+            lookback_hours=lookback_hours,
+        )
+    dominant_person_id = str(registry.get("dominant_person_id") or "").strip()
+    persons = dict(registry.get("persons") or {})
+    dominant = dict(persons.get(dominant_person_id) or {})
+    adaptive_traits = dict(dominant.get("adaptive_traits") or {})
+    if not dominant_person_id or not dominant:
+        return {}
+    return {
+        "person_id": dominant_person_id,
+        "summary": str(dominant.get("summary") or "").strip()[:160],
+        "memory_anchor": str(dominant.get("memory_anchor") or "").strip()[:160],
+        "social_role": str(dominant.get("social_role") or "").strip(),
+        "social_interpretation": str(dominant.get("social_interpretation") or "").strip()[:160],
+        "address_hint": str(dominant.get("address_hint") or "").strip(),
+        "timing_hint": str(dominant.get("timing_hint") or "").strip(),
+        "stance_hint": str(dominant.get("stance_hint") or "").strip(),
+        "attachment": round(_safe_float(adaptive_traits.get("attachment"), 0.0) or 0.0, 4),
+        "familiarity": round(_safe_float(adaptive_traits.get("familiarity"), 0.0) or 0.0, 4),
+        "trust_memory": round(_safe_float(adaptive_traits.get("trust_memory"), 0.0) or 0.0, 4),
+        "strength": round(_safe_float(dominant.get("strength"), 0.0) or 0.0, 4),
+    }
+
+
+def _summarize_inner_os_memory_class(
+    cfg_dict: Mapping[str, Any],
+    *,
+    now: Optional[dt.datetime] = None,
+    lookback_hours: int = 120,
+) -> Dict[str, Any]:
+    path = _resolve_inner_os_memory_path(cfg_dict)
+    if not path.exists():
+        return {}
+    current_time = now or dt.datetime.utcnow()
+    cutoff = current_time - dt.timedelta(hours=max(1, int(lookback_hours)))
+    counts: Dict[str, int] = defaultdict(int)
+    weighted_counts: Dict[str, float] = defaultdict(float)
+    dominant_reasons: Dict[tuple[str, str], float] = defaultdict(float)
+    recent_records = 0
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                memory_class = str(payload.get("memory_write_class") or "").strip()
+                if not memory_class:
+                    continue
+                stamp = _coerce_inner_os_record_time(payload.get("timestamp"))
+                if stamp is None or stamp < cutoff:
+                    continue
+                recent_records += 1
+                counts[memory_class] += 1
+
+                age_hours = max(0.0, (current_time - stamp).total_seconds() / 3600.0)
+                recency_weight = _clamp(1.0 - age_hours / max(float(lookback_hours), 1.0), 0.2, 1.0)
+                confidence = _safe_float(payload.get("confidence"), 0.0) or 0.0
+                access_count = _safe_float(payload.get("access_count"), 0.0) or 0.0
+                primed_weight = _safe_float(payload.get("primed_weight"), 0.0) or 0.0
+                usage_weight = 1.0 + min(access_count, 5.0) * 0.05 + _clamp(primed_weight, 0.0, 1.0) * 0.15
+                confidence_weight = 0.7 + _clamp(confidence, 0.0, 1.0) * 0.3
+                score = recency_weight * usage_weight * confidence_weight
+                weighted_counts[memory_class] += score
+
+                reason = str(payload.get("memory_write_class_reason") or "").strip()
+                if reason:
+                    dominant_reasons[(memory_class, reason)] += score
+    except OSError:
+        return {}
+
+    if not counts:
+        return {}
+
+    dominant_class = max(
+        counts.keys(),
+        key=lambda key: (weighted_counts.get(key, 0.0), counts.get(key, 0), key),
+    )
+    dominant_reason = ""
+    if dominant_reasons:
+        dominant_reason = max(
+            (
+                (reason, score)
+                for (memory_class, reason), score in dominant_reasons.items()
+                if memory_class == dominant_class
+            ),
+            default=("", 0.0),
+            key=lambda item: item[1],
+        )[0]
+    return {
+        "dominant_class": dominant_class,
+        "dominant_reason": dominant_reason,
+        "counts": {key: int(value) for key, value in sorted(counts.items())},
+        "weighted_counts": {key: round(float(value), 4) for key, value in sorted(weighted_counts.items())},
+        "recent_records": int(recent_records),
+        "lookback_hours": int(max(1, lookback_hours)),
+    }
+
+
+def _summarize_inner_os_insight_trace(
+    cfg_dict: Mapping[str, Any],
+    *,
+    now: Optional[dt.datetime] = None,
+    lookback_hours: int = 120,
+) -> Dict[str, Any]:
+    path = _resolve_inner_os_memory_path(cfg_dict)
+    if not path.exists():
+        return {}
+    current_time = now or dt.datetime.utcnow()
+    cutoff = current_time - dt.timedelta(hours=max(1, int(lookback_hours)))
+    class_counts: Dict[str, int] = defaultdict(int)
+    weighted_class_counts: Dict[str, float] = defaultdict(float)
+    link_counts: Dict[str, int] = defaultdict(int)
+    reframed_topics: Dict[str, float] = defaultdict(float)
+    records_for_shape: List[Dict[str, Any]] = []
+    recent_records = 0
+
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if str(payload.get("kind") or "") != "insight_trace":
+                    continue
+                stamp = _coerce_inner_os_record_time(payload.get("timestamp"))
+                if stamp is None or stamp < cutoff:
+                    continue
+                recent_records += 1
+                insight_class = str(payload.get("insight_class") or "insight_trace").strip() or "insight_trace"
+                class_counts[insight_class] += 1
+
+                age_hours = max(0.0, (current_time - stamp).total_seconds() / 3600.0)
+                recency_weight = _clamp(1.0 - age_hours / max(float(lookback_hours), 1.0), 0.2, 1.0)
+                confidence = _safe_float(payload.get("confidence"), 0.0) or 0.0
+                insight_score = _safe_float(payload.get("insight_score"), 0.0) or 0.0
+                coherence_gain = _safe_float(payload.get("coherence_gain"), 0.0) or 0.0
+                prediction_drop = _safe_float(payload.get("prediction_drop"), 0.0) or 0.0
+                weight = recency_weight * (
+                    0.38
+                    + _clamp(confidence, 0.0, 1.0) * 0.22
+                    + _clamp(insight_score, 0.0, 1.0) * 0.22
+                    + _clamp(coherence_gain, 0.0, 1.0) * 0.12
+                    + _clamp(prediction_drop, 0.0, 1.0) * 0.06
+                )
+                weighted_class_counts[insight_class] += weight
+
+                link_key = str(payload.get("association_link_key") or "").strip()
+                if link_key:
+                    link_counts[link_key] += 1
+
+                reframed_topic = str(payload.get("reframed_topic") or "").strip()
+                if reframed_topic:
+                    reframed_topics[reframed_topic] += weight
+                anchor_center_raw = payload.get("anchor_center")
+                anchor_center: List[float] = []
+                if isinstance(anchor_center_raw, (list, tuple)):
+                    for item in anchor_center_raw:
+                        try:
+                            anchor_center.append(float(item))
+                        except (TypeError, ValueError):
+                            continue
+                records_for_shape.append(
+                    {
+                        "insight_class": insight_class,
+                        "link_key": link_key,
+                        "weight": weight,
+                        "confidence": _clamp(confidence, 0.0, 1.0),
+                        "anchor_center": anchor_center,
+                        "anchor_dispersion": max(0.0, _safe_float(payload.get("anchor_dispersion"), 0.0) or 0.0),
+                    }
+                )
+    except OSError:
+        return {}
+
+    if not class_counts:
+        return {}
+
+    dominant_insight_class = max(
+        class_counts.keys(),
+        key=lambda key: (weighted_class_counts.get(key, 0.0), class_counts.get(key, 0), key),
+    )
+    dominant_reframed_topic = ""
+    if reframed_topics:
+        dominant_reframed_topic = max(reframed_topics.items(), key=lambda item: item[1])[0]
+    repeated_links = sum(max(0, count - 1) for count in link_counts.values())
+    association_reweighting_bias = _clamp(
+        repeated_links * 0.18
+        + weighted_class_counts.get("new_link_hypothesis", 0.0) * 0.08
+        + weighted_class_counts.get("insight_trace", 0.0) * 0.05
+        + weighted_class_counts.get("reframed_relation", 0.0) * 0.06,
+        0.0,
+        1.0,
+    )
+    association_reweighting_focus = ""
+    association_reweighting_reason = ""
+    if association_reweighting_bias > 0.0:
+        if repeated_links > 0:
+            association_reweighting_focus = "repeated_links"
+            association_reweighting_reason = "repeated_insight_trace"
+        elif weighted_class_counts.get("new_link_hypothesis", 0.0) > 0.0:
+            association_reweighting_focus = "hypothesis_links"
+            association_reweighting_reason = "new_link_hypothesis"
+        elif weighted_class_counts.get("reframed_relation", 0.0) > 0.0:
+            association_reweighting_focus = "reframed_links"
+            association_reweighting_reason = "reframed_relation"
+    insight_reframing_bias = _clamp(
+        weighted_class_counts.get("reframed_relation", 0.0) * 0.18
+        + repeated_links * 0.08,
+        0.0,
+        1.0,
+    )
+    insight_shape_scores: Dict[str, float] = defaultdict(float)
+    anchor_weight_total = 0.0
+    anchor_center_acc: Optional[np.ndarray] = None
+    anchor_dispersion_acc = 0.0
+    repeated_trace_links = {
+        key
+        for key, count in link_counts.items()
+        if count >= 2
+    }
+    for row in records_for_shape:
+        insight_class = str(row.get("insight_class") or "").strip()
+        link_key = str(row.get("link_key") or "").strip()
+        weight = max(0.0, float(row.get("weight") or 0.0))
+        if weight <= 0.0:
+            continue
+        if insight_class == "reframed_relation":
+            shape_reason = "reframed_relation"
+            shape_weight = weight * 0.58
+        elif insight_class == "insight_trace" and link_key in repeated_trace_links:
+            shape_reason = "repeated_insight_trace"
+            shape_weight = weight * 0.36
+        elif insight_class == "new_link_hypothesis":
+            shape_reason = "new_link_hypothesis"
+            shape_weight = weight * 0.08
+        else:
+            continue
+        insight_shape_scores[shape_reason] += shape_weight
+        anchor_center = row.get("anchor_center") or []
+        if not anchor_center:
+            continue
+        center_vec = np.asarray(anchor_center, dtype=np.float32)
+        if center_vec.ndim != 1 or center_vec.size == 0:
+            continue
+        if anchor_center_acc is None:
+            anchor_center_acc = np.zeros_like(center_vec, dtype=np.float32)
+        if anchor_center_acc.shape != center_vec.shape:
+            continue
+        anchor_center_acc += center_vec * shape_weight
+        anchor_dispersion_acc += max(0.0, float(row.get("anchor_dispersion") or 0.0)) * shape_weight
+        anchor_weight_total += shape_weight
+
+    insight_terrain_shape_reason = ""
+    insight_terrain_shape_bias = 0.0
+    insight_terrain_shape_target = ""
+    insight_anchor_center: List[float] = []
+    insight_anchor_dispersion = 0.0
+    if insight_shape_scores:
+        insight_terrain_shape_reason = max(insight_shape_scores.items(), key=lambda item: item[1])[0]
+        raw_shape = sum(insight_shape_scores.values())
+        insight_terrain_shape_bias = _clamp(raw_shape * 0.32, 0.0, 1.0)
+        if insight_terrain_shape_reason == "new_link_hypothesis":
+            insight_terrain_shape_bias = min(insight_terrain_shape_bias, 0.08)
+        insight_terrain_shape_target = _insight_shape_target_from_reason(insight_terrain_shape_reason)
+        if anchor_weight_total > 0.0 and anchor_center_acc is not None:
+            mean_center = anchor_center_acc / anchor_weight_total
+            insight_anchor_center = [round(float(item), 4) for item in mean_center.tolist()]
+            insight_anchor_dispersion = round(float(anchor_dispersion_acc / anchor_weight_total), 4)
+    return {
+        "dominant_insight_class": dominant_insight_class,
+        "dominant_reframed_topic": dominant_reframed_topic,
+        "insight_class_counts": {key: int(value) for key, value in sorted(class_counts.items())},
+        "weighted_class_counts": {key: round(float(value), 4) for key, value in sorted(weighted_class_counts.items())},
+        "insight_link_counts": {key: int(value) for key, value in sorted(link_counts.items())},
+        "association_reweighting_bias": round(float(association_reweighting_bias), 4),
+        "association_reweighting_focus": association_reweighting_focus,
+        "association_reweighting_reason": association_reweighting_reason,
+        "insight_reframing_bias": round(float(insight_reframing_bias), 4),
+        "insight_terrain_shape_bias": round(float(insight_terrain_shape_bias), 4),
+        "insight_terrain_shape_reason": insight_terrain_shape_reason,
+        "insight_terrain_shape_target": insight_terrain_shape_target,
+        "insight_anchor_center": insight_anchor_center,
+        "insight_anchor_dispersion": insight_anchor_dispersion,
+        "recent_records": int(recent_records),
+        "lookback_hours": int(max(1, lookback_hours)),
+    }
+
+
+def _summarize_inner_os_commitment_trace(
+    cfg_dict: Mapping[str, Any],
+    *,
+    now: Optional[dt.datetime] = None,
+    lookback_hours: int = 120,
+) -> Dict[str, Any]:
+    path = _resolve_inner_os_memory_path(cfg_dict)
+    if not path.exists():
+        return {}
+    current_time = now or dt.datetime.utcnow()
+    cutoff = current_time - dt.timedelta(hours=max(1, int(lookback_hours)))
+    state_counts: Dict[str, int] = defaultdict(int)
+    target_counts: Dict[str, int] = defaultdict(int)
+    weighted_target_counts: Dict[str, float] = defaultdict(float)
+    dominant_reasons: Dict[tuple[str, str], float] = defaultdict(float)
+    recent_records = 0
+
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                target = str(payload.get("commitment_target") or "").strip()
+                state = str(payload.get("commitment_state") or "").strip()
+                if not target or not state:
+                    continue
+                stamp = _coerce_inner_os_record_time(payload.get("timestamp"))
+                if stamp is None or stamp < cutoff:
+                    continue
+                recent_records += 1
+                state_counts[state] += 1
+                target_counts[target] += 1
+
+                age_hours = max(0.0, (current_time - stamp).total_seconds() / 3600.0)
+                recency_weight = _clamp(1.0 - age_hours / max(float(lookback_hours), 1.0), 0.2, 1.0)
+                score = _clamp(_safe_float(payload.get("commitment_score"), 0.0) or 0.0, 0.0, 1.0)
+                margin = _clamp(_safe_float(payload.get("commitment_winner_margin"), 0.0) or 0.0, 0.0, 1.0)
+                accepted_cost = _clamp(_safe_float(payload.get("commitment_accepted_cost"), 0.0) or 0.0, 0.0, 1.0)
+                state_gain = 1.0
+                if state == "commit":
+                    state_gain = 1.14
+                elif state == "settle":
+                    state_gain = 0.92
+                elif state == "waver":
+                    state_gain = 0.56
+                weight = recency_weight * state_gain * (
+                    0.34
+                    + score * 0.28
+                    + margin * 0.22
+                    + accepted_cost * 0.16
+                )
+                weighted_target_counts[target] += weight
+
+                reason = str(
+                    payload.get("memory_write_class_reason")
+                    or payload.get("memory_write_class")
+                    or payload.get("summary")
+                    or ""
+                ).strip()
+                if reason:
+                    dominant_reasons[(target, reason)] += weight
+    except OSError:
+        return {}
+
+    if not target_counts:
+        return {}
+
+    dominant_target = max(
+        target_counts.keys(),
+        key=lambda key: (weighted_target_counts.get(key, 0.0), target_counts.get(key, 0), key),
+    )
+    dominant_state = max(
+        state_counts.keys(),
+        key=lambda key: (state_counts.get(key, 0), key == "commit", key == "settle", key),
+    )
+    dominant_reason = ""
+    if dominant_reasons:
+        dominant_reason = max(
+            (
+                (reason, score)
+                for (target, reason), score in dominant_reasons.items()
+                if target == dominant_target
+            ),
+            default=("", 0.0),
+            key=lambda item: item[1],
+        )[0]
+    repeated_target = max(0, int(target_counts.get(dominant_target, 0)) - 1)
+    state_bonus = 0.0
+    if dominant_state == "commit":
+        state_bonus = 0.18
+    elif dominant_state == "settle":
+        state_bonus = 0.08
+    commitment_carry_bias = _clamp(
+        weighted_target_counts.get(dominant_target, 0.0) * 0.2
+        + repeated_target * 0.08
+        + state_bonus,
+        0.0,
+        1.0,
+    )
+    commitment_followup_focus = _commitment_followup_focus_for_target(dominant_target)
+    commitment_mode_focus = _commitment_mode_focus_for_target(dominant_target)
+
+    return {
+        "dominant_target": dominant_target,
+        "dominant_state": dominant_state,
+        "dominant_reason": dominant_reason,
+        "target_counts": {key: int(value) for key, value in sorted(target_counts.items())},
+        "state_counts": {key: int(value) for key, value in sorted(state_counts.items())},
+        "weighted_target_counts": {key: round(float(value), 4) for key, value in sorted(weighted_target_counts.items())},
+        "commitment_carry_bias": round(float(commitment_carry_bias), 4),
+        "commitment_followup_focus": commitment_followup_focus,
+        "commitment_mode_focus": commitment_mode_focus,
+        "recent_records": int(recent_records),
+        "lookback_hours": int(max(1, lookback_hours)),
+    }
+
+
+def _summarize_inner_os_agenda_trace(
+    cfg_dict: Mapping[str, Any],
+    *,
+    now: Optional[dt.datetime] = None,
+    lookback_hours: int = 120,
+) -> Dict[str, Any]:
+    path = _resolve_inner_os_memory_path(cfg_dict)
+    if not path.exists():
+        return {}
+    current_time = now or dt.datetime.utcnow()
+    cutoff = current_time - dt.timedelta(hours=max(1, int(lookback_hours)))
+    state_counts: Dict[str, int] = defaultdict(int)
+    weighted_state_counts: Dict[str, float] = defaultdict(float)
+    dominant_reasons: Dict[tuple[str, str], float] = defaultdict(float)
+    recent_records = 0
+
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                state = str(payload.get("agenda_state") or "").strip()
+                if not state:
+                    continue
+                kind = str(payload.get("kind") or "").strip()
+                if kind and kind != "agenda_trace":
+                    continue
+                stamp = _coerce_inner_os_record_time(payload.get("timestamp"))
+                if stamp is None or stamp < cutoff:
+                    continue
+                recent_records += 1
+                state_counts[state] += 1
+
+                age_hours = max(0.0, (current_time - stamp).total_seconds() / 3600.0)
+                recency_weight = _clamp(1.0 - age_hours / max(float(lookback_hours), 1.0), 0.2, 1.0)
+                score = _clamp(_safe_float(payload.get("agenda_score"), 0.0) or 0.0, 0.0, 1.0)
+                margin = _clamp(_safe_float(payload.get("agenda_winner_margin"), 0.0) or 0.0, 0.0, 1.0)
+                state_gain = 1.0
+                if state == "step_forward":
+                    state_gain = 1.12
+                elif state == "repair":
+                    state_gain = 1.06
+                elif state == "revisit":
+                    state_gain = 0.92
+                elif state == "hold":
+                    state_gain = 0.88
+                weight = recency_weight * state_gain * (
+                    0.34
+                    + score * 0.38
+                    + margin * 0.28
+                )
+                weighted_state_counts[state] += weight
+
+                reason = str(payload.get("agenda_reason") or payload.get("summary") or "").strip()
+                if reason:
+                    dominant_reasons[(state, reason)] += weight
+    except OSError:
+        return {}
+
+    if not state_counts:
+        return {}
+
+    dominant_agenda = max(
+        state_counts.keys(),
+        key=lambda key: (weighted_state_counts.get(key, 0.0), state_counts.get(key, 0), key),
+    )
+    dominant_reason = ""
+    if dominant_reasons:
+        dominant_reason = max(
+            (
+                (reason, score)
+                for (state, reason), score in dominant_reasons.items()
+                if state == dominant_agenda
+            ),
+            default=("", 0.0),
+            key=lambda item: item[1],
+        )[0]
+    repeated_agenda = max(0, int(state_counts.get(dominant_agenda, 0)) - 1)
+    focus_bonus = 0.0
+    if dominant_agenda == "step_forward":
+        focus_bonus = 0.12
+    elif dominant_agenda == "repair":
+        focus_bonus = 0.1
+    elif dominant_agenda == "revisit":
+        focus_bonus = 0.08
+    elif dominant_agenda == "hold":
+        focus_bonus = 0.06
+    agenda_carry_bias = _clamp(
+        weighted_state_counts.get(dominant_agenda, 0.0) * 0.18
+        + repeated_agenda * 0.07
+        + focus_bonus,
+        0.0,
+        1.0,
+    )
+
+    return {
+        "dominant_agenda": dominant_agenda,
+        "dominant_reason": dominant_reason,
+        "state_counts": {key: int(value) for key, value in sorted(state_counts.items())},
+        "weighted_state_counts": {key: round(float(value), 4) for key, value in sorted(weighted_state_counts.items())},
+        "agenda_carry_bias": round(float(agenda_carry_bias), 4),
+        "recent_records": int(recent_records),
+        "lookback_hours": int(max(1, lookback_hours)),
+    }
+
+
+def _commitment_followup_focus_for_target(target: str) -> str:
+    normalized_target = str(target or "").strip()
+    if normalized_target == "step_forward":
+        return "offer_next_step"
+    if normalized_target in {"repair", "bond_protect"}:
+        return "reopen_softly"
+    if normalized_target in {"hold", "stabilize"}:
+        return "hold"
+    return ""
+
+
+def _commitment_mode_focus_for_target(target: str) -> str:
+    normalized_target = str(target or "").strip()
+    if normalized_target == "step_forward":
+        return "monitor"
+    if normalized_target in {"repair", "bond_protect"}:
+        return "repair"
+    if normalized_target == "stabilize":
+        return "stabilize"
+    if normalized_target == "hold":
+        return "contain"
+    return ""
+
+
+def _coerce_inner_os_record_time(value: Any) -> Optional[dt.datetime]:
+    if isinstance(value, (int, float)):
+        try:
+            return dt.datetime.utcfromtimestamp(float(value))
+        except (OverflowError, OSError, ValueError):
+            return None
+    if isinstance(value, str):
+        try:
+            return dt.datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
 def _derive_tuning_suggestion(field_state: Optional[Dict[str, float]], cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not field_state or not cfg:
         return None
@@ -3333,6 +4559,17 @@ def _derive_tuning_suggestion(field_state: Optional[Dict[str, float]], cfg: Dict
             "theta_off": {"current": theta_off, "suggested": theta_off},
         }
     return suggestion
+
+
+def _insight_shape_target_from_reason(reason: str) -> str:
+    normalized_reason = str(reason or "").strip()
+    if normalized_reason == "reframed_relation":
+        return "soft_relation"
+    if normalized_reason == "repeated_insight_trace":
+        return "trace_basin"
+    if normalized_reason == "new_link_hypothesis":
+        return "hypothesis_hold"
+    return ""
 
 
 def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Path:
@@ -3401,6 +4638,116 @@ def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Pat
         payload["assoc_kernel"] = report["assoc_kernel"]
     if report.get("assoc_summary_path"):
         payload["assoc_summary_path"] = report["assoc_summary_path"]
+    if report.get("inner_os_sleep_snapshot_path"):
+        payload["inner_os_sleep_snapshot_path"] = report["inner_os_sleep_snapshot_path"]
+    if report.get("inner_os_sleep_mode"):
+        payload["inner_os_sleep_mode"] = report["inner_os_sleep_mode"]
+    if report.get("inner_os_working_memory_snapshot_path"):
+        payload["inner_os_working_memory_snapshot_path"] = report["inner_os_working_memory_snapshot_path"]
+    if report.get("inner_os_working_memory_focus"):
+        payload["inner_os_working_memory_focus"] = report["inner_os_working_memory_focus"]
+    if report.get("inner_os_working_memory_readiness") is not None:
+        payload["inner_os_working_memory_readiness"] = report["inner_os_working_memory_readiness"]
+    if report.get("inner_os_working_memory_replay_bias"):
+        payload["inner_os_working_memory_replay_bias"] = report["inner_os_working_memory_replay_bias"]
+    if report.get("inner_os_long_term_theme_summary"):
+        payload["inner_os_long_term_theme_summary"] = report["inner_os_long_term_theme_summary"]
+    if report.get("inner_os_memory_class_summary"):
+        payload["inner_os_memory_class_summary"] = report["inner_os_memory_class_summary"]
+    if report.get("inner_os_agenda_summary"):
+        payload["inner_os_agenda_summary"] = report["inner_os_agenda_summary"]
+    if report.get("inner_os_commitment_summary"):
+        payload["inner_os_commitment_summary"] = report["inner_os_commitment_summary"]
+    if report.get("inner_os_insight_summary"):
+        payload["inner_os_insight_summary"] = report["inner_os_insight_summary"]
+    if report.get("inner_os_partner_relation_registry_summary"):
+        payload["inner_os_partner_relation_registry_summary"] = report["inner_os_partner_relation_registry_summary"]
+    if report.get("inner_os_group_thread_registry_summary"):
+        payload["inner_os_group_thread_registry_summary"] = report["inner_os_group_thread_registry_summary"]
+    if report.get("inner_os_partner_relation_summary"):
+        payload["inner_os_partner_relation_summary"] = report["inner_os_partner_relation_summary"]
+    if report.get("inner_os_daily_carry_summary"):
+        payload["inner_os_daily_carry_summary"] = report["inner_os_daily_carry_summary"]
+    if report.get("inner_os_sleep_memory_class_focus"):
+        payload["inner_os_sleep_memory_class_focus"] = report["inner_os_sleep_memory_class_focus"]
+    if report.get("inner_os_sleep_agenda_focus"):
+        payload["inner_os_sleep_agenda_focus"] = report["inner_os_sleep_agenda_focus"]
+    if report.get("inner_os_sleep_agenda_bias") is not None:
+        payload["inner_os_sleep_agenda_bias"] = report["inner_os_sleep_agenda_bias"]
+    if report.get("inner_os_sleep_agenda_reason"):
+        payload["inner_os_sleep_agenda_reason"] = report["inner_os_sleep_agenda_reason"]
+    if report.get("inner_os_sleep_commitment_target_focus"):
+        payload["inner_os_sleep_commitment_target_focus"] = report["inner_os_sleep_commitment_target_focus"]
+    if report.get("inner_os_sleep_commitment_state_focus"):
+        payload["inner_os_sleep_commitment_state_focus"] = report["inner_os_sleep_commitment_state_focus"]
+    if report.get("inner_os_sleep_commitment_carry_bias") is not None:
+        payload["inner_os_sleep_commitment_carry_bias"] = report["inner_os_sleep_commitment_carry_bias"]
+    if report.get("inner_os_sleep_commitment_followup_focus"):
+        payload["inner_os_sleep_commitment_followup_focus"] = report["inner_os_sleep_commitment_followup_focus"]
+    if report.get("inner_os_sleep_commitment_mode_focus"):
+        payload["inner_os_sleep_commitment_mode_focus"] = report["inner_os_sleep_commitment_mode_focus"]
+    if report.get("inner_os_sleep_commitment_carry_reason"):
+        payload["inner_os_sleep_commitment_carry_reason"] = report["inner_os_sleep_commitment_carry_reason"]
+    if report.get("inner_os_sleep_terrain_reweighting_bias") is not None:
+        payload["inner_os_sleep_terrain_reweighting_bias"] = report["inner_os_sleep_terrain_reweighting_bias"]
+    if report.get("inner_os_sleep_insight_class_focus"):
+        payload["inner_os_sleep_insight_class_focus"] = report["inner_os_sleep_insight_class_focus"]
+    if report.get("inner_os_sleep_insight_reframing_bias") is not None:
+        payload["inner_os_sleep_insight_reframing_bias"] = report["inner_os_sleep_insight_reframing_bias"]
+    if report.get("inner_os_sleep_association_reweighting_bias") is not None:
+        payload["inner_os_sleep_association_reweighting_bias"] = report["inner_os_sleep_association_reweighting_bias"]
+    if report.get("inner_os_sleep_association_reweighting_focus"):
+        payload["inner_os_sleep_association_reweighting_focus"] = report["inner_os_sleep_association_reweighting_focus"]
+    if report.get("inner_os_sleep_association_reweighting_reason"):
+        payload["inner_os_sleep_association_reweighting_reason"] = report["inner_os_sleep_association_reweighting_reason"]
+    if report.get("inner_os_sleep_insight_terrain_shape_bias") is not None:
+        payload["inner_os_sleep_insight_terrain_shape_bias"] = report["inner_os_sleep_insight_terrain_shape_bias"]
+    if report.get("inner_os_sleep_insight_terrain_shape_reason"):
+        payload["inner_os_sleep_insight_terrain_shape_reason"] = report["inner_os_sleep_insight_terrain_shape_reason"]
+    if report.get("inner_os_sleep_insight_terrain_shape_target"):
+        payload["inner_os_sleep_insight_terrain_shape_target"] = report["inner_os_sleep_insight_terrain_shape_target"]
+    if report.get("inner_os_sleep_insight_anchor_center") is not None:
+        payload["inner_os_sleep_insight_anchor_center"] = report["inner_os_sleep_insight_anchor_center"]
+    if report.get("inner_os_sleep_insight_anchor_dispersion") is not None:
+        payload["inner_os_sleep_insight_anchor_dispersion"] = report["inner_os_sleep_insight_anchor_dispersion"]
+    if report.get("inner_os_sleep_temperament_focus"):
+        payload["inner_os_sleep_temperament_focus"] = report["inner_os_sleep_temperament_focus"]
+    if report.get("inner_os_sleep_temperament_forward_bias") is not None:
+        payload["inner_os_sleep_temperament_forward_bias"] = report["inner_os_sleep_temperament_forward_bias"]
+    if report.get("inner_os_sleep_temperament_guard_bias") is not None:
+        payload["inner_os_sleep_temperament_guard_bias"] = report["inner_os_sleep_temperament_guard_bias"]
+    if report.get("inner_os_sleep_temperament_bond_bias") is not None:
+        payload["inner_os_sleep_temperament_bond_bias"] = report["inner_os_sleep_temperament_bond_bias"]
+    if report.get("inner_os_sleep_temperament_recovery_bias") is not None:
+        payload["inner_os_sleep_temperament_recovery_bias"] = report["inner_os_sleep_temperament_recovery_bias"]
+    if report.get("inner_os_sleep_homeostasis_budget_focus"):
+        payload["inner_os_sleep_homeostasis_budget_focus"] = report["inner_os_sleep_homeostasis_budget_focus"]
+    if report.get("inner_os_sleep_homeostasis_budget_bias") is not None:
+        payload["inner_os_sleep_homeostasis_budget_bias"] = report["inner_os_sleep_homeostasis_budget_bias"]
+    if report.get("inner_os_sleep_body_homeostasis_focus"):
+        payload["inner_os_sleep_body_homeostasis_focus"] = report["inner_os_sleep_body_homeostasis_focus"]
+    if report.get("inner_os_sleep_body_homeostasis_carry_bias") is not None:
+        payload["inner_os_sleep_body_homeostasis_carry_bias"] = report["inner_os_sleep_body_homeostasis_carry_bias"]
+    if report.get("inner_os_sleep_relational_continuity_focus"):
+        payload["inner_os_sleep_relational_continuity_focus"] = report["inner_os_sleep_relational_continuity_focus"]
+    if report.get("inner_os_sleep_relational_continuity_carry_bias") is not None:
+        payload["inner_os_sleep_relational_continuity_carry_bias"] = report["inner_os_sleep_relational_continuity_carry_bias"]
+    if report.get("inner_os_sleep_group_thread_focus"):
+        payload["inner_os_sleep_group_thread_focus"] = report["inner_os_sleep_group_thread_focus"]
+    if report.get("inner_os_sleep_group_thread_carry_bias") is not None:
+        payload["inner_os_sleep_group_thread_carry_bias"] = report["inner_os_sleep_group_thread_carry_bias"]
+    if report.get("inner_os_sleep_expressive_style_focus"):
+        payload["inner_os_sleep_expressive_style_focus"] = report["inner_os_sleep_expressive_style_focus"]
+    if report.get("inner_os_sleep_expressive_style_carry_bias") is not None:
+        payload["inner_os_sleep_expressive_style_carry_bias"] = report["inner_os_sleep_expressive_style_carry_bias"]
+    if report.get("inner_os_sleep_expressive_style_history_focus"):
+        payload["inner_os_sleep_expressive_style_history_focus"] = report["inner_os_sleep_expressive_style_history_focus"]
+    if report.get("inner_os_sleep_expressive_style_history_bias") is not None:
+        payload["inner_os_sleep_expressive_style_history_bias"] = report["inner_os_sleep_expressive_style_history_bias"]
+    if report.get("inner_os_sleep_banter_style_focus"):
+        payload["inner_os_sleep_banter_style_focus"] = report["inner_os_sleep_banter_style_focus"]
+    if report.get("inner_os_sleep_lexical_variation_carry_bias") is not None:
+        payload["inner_os_sleep_lexical_variation_carry_bias"] = report["inner_os_sleep_lexical_variation_carry_bias"]
     json_path = out_path / "nightly.json"
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return json_path

@@ -59,12 +59,29 @@ class MemoryOrchestrationCore:
         future_signal = _float_from(current_state, "future_signal", default=0.0)
         terrain_transition_roughness = _float_from(current_state, "terrain_transition_roughness", default=0.0)
         forgetting_pressure = _float_from(forgetting_snapshot, "forgetting_pressure", default=0.0)
+        attachment = _float_from(current_state, "attachment", default=0.0)
+        familiarity = _float_from(current_state, "familiarity", default=0.0)
+        trust_memory = _float_from(current_state, "trust_memory", default=0.0)
+        relation_seed_strength = _float_from(current_state, "relation_seed_strength", default=0.0)
+        related_person_id = ""
+        if current_state:
+            try:
+                related_person_id = str(current_state.get("related_person_id") or "").strip()
+            except AttributeError:
+                related_person_id = ""
+        relation_bias = _clamp01(
+            attachment * 0.32
+            + familiarity * 0.24
+            + trust_memory * 0.24
+            + relation_seed_strength * 0.2
+        ) if related_person_id else 0.0
 
         reuse_trajectory = _clamp01(
             conscious_mosaic_recentness * 0.28
             + conscious_mosaic_density * 0.16
             + monument_salience * 0.14
             + replay_intensity * 0.22
+            + relation_bias * 0.1
             + (0.12 if recall_active else 0.0)
         )
         interference_pressure = _clamp01(
@@ -77,6 +94,7 @@ class MemoryOrchestrationCore:
             monument_salience * 0.28
             + conscious_mosaic_density * 0.14
             + replay_intensity * 0.16
+            + relation_bias * 0.12
             + max(0.0, 1.0 - interference_pressure) * 0.14
             + (0.08 if recall_active else 0.0)
         )
@@ -84,6 +102,7 @@ class MemoryOrchestrationCore:
             future_signal * 0.42
             + anticipation_tension * 0.24
             + monument_salience * 0.06
+            + relation_bias * 0.08
         )
         return MemoryOrchestrationSnapshot(
             monument_salience=monument_salience,

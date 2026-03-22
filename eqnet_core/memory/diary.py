@@ -5,6 +5,10 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from eqnet_core.models.conscious import ConsciousEpisode
+from .working_memory_seed import (
+    extract_long_term_theme_from_context_tags,
+    extract_working_memory_seed_from_context_tags,
+)
 
 
 class DiaryWriter:
@@ -21,6 +25,12 @@ class DiaryWriter:
 
     def _serialize_episode(self, episode: ConsciousEpisode) -> Dict[str, object]:
         talk_mode = episode.self_state.current_mode.value
+        working_memory_seed = extract_working_memory_seed_from_context_tags(
+            episode.world_state.context_tags
+        )
+        long_term_theme = extract_long_term_theme_from_context_tags(
+            episode.world_state.context_tags
+        )
         return {
             "ts": episode.timestamp.isoformat(),
             "id": episode.id,
@@ -34,6 +44,8 @@ class DiaryWriter:
             "hazard_score": episode.world_state.hazard_score,
             "qualia": episode.qualia.to_dict(),
             "value_gradient": (episode.value_gradient or episode.qualia.value_gradient).to_dict(),
+            "working_memory_seed": working_memory_seed,
+            "long_term_theme": long_term_theme,
             "dominant_self_layer": episode.dominant_self_layer.value if episode.dominant_self_layer else None,
             "implementation": episode.implementation.to_dict() if episode.implementation else None,
             "self_force": episode.self_force.to_dict() if episode.self_force else None,

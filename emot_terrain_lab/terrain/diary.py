@@ -20,6 +20,10 @@ class DiaryEntry:
     tags: List[str]
     highlights: List[str]
     culture_summary: Optional[Dict[str, Any]] = None
+    working_memory_summary: Optional[Dict[str, Any]] = None
+    working_memory_signature_summary: Optional[Dict[str, Any]] = None
+    working_memory_replay_summary: Optional[Dict[str, Any]] = None
+    long_term_theme_summary: Optional[Dict[str, Any]] = None
 
     def to_json(self) -> Dict:
         return {
@@ -29,6 +33,10 @@ class DiaryEntry:
             "tags": self.tags,
             "highlights": self.highlights,
             "culture_summary": self.culture_summary,
+            "working_memory_summary": self.working_memory_summary,
+            "working_memory_signature_summary": self.working_memory_signature_summary,
+            "working_memory_replay_summary": self.working_memory_replay_summary,
+            "long_term_theme_summary": self.long_term_theme_summary,
         }
 
     @staticmethod
@@ -40,6 +48,10 @@ class DiaryEntry:
             tags=list(payload.get("tags", [])),
             highlights=list(payload.get("highlights", [])),
             culture_summary=payload.get("culture_summary"),
+            working_memory_summary=payload.get("working_memory_summary"),
+            working_memory_signature_summary=payload.get("working_memory_signature_summary"),
+            working_memory_replay_summary=payload.get("working_memory_replay_summary"),
+            long_term_theme_summary=payload.get("long_term_theme_summary"),
         )
 
 
@@ -76,6 +88,10 @@ class DiaryManager:
         fatigue_flag: bool,
         use_llm: bool,
         culture_stats: Optional[Dict[str, Dict[str, float]]] = None,
+        working_memory_summary: Optional[Dict[str, Any]] = None,
+        working_memory_signature_summary: Optional[Dict[str, Any]] = None,
+        working_memory_replay_summary: Optional[Dict[str, Any]] = None,
+        long_term_theme_summary: Optional[Dict[str, Any]] = None,
     ) -> DiaryEntry:
         day_key = day.isoformat()
         entry = self._compose_entry(
@@ -89,6 +105,10 @@ class DiaryManager:
             fatigue_flag,
             use_llm,
             culture_stats,
+            working_memory_summary,
+            working_memory_signature_summary,
+            working_memory_replay_summary,
+            long_term_theme_summary,
         )
         self._upsert_entry(entry)
         return entry
@@ -105,6 +125,10 @@ class DiaryManager:
         fatigue_flag: bool,
         use_llm: bool,
         culture_stats: Optional[Dict[str, Dict[str, float]]] = None,
+        working_memory_summary: Optional[Dict[str, Any]] = None,
+        working_memory_signature_summary: Optional[Dict[str, Any]] = None,
+        working_memory_replay_summary: Optional[Dict[str, Any]] = None,
+        long_term_theme_summary: Optional[Dict[str, Any]] = None,
     ) -> DiaryEntry:
         entropy = float(metrics.get("entropy", 0.0))
         enthalpy = float(metrics.get("enthalpy_mean", 0.0))
@@ -131,6 +155,10 @@ class DiaryManager:
             rest_snapshot,
             metrics,
             culture_lines=culture_lines,
+            working_memory_summary=working_memory_summary,
+            working_memory_signature_summary=working_memory_signature_summary,
+            working_memory_replay_summary=working_memory_replay_summary,
+            long_term_theme_summary=long_term_theme_summary,
         )
 
         if use_llm:
@@ -164,6 +192,10 @@ class DiaryManager:
             tags=tags,
             highlights=highlights,
             culture_summary=culture_summary,
+            working_memory_summary=working_memory_summary,
+            working_memory_signature_summary=working_memory_signature_summary,
+            working_memory_replay_summary=working_memory_replay_summary,
+            long_term_theme_summary=long_term_theme_summary,
         )
         return entry
 
@@ -234,6 +266,10 @@ class DiaryManager:
         rest_snapshot: Dict[str, object],
         moment_metrics: Dict[str, float],
         culture_lines: Optional[List[str]] = None,
+        working_memory_summary: Optional[Dict[str, Any]] = None,
+        working_memory_signature_summary: Optional[Dict[str, Any]] = None,
+        working_memory_replay_summary: Optional[Dict[str, Any]] = None,
+        long_term_theme_summary: Optional[Dict[str, Any]] = None,
     ) -> str:
         lines = [
             f"[{day_key}] field memo",
@@ -258,8 +294,130 @@ class DiaryManager:
             lines.append(mask_line)
         if culture_lines:
             lines.extend(culture_lines)
+        working_memory_line = self._format_working_memory_line(working_memory_summary)
+        if working_memory_line:
+            lines.append(working_memory_line)
+        working_memory_signature_line = self._format_working_memory_signature_line(working_memory_signature_summary)
+        if working_memory_signature_line:
+            lines.append(working_memory_signature_line)
+        working_memory_replay_line = self._format_working_memory_replay_line(working_memory_replay_summary)
+        if working_memory_replay_line:
+            lines.append(working_memory_replay_line)
+        long_term_theme_line = self._format_long_term_theme_line(long_term_theme_summary)
+        if long_term_theme_line:
+            lines.append(long_term_theme_line)
         lines.append("Thanks for recording today's flow. Share more whenever you feel ready.")
         return "\n".join(lines)
+
+    def _format_working_memory_line(
+        self,
+        working_memory_summary: Optional[Dict[str, Any]],
+    ) -> Optional[str]:
+        if not working_memory_summary or not working_memory_summary.get("available"):
+            return None
+        focus = str(working_memory_summary.get("current_focus") or "").strip()
+        anchor = str(working_memory_summary.get("focus_anchor") or "").strip()
+        unresolved = int(working_memory_summary.get("unresolved_count") or 0)
+        pending = float(working_memory_summary.get("pending_meaning") or 0.0)
+        readiness = float(working_memory_summary.get("promotion_readiness") or 0.0)
+        if not focus and not anchor:
+            return None
+        parts = [f"focus={focus or 'ambient'}"]
+        if anchor:
+            parts.append(f"anchor={anchor}")
+        parts.append(f"unresolved={unresolved}")
+        parts.append(f"pending={pending:.2f}")
+        parts.append(f"handoff={readiness:.2f}")
+        return "Working memory: " + " / ".join(parts)
+
+    def _format_working_memory_signature_line(
+        self,
+        working_memory_signature_summary: Optional[Dict[str, Any]],
+    ) -> Optional[str]:
+        if not working_memory_signature_summary:
+            return None
+        focus = str(working_memory_signature_summary.get("dominant_focus") or "").strip()
+        anchor = str(working_memory_signature_summary.get("dominant_anchor") or "").strip()
+        readiness = float(working_memory_signature_summary.get("promotion_readiness_mean") or 0.0)
+        auto_pressure = float(working_memory_signature_summary.get("autobiographical_pressure_mean") or 0.0)
+        recurrence_weight = float(working_memory_signature_summary.get("recurrence_weight") or 0.0)
+        semantic_seed_strength = float(working_memory_signature_summary.get("semantic_seed_strength") or 0.0)
+        long_term_theme = working_memory_signature_summary.get("long_term_theme")
+        if not focus and not anchor:
+            return None
+        parts = [f"focus={focus or 'ambient'}"]
+        if anchor:
+            parts.append(f"anchor={anchor}")
+        parts.append(f"semantic_handoff={readiness:.2f}")
+        parts.append(f"self_pressure={auto_pressure:.2f}")
+        if recurrence_weight > 0.0:
+            parts.append(f"recurrence={recurrence_weight:.2f}")
+        if semantic_seed_strength > 0.0:
+            parts.append(f"seed={semantic_seed_strength:.2f}")
+        if isinstance(long_term_theme, dict):
+            theme_kind = str(long_term_theme.get("kind") or "").strip()
+            theme_strength = float(long_term_theme.get("strength") or 0.0)
+            if theme_kind:
+                parts.append(f"theme={theme_kind}")
+            if theme_strength > 0.0:
+                parts.append(f"theme_strength={theme_strength:.2f}")
+        return "Working memory signature: " + " / ".join(parts)
+
+    def _format_working_memory_replay_line(
+        self,
+        working_memory_replay_summary: Optional[Dict[str, Any]],
+    ) -> Optional[str]:
+        if not working_memory_replay_summary:
+            return None
+        focus = str(working_memory_replay_summary.get("focus") or "").strip()
+        anchor = str(working_memory_replay_summary.get("anchor") or "").strip()
+        matched = int(working_memory_replay_summary.get("matched_events") or 0)
+        strength = float(working_memory_replay_summary.get("strength") or 0.0)
+        if not focus and not anchor and matched <= 0:
+            return None
+        parts = [f"focus={focus or 'ambient'}"]
+        if anchor:
+            parts.append(f"anchor={anchor}")
+        parts.append(f"retained={matched}")
+        parts.append(f"bias={strength:.2f}")
+        top_matches = working_memory_replay_summary.get("top_matches") or []
+        ids = [str(item.get("id") or "").strip() for item in top_matches if isinstance(item, dict)]
+        ids = [item for item in ids if item]
+        if ids:
+            parts.append("ids=" + ",".join(ids[:2]))
+        return "Working memory replay: " + " / ".join(parts)
+
+    def _format_long_term_theme_line(
+        self,
+        long_term_theme_summary: Optional[Dict[str, Any]],
+    ) -> Optional[str]:
+        if not long_term_theme_summary:
+            return None
+        focus = str(long_term_theme_summary.get("focus") or "").strip()
+        anchor = str(long_term_theme_summary.get("anchor") or "").strip()
+        kind = str(long_term_theme_summary.get("kind") or "").strip()
+        summary = str(long_term_theme_summary.get("summary") or "").strip()
+        strength = float(long_term_theme_summary.get("strength") or 0.0)
+        seed = float(long_term_theme_summary.get("seed_strength") or 0.0)
+        recurrence = float(long_term_theme_summary.get("recurrence_weight") or 0.0)
+        if not focus and not anchor and not summary:
+            return None
+        parts = []
+        if kind:
+            parts.append(f"kind={kind}")
+        if focus:
+            parts.append(f"focus={focus}")
+        if anchor:
+            parts.append(f"anchor={anchor}")
+        if strength > 0.0:
+            parts.append(f"strength={strength:.2f}")
+        if seed > 0.0:
+            parts.append(f"seed={seed:.2f}")
+        if recurrence > 0.0:
+            parts.append(f"recurrence={recurrence:.2f}")
+        if summary:
+            parts.append(f"summary={summary}")
+        return "Long-term theme: " + " / ".join(parts)
 
 
     def _build_prompt(

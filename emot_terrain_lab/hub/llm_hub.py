@@ -15,7 +15,7 @@ from functools import lru_cache
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 import time
 import os
 
@@ -25,6 +25,7 @@ from emot_terrain_lab.hub.akorn import AkornGate, AkornConfig
 from emot_terrain_lab.rag.lazy_rag import LazyRAG, LazyRAGConfig
 from emot_terrain_lab.rag.sse_search import SSESearchAdapter
 from emot_terrain_lab.vision.lmstudio_vlm import LMStudioVLMAdapter
+from inner_os.conversation_contract import build_conversation_contract
 from runtime.config import load_runtime_cfg
 
 
@@ -51,6 +52,7 @@ class HubResponse:
     latency_ms: float
     controls_used: Dict[str, float]
     safety: Dict[str, str]
+    model_source: str = ""
     confidence: float = 0.0
     uncertainty_reason: Tuple[str, ...] = ()
     retrieval_summary: Optional[Dict[str, object]] = None
@@ -190,6 +192,18 @@ class LLMHub:
         intent: Optional[str] = None,
         slos: Optional[Dict[str, float]] = None,
         image_path: Optional[str] = None,
+        interaction_policy: Optional[Mapping[str, Any]] = None,
+        action_posture: Optional[Mapping[str, Any]] = None,
+        actuation_plan: Optional[Mapping[str, Any]] = None,
+        conversation_contract: Optional[Mapping[str, Any]] = None,
+        conversational_objects: Optional[Mapping[str, Any]] = None,
+        object_operations: Optional[Mapping[str, Any]] = None,
+        interaction_effects: Optional[Mapping[str, Any]] = None,
+        interaction_judgement_summary: Optional[Mapping[str, Any]] = None,
+        interaction_condition_report: Optional[Mapping[str, Any]] = None,
+        content_sequence: Optional[Sequence[Mapping[str, Any]]] = None,
+        surface_profile: Optional[Mapping[str, Any]] = None,
+        utterance_stance: Optional[str] = None,
     ) -> HubResponse:
         """
         Generate text under EQNet control.
@@ -268,8 +282,32 @@ class LLMHub:
         if visual_context:
             context = f"{visual_context}\n\n{context.strip()}" if context else visual_context
         prompt = user_text
-        if context:
+        policy_prompt = self._build_inner_os_policy_prompt(
+            interaction_policy=interaction_policy,
+            action_posture=action_posture,
+            actuation_plan=actuation_plan,
+            conversation_contract=conversation_contract,
+            conversational_objects=conversational_objects,
+            object_operations=object_operations,
+            interaction_effects=interaction_effects,
+            interaction_judgement_summary=interaction_judgement_summary,
+            interaction_condition_report=interaction_condition_report,
+            content_sequence=content_sequence,
+            surface_profile=surface_profile,
+            utterance_stance=utterance_stance,
+        )
+        if context and policy_prompt:
+            prompt = (
+                context.strip()
+                + "\n\n---\n\n"
+                + policy_prompt
+                + "\n\n---\n\n"
+                + user_text.strip()
+            )
+        elif context:
             prompt = context.strip() + "\n\n---\n\n" + user_text.strip()
+        elif policy_prompt:
+            prompt = policy_prompt + "\n\n---\n\n" + user_text.strip()
 
         # Apply AKOrN gate (minimal): looks for R/rho/I/q in controls or nested under 'akorn'
         gated_controls, gate_log = self.akorn.apply(controls)
@@ -290,7 +328,9 @@ class LLMHub:
         )
         if self._show_uncertainty_meta():
             text = f"{text}\n\n{self._render_uncertainty_line(confidence, uncertainty_reason)}"
-        model = terrain_llm.get_llm().model or chosen_llm
+        llm_info = terrain_llm.get_llm()
+        model = llm_info.model or chosen_llm
+        model_source = str(getattr(llm_info, "model_source", "") or "").strip()
 
         trace_id = f"hub-{int(time.time() * 1000)}"
         safety = {
@@ -316,6 +356,7 @@ class LLMHub:
         return HubResponse(
             text=text,
             model=model,
+            model_source=model_source,
             trace_id=trace_id,
             latency_ms=latency,
             controls_used=used_controls,
@@ -325,6 +366,156 @@ class LLMHub:
             retrieval_summary=retrieval_summary,
             perception_summary=perception_summary,
         )
+
+    def _build_inner_os_policy_prompt(
+        self,
+        *,
+        interaction_policy: Optional[Mapping[str, Any]] = None,
+        action_posture: Optional[Mapping[str, Any]] = None,
+        actuation_plan: Optional[Mapping[str, Any]] = None,
+        conversation_contract: Optional[Mapping[str, Any]] = None,
+        conversational_objects: Optional[Mapping[str, Any]] = None,
+        object_operations: Optional[Mapping[str, Any]] = None,
+        interaction_effects: Optional[Mapping[str, Any]] = None,
+        interaction_judgement_summary: Optional[Mapping[str, Any]] = None,
+        interaction_condition_report: Optional[Mapping[str, Any]] = None,
+        content_sequence: Optional[Sequence[Mapping[str, Any]]] = None,
+        surface_profile: Optional[Mapping[str, Any]] = None,
+        utterance_stance: Optional[str] = None,
+    ) -> str:
+        policy_packet = dict(interaction_policy or {})
+        posture = dict(action_posture or {})
+        actuation = dict(actuation_plan or {})
+        conversational_payload = dict(conversational_objects or {})
+        operation_payload = dict(object_operations or {})
+        effects_payload = dict(interaction_effects or {})
+        judgement_summary_payload = dict(interaction_judgement_summary or {})
+        condition_report_payload = dict(interaction_condition_report or {})
+        contract_payload = dict(conversation_contract or {})
+        sequence_rows = [
+            {
+                "act": str(item.get("act") or "").strip(),
+                "text": str(item.get("text") or "").strip(),
+            }
+            for item in (content_sequence or [])
+            if isinstance(item, Mapping) and str(item.get("text") or "").strip()
+        ]
+        profile_payload = {}
+        if isinstance(surface_profile, Mapping):
+            for key in (
+                "opening_delay",
+                "response_length",
+                "sentence_temperature",
+                "pause_insertion",
+                "certainty_style",
+                "opening_pace_windowed",
+                "return_gaze_expectation",
+                "voice_texture",
+                "lightness_room",
+                "continuity_weight",
+            ):
+                if key in {"lightness_room", "continuity_weight"}:
+                    raw = surface_profile.get(key)
+                    if raw is None:
+                        continue
+                    try:
+                        profile_payload[key] = round(float(raw), 4)
+                    except (TypeError, ValueError):
+                        continue
+                else:
+                    value = str(surface_profile.get(key) or "").strip()
+                    if value:
+                        profile_payload[key] = value
+        guidance: Dict[str, Any] = {}
+        conversation_contract = contract_payload or _build_conversation_contract_payload(
+            conversational_objects=conversational_payload,
+            object_operations=operation_payload,
+            interaction_effects=effects_payload,
+            interaction_judgement_summary=judgement_summary_payload,
+            interaction_condition_report=condition_report_payload,
+            interaction_policy=policy_packet,
+        )
+        if conversation_contract:
+            guidance["conversation_contract"] = conversation_contract
+        if policy_packet:
+            guidance["interaction_policy"] = {
+                "dialogue_act": str(policy_packet.get("dialogue_act") or "").strip(),
+                "opening_move": str(policy_packet.get("opening_move") or "").strip(),
+                "followup_move": str(policy_packet.get("followup_move") or "").strip(),
+                "closing_move": str(policy_packet.get("closing_move") or "").strip(),
+                "dialogue_order": list(policy_packet.get("dialogue_order") or []),
+                "do_not_cross": list(policy_packet.get("do_not_cross") or []),
+            }
+            ordered_operations = [
+                str(item)
+                for item in policy_packet.get("ordered_operation_kinds") or []
+                if str(item).strip()
+            ]
+            if ordered_operations:
+                guidance["interaction_policy"]["ordered_operations"] = ordered_operations
+            ordered_effects = [
+                str(item)
+                for item in policy_packet.get("ordered_effect_kinds") or []
+                if str(item).strip()
+            ]
+            if ordered_effects:
+                guidance["interaction_policy"]["ordered_effects"] = ordered_effects
+            shell_guidance = [str(item) for item in policy_packet.get("shell_guidance") or [] if str(item).strip()]
+            if shell_guidance:
+                guidance["interaction_policy"]["shell_guidance"] = shell_guidance
+            expressive_style = dict(policy_packet.get("expressive_style_state") or {})
+            if expressive_style:
+                guidance["interaction_policy"]["expressive_style_state"] = {
+                    "state": str(expressive_style.get("state") or "").strip(),
+                    "lightness_room": round(float(expressive_style.get("lightness_room") or 0.0), 4),
+                    "continuity_weight": round(float(expressive_style.get("continuity_weight") or 0.0), 4),
+                    "winner_margin": round(float(expressive_style.get("winner_margin") or 0.0), 4),
+                }
+        if posture:
+            guidance["action_posture"] = {
+                "engagement_mode": str(posture.get("engagement_mode") or "").strip(),
+                "outcome_goal": str(posture.get("outcome_goal") or "").strip(),
+                "boundary_mode": str(posture.get("boundary_mode") or "").strip(),
+                "attention_target": str(posture.get("attention_target") or "").strip(),
+                "memory_write_priority": str(posture.get("memory_write_priority") or "").strip(),
+            }
+        if actuation:
+            guidance["actuation_plan"] = {
+                "execution_mode": str(actuation.get("execution_mode") or "").strip(),
+                "primary_action": str(actuation.get("primary_action") or "").strip(),
+                "reply_permission": str(actuation.get("reply_permission") or "").strip(),
+                "wait_before_action": str(actuation.get("wait_before_action") or "").strip(),
+                "action_queue": list(actuation.get("action_queue") or []),
+            }
+        if sequence_rows:
+            guidance["content_sequence"] = sequence_rows
+        if profile_payload:
+            guidance["surface_profile"] = profile_payload
+        stance = str(utterance_stance or "").strip()
+        if stance:
+            guidance["utterance_stance"] = stance
+        if not guidance:
+            return ""
+        return "[inner_os_policy]\n" + json.dumps(guidance, ensure_ascii=False, indent=2)
+
+
+def _build_conversation_contract_payload(
+    *,
+    conversational_objects: Mapping[str, Any],
+    object_operations: Mapping[str, Any],
+    interaction_effects: Mapping[str, Any],
+    interaction_judgement_summary: Mapping[str, Any],
+    interaction_condition_report: Mapping[str, Any],
+    interaction_policy: Mapping[str, Any],
+) -> Dict[str, Any]:
+    return build_conversation_contract(
+        conversational_objects=conversational_objects,
+        object_operations=object_operations,
+        interaction_effects=interaction_effects,
+        interaction_judgement_summary=interaction_judgement_summary,
+        interaction_condition_report=interaction_condition_report,
+        interaction_policy=interaction_policy,
+    )
 
 
 @lru_cache(maxsize=4)

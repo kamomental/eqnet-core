@@ -122,6 +122,48 @@ def test_reinterpretation_core_marks_community_transition_reframing() -> None:
     assert snapshot.meaning_shift > 0.2
 
 
+def test_reinterpretation_core_reads_long_communal_profile_before_transition() -> None:
+    core = ReinterpretationCore()
+    snapshot = core.snapshot(
+        recall_payload={
+            "record_kind": "observed_real",
+            "summary": "ritual harbor memory",
+            "memory_anchor": "harbor shrine",
+        },
+        current_state={
+            "norm_pressure": 0.48,
+            "trust_bias": 0.57,
+            "belonging": 0.62,
+            "role_commitment": 0.51,
+            "temporal_pressure": 0.26,
+            "continuity_score": 0.66,
+            "social_grounding": 0.63,
+            "recent_strain": 0.18,
+            "culture_resonance": 0.74,
+            "community_resonance": 0.78,
+            "ritual_memory": 0.81,
+            "institutional_memory": 0.72,
+            "terrain_transition_roughness": 0.08,
+        },
+        relational_world={
+            "culture_id": "coastal",
+            "community_id": "harbor_collective",
+            "social_role": "companion",
+        },
+        environment_pressure={
+            "resource_pressure": 0.14,
+            "hazard_pressure": 0.12,
+            "ritual_pressure": 0.44,
+            "institutional_pressure": 0.38,
+            "social_density": 0.41,
+        },
+        transition_signal={"transition_intensity": 0.08},
+    )
+    assert snapshot.mode == "community_profile_reframing"
+    assert snapshot.community_profile_pressure >= 0.46
+    assert "longer communal pattern" in snapshot.summary
+
+
 def test_reinterpretation_core_builds_transition_marked_record() -> None:
     core = ReinterpretationCore()
     record = core.build_reconstructed_record(
@@ -166,6 +208,53 @@ def test_reinterpretation_core_builds_transition_marked_record() -> None:
     assert record["reinterpretation_mode"] == "community_transition_reframing"
     assert record["transition_intensity"] == 0.7
     assert record["terrain_transition_roughness"] == 0.48
+
+
+def test_reinterpretation_core_reconstructed_record_carries_community_profile_pressure() -> None:
+    core = ReinterpretationCore()
+    record = core.build_reconstructed_record(
+        recall_payload={
+            "record_kind": "observed_real",
+            "summary": "ritual harbor memory",
+            "text": "the harbor ritual stayed with us",
+            "memory_anchor": "harbor shrine",
+            "source_episode_id": "ep-ritual-1",
+            "culture_id": "coastal",
+            "community_id": "harbor_collective",
+        },
+        current_state={
+            "norm_pressure": 0.48,
+            "trust_bias": 0.57,
+            "belonging": 0.62,
+            "role_commitment": 0.51,
+            "temporal_pressure": 0.26,
+            "continuity_score": 0.66,
+            "social_grounding": 0.63,
+            "recent_strain": 0.18,
+            "culture_resonance": 0.74,
+            "community_resonance": 0.78,
+            "ritual_memory": 0.81,
+            "institutional_memory": 0.72,
+            "terrain_transition_roughness": 0.08,
+        },
+        relational_world={
+            "culture_id": "coastal",
+            "community_id": "harbor_collective",
+            "social_role": "companion",
+        },
+        environment_pressure={
+            "resource_pressure": 0.14,
+            "hazard_pressure": 0.12,
+            "ritual_pressure": 0.44,
+            "institutional_pressure": 0.38,
+            "social_density": 0.41,
+        },
+        transition_signal={"transition_intensity": 0.08},
+        reply_text="it feels like this memory belongs to the place itself",
+    )
+    assert record is not None
+    assert record["reinterpretation_mode"] == "community_profile_reframing"
+    assert record["community_profile_pressure"] >= 0.46
 
 
 def test_reinterpretation_core_slows_meaning_under_transition_roughness() -> None:
@@ -386,3 +475,62 @@ def test_reinterpretation_core_slows_meaning_under_defensive_salience() -> None:
     )
     assert high.defensive_salience == 0.48
     assert high.meaning_shift < low.meaning_shift
+
+
+def test_reinterpretation_core_enters_grounding_deferral_when_field_is_unsettled() -> None:
+    core = ReinterpretationCore()
+    snapshot = core.snapshot(
+        recall_payload={"record_kind": "observed_real", "summary": "unknown square", "memory_anchor": "north square"},
+        current_state={
+            "norm_pressure": 0.42,
+            "trust_bias": 0.34,
+            "belonging": 0.31,
+            "role_commitment": 0.28,
+            "temporal_pressure": 0.38,
+            "continuity_score": 0.29,
+            "social_grounding": 0.24,
+            "recent_strain": 0.61,
+            "terrain_transition_roughness": 0.72,
+            "defensive_salience": 0.51,
+            "approach_confidence": 0.04,
+        },
+        relational_world={"culture_id": "frontier", "community_id": "new_outpost", "social_role": "guest"},
+        environment_pressure={"resource_pressure": 0.34, "hazard_pressure": 0.41, "ritual_pressure": 0.12, "institutional_pressure": 0.18, "social_density": 0.3},
+        transition_signal={"transition_intensity": 0.58},
+    )
+    assert snapshot.mode == "grounding_deferral"
+    assert "grounded observation" in snapshot.summary
+    assert snapshot.meaning_hold > snapshot.meaning_push
+
+
+def test_reinterpretation_core_skips_reconstructed_record_during_grounding_deferral() -> None:
+    core = ReinterpretationCore()
+    record = core.build_reconstructed_record(
+        recall_payload={
+            "record_kind": "observed_real",
+            "summary": "unknown square",
+            "text": "the square feels unfamiliar and exposed",
+            "memory_anchor": "north square",
+            "source_episode_id": "ep-shift-1",
+            "culture_id": "frontier",
+            "community_id": "new_outpost",
+        },
+        current_state={
+            "norm_pressure": 0.42,
+            "trust_bias": 0.34,
+            "belonging": 0.31,
+            "role_commitment": 0.28,
+            "temporal_pressure": 0.38,
+            "continuity_score": 0.29,
+            "social_grounding": 0.24,
+            "recent_strain": 0.61,
+            "terrain_transition_roughness": 0.72,
+            "defensive_salience": 0.51,
+            "approach_confidence": 0.04,
+        },
+        relational_world={"culture_id": "frontier", "community_id": "new_outpost", "social_role": "guest"},
+        environment_pressure={"resource_pressure": 0.34, "hazard_pressure": 0.41, "ritual_pressure": 0.12, "institutional_pressure": 0.18, "social_density": 0.3},
+        transition_signal={"transition_intensity": 0.58},
+        reply_text="I do not want to decide what this means yet.",
+    )
+    assert record is None

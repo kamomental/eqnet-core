@@ -19,6 +19,7 @@ class RelationalWorldState:
     culture_id: str = "default"
     community_id: str = "local"
     social_role: str = "companion"
+    person_id: Optional[str] = None
     resource_scarcity: float = 0.0
     hazard_level: float = 0.0
     ritual_signal: float = 0.0
@@ -43,7 +44,7 @@ class RelationalWorldCore:
         return payload
 
     def absorb_context(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
-        for key in ("culture_id", "community_id", "social_role", "place_memory_anchor"):
+        for key in ("culture_id", "community_id", "social_role", "place_memory_anchor", "person_id"):
             value = payload.get(key)
             if isinstance(value, str) and value.strip():
                 setattr(self.state, key, value.strip())
@@ -117,4 +118,3 @@ def _text_or_none(value: Any) -> Optional[str]:
         return None
     text = str(value).strip()
     return text or None
-

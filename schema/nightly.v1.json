@@ -160,6 +160,208 @@
       }
     },
     "policy_feedback_history_path": { "type": "string" },
+    "inner_os_sleep_snapshot_path": { "type": "string" },
+    "inner_os_sleep_mode": { "type": "string" },
+    "inner_os_working_memory_snapshot_path": { "type": "string" },
+    "inner_os_working_memory_focus": { "type": "string" },
+    "inner_os_working_memory_readiness": { "type": "number" },
+    "inner_os_working_memory_replay_bias": {
+      "type": "object",
+      "properties": {
+        "focus": { "type": "string" },
+        "anchor": { "type": "string" },
+        "strength": { "type": "number" },
+        "matched_events": { "type": "integer" },
+        "boost_mean": { "type": "number" },
+        "boost_max": { "type": "number" },
+        "top_matches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "alignment": { "type": "number" },
+              "boost": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "inner_os_long_term_theme_summary": {
+      "type": "object",
+      "properties": {
+        "focus": { "type": "string" },
+        "anchor": { "type": "string" },
+        "kind": { "type": "string" },
+        "summary": { "type": "string" },
+        "strength": { "type": "number" }
+      }
+    },
+    "inner_os_memory_class_summary": {
+      "type": "object",
+      "properties": {
+        "dominant_class": { "type": "string" },
+        "dominant_reason": { "type": "string" },
+        "counts": { "type": "object" },
+        "weighted_counts": { "type": "object" },
+        "recent_records": { "type": "integer" },
+        "lookback_hours": { "type": "integer" }
+      }
+    },
+    "inner_os_agenda_summary": {
+      "type": "object",
+      "properties": {
+        "dominant_agenda": { "type": "string" },
+        "dominant_reason": { "type": "string" },
+        "state_counts": { "type": "object" },
+        "weighted_state_counts": { "type": "object" },
+        "agenda_carry_bias": { "type": "number" },
+        "recent_records": { "type": "integer" },
+        "lookback_hours": { "type": "integer" }
+      }
+    },
+    "inner_os_commitment_summary": {
+      "type": "object",
+      "properties": {
+        "dominant_target": { "type": "string" },
+        "dominant_state": { "type": "string" },
+        "dominant_reason": { "type": "string" },
+        "target_counts": { "type": "object" },
+        "state_counts": { "type": "object" },
+        "weighted_target_counts": { "type": "object" },
+        "commitment_carry_bias": { "type": "number" },
+        "commitment_followup_focus": { "type": "string" },
+        "commitment_mode_focus": { "type": "string" },
+        "recent_records": { "type": "integer" },
+        "lookback_hours": { "type": "integer" }
+      }
+    },
+    "inner_os_insight_summary": {
+      "type": "object",
+      "properties": {
+        "dominant_insight_class": { "type": "string" },
+        "dominant_reframed_topic": { "type": "string" },
+        "insight_class_counts": { "type": "object" },
+        "weighted_class_counts": { "type": "object" },
+        "insight_link_counts": { "type": "object" },
+        "association_reweighting_bias": { "type": "number" },
+        "association_reweighting_focus": { "type": "string" },
+        "association_reweighting_reason": { "type": "string" },
+        "insight_reframing_bias": { "type": "number" },
+        "insight_terrain_shape_bias": { "type": "number" },
+        "insight_terrain_shape_reason": { "type": "string" },
+        "insight_terrain_shape_target": { "type": "string" },
+        "insight_anchor_center": {
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "insight_anchor_dispersion": { "type": "number" },
+        "recent_records": { "type": "integer" },
+        "lookback_hours": { "type": "integer" }
+      }
+    },
+    "inner_os_partner_relation_summary": {
+      "type": "object",
+      "properties": {
+        "person_id": { "type": "string" },
+        "summary": { "type": "string" },
+        "memory_anchor": { "type": "string" },
+        "social_role": { "type": "string" },
+        "social_interpretation": { "type": "string" },
+        "address_hint": { "type": "string" },
+        "timing_hint": { "type": "string" },
+        "stance_hint": { "type": "string" },
+        "attachment": { "type": "number" },
+        "familiarity": { "type": "number" },
+        "trust_memory": { "type": "number" },
+        "strength": { "type": "number" }
+      }
+    },
+    "inner_os_partner_relation_registry_summary": {
+      "type": "object",
+      "properties": {
+        "persons": { "type": "object" },
+        "top_person_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "dominant_person_id": { "type": "string" },
+        "total_people": { "type": "integer" },
+        "uncertainty": { "type": "number" }
+      }
+    },
+    "inner_os_group_thread_registry_summary": {
+      "type": "object",
+      "properties": {
+        "threads": { "type": "object" },
+        "top_thread_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "dominant_thread_id": { "type": "string" },
+        "total_threads": { "type": "integer" },
+        "thread_scores": { "type": "object" },
+        "uncertainty": { "type": "number" }
+      }
+    },
+    "inner_os_daily_carry_summary": {
+      "type": "object",
+      "properties": {
+        "summary_version": { "type": "string" },
+        "same_turn_focus": { "type": "object" },
+        "overnight_focus": { "type": "object" },
+        "carry_strengths": { "type": "object" },
+        "active_carry_channels": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "dominant_carry_channel": { "type": "string" },
+        "carry_alignment": { "type": "object" }
+      }
+    },
+    "inner_os_sleep_memory_class_focus": { "type": "string" },
+    "inner_os_sleep_agenda_focus": { "type": "string" },
+    "inner_os_sleep_agenda_bias": { "type": "number" },
+    "inner_os_sleep_agenda_reason": { "type": "string" },
+    "inner_os_sleep_commitment_target_focus": { "type": "string" },
+    "inner_os_sleep_commitment_state_focus": { "type": "string" },
+    "inner_os_sleep_commitment_carry_bias": { "type": "number" },
+    "inner_os_sleep_commitment_followup_focus": { "type": "string" },
+    "inner_os_sleep_commitment_mode_focus": { "type": "string" },
+    "inner_os_sleep_commitment_carry_reason": { "type": "string" },
+    "inner_os_sleep_body_homeostasis_focus": { "type": "string" },
+    "inner_os_sleep_body_homeostasis_carry_bias": { "type": "number" },
+    "inner_os_sleep_homeostasis_budget_focus": { "type": "string" },
+    "inner_os_sleep_homeostasis_budget_bias": { "type": "number" },
+    "inner_os_sleep_relational_continuity_focus": { "type": "string" },
+    "inner_os_sleep_relational_continuity_carry_bias": { "type": "number" },
+    "inner_os_sleep_group_thread_focus": { "type": "string" },
+    "inner_os_sleep_group_thread_carry_bias": { "type": "number" },
+    "inner_os_sleep_expressive_style_focus": { "type": "string" },
+    "inner_os_sleep_expressive_style_carry_bias": { "type": "number" },
+    "inner_os_sleep_expressive_style_history_focus": { "type": "string" },
+    "inner_os_sleep_expressive_style_history_bias": { "type": "number" },
+    "inner_os_sleep_banter_style_focus": { "type": "string" },
+    "inner_os_sleep_lexical_variation_carry_bias": { "type": "number" },
+    "inner_os_sleep_terrain_reweighting_bias": { "type": "number" },
+    "inner_os_sleep_insight_class_focus": { "type": "string" },
+    "inner_os_sleep_insight_reframing_bias": { "type": "number" },
+    "inner_os_sleep_association_reweighting_bias": { "type": "number" },
+    "inner_os_sleep_association_reweighting_focus": { "type": "string" },
+    "inner_os_sleep_association_reweighting_reason": { "type": "string" },
+    "inner_os_sleep_insight_terrain_shape_bias": { "type": "number" },
+    "inner_os_sleep_insight_terrain_shape_reason": { "type": "string" },
+    "inner_os_sleep_insight_terrain_shape_target": { "type": "string" },
+    "inner_os_sleep_insight_anchor_center": {
+      "type": "array",
+      "items": { "type": "number" }
+    },
+    "inner_os_sleep_insight_anchor_dispersion": { "type": "number" },
+    "inner_os_sleep_temperament_focus": { "type": "string" },
+    "inner_os_sleep_temperament_forward_bias": { "type": "number" },
+    "inner_os_sleep_temperament_guard_bias": { "type": "number" },
+    "inner_os_sleep_temperament_bond_bias": { "type": "number" },
+    "inner_os_sleep_temperament_recovery_bias": { "type": "number" },
     "alerts": {
       "type": "array",
       "items": { "type": "string" }

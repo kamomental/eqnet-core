@@ -188,3 +188,72 @@ def test_development_core_exposes_memory_kind_biases() -> None:
     assert biases["relationship_trace"] > biases["observed_real"]
     assert biases["verified"] > 0.0
     assert biases["transferred_learning"] > 0.0
+
+
+def test_development_core_reads_field_residue() -> None:
+    core = DevelopmentCore()
+    calm = core.snapshot(
+        relational_world={
+            "culture_id": "coastal",
+            "community_id": "harbor_collective",
+            "social_role": "companion",
+        },
+        sensor_input={
+            "person_count": 1,
+            "voice_level": 0.4,
+            "privacy_tags": [],
+            "body_stress_index": 0.2,
+        },
+        current_state={
+            "attachment": 0.68,
+            "familiarity": 0.58,
+            "trust_memory": 0.62,
+            "role_alignment": 0.57,
+            "roughness_level": 0.04,
+            "roughness_dwell": 0.0,
+            "defensive_level": 0.02,
+            "defensive_dwell": 0.0,
+        },
+        safety_bias=0.1,
+        environment_pressure={
+            "resource_pressure": 0.22,
+            "hazard_pressure": 0.18,
+            "ritual_pressure": 0.24,
+            "institutional_pressure": 0.3,
+            "social_density": 0.4,
+        },
+    )
+    rough = core.snapshot(
+        relational_world={
+            "culture_id": "coastal",
+            "community_id": "harbor_collective",
+            "social_role": "companion",
+        },
+        sensor_input={
+            "person_count": 1,
+            "voice_level": 0.4,
+            "privacy_tags": [],
+            "body_stress_index": 0.2,
+        },
+        current_state={
+            "attachment": 0.68,
+            "familiarity": 0.58,
+            "trust_memory": 0.62,
+            "role_alignment": 0.57,
+            "roughness_level": 0.58,
+            "roughness_dwell": 0.72,
+            "defensive_level": 0.44,
+            "defensive_dwell": 0.66,
+        },
+        safety_bias=0.1,
+        environment_pressure={
+            "resource_pressure": 0.22,
+            "hazard_pressure": 0.18,
+            "ritual_pressure": 0.24,
+            "institutional_pressure": 0.3,
+            "social_density": 0.4,
+        },
+    )
+    assert rough.belonging < calm.belonging
+    assert rough.trust_bias < calm.trust_bias
+    assert rough.norm_pressure > calm.norm_pressure

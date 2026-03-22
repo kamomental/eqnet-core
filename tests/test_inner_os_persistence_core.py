@@ -80,3 +80,50 @@ def test_persistence_transition_signal_rebalances_resonance() -> None:
     )
     assert state.community_resonance < 0.76
     assert state.recent_strain > 0.26
+
+
+def test_persistence_reads_field_dwell_into_grounding_and_strain() -> None:
+    core = PersistenceCore()
+    calm = core.snapshot(
+        current_state={
+            "continuity_score": 0.54,
+            "social_grounding": 0.58,
+            "recent_strain": 0.26,
+            "culture_resonance": 0.62,
+            "community_resonance": 0.66,
+            "stress": 0.2,
+            "temporal_pressure": 0.18,
+            "roughness_level": 0.08,
+            "roughness_dwell": 0.0,
+            "defensive_level": 0.06,
+            "defensive_dwell": 0.0,
+        },
+        development={"belonging": 0.62, "trust_bias": 0.57, "norm_pressure": 0.48},
+        relationship={"attachment": 0.61, "familiarity": 0.56},
+        personality={"caution_bias": 0.38, "affiliation_bias": 0.63},
+        environment_pressure={"hazard_pressure": 0.16, "resource_pressure": 0.2, "institutional_pressure": 0.22},
+        transition_signal={"transition_intensity": 0.0},
+    )
+    rough = core.snapshot(
+        current_state={
+            "continuity_score": 0.54,
+            "social_grounding": 0.58,
+            "recent_strain": 0.26,
+            "culture_resonance": 0.62,
+            "community_resonance": 0.66,
+            "stress": 0.2,
+            "temporal_pressure": 0.18,
+            "roughness_level": 0.58,
+            "roughness_dwell": 0.72,
+            "defensive_level": 0.44,
+            "defensive_dwell": 0.66,
+        },
+        development={"belonging": 0.62, "trust_bias": 0.57, "norm_pressure": 0.48},
+        relationship={"attachment": 0.61, "familiarity": 0.56},
+        personality={"caution_bias": 0.38, "affiliation_bias": 0.63},
+        environment_pressure={"hazard_pressure": 0.16, "resource_pressure": 0.2, "institutional_pressure": 0.22},
+        transition_signal={"transition_intensity": 0.0},
+    )
+    assert rough.social_grounding < calm.social_grounding
+    assert rough.recent_strain > calm.recent_strain
+    assert rough.continuity_score < calm.continuity_score

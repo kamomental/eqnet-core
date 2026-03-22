@@ -13,9 +13,11 @@ Its focus is not one character shell or one renderer.
 Its focus is the shared inner stack:
 - physiology
 - temporal weighting
+- working memory
 - conscious access
 - relational world placement
 - later, memory and affective terrain
+- sleep-like consolidation planning
 - thin service access for existing systems through `InnerOSService`
 
 `emot_terrain_lab` may keep adapters and integrations.

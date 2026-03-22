@@ -9,9 +9,10 @@ def _run_gate(
     nightly_cfg=None,
     tau_now: float = 0.0,
     baseline_ttl_tau: float = 1.0,
+    working_memory_bias=None,
 ):
     nightly_cfg = nightly_cfg or {"ttl_budget": {"max_total_hours": 10.0}}
-    return _apply_go_sc_gate(events, cfg, tau_now, baseline_ttl_tau, nightly_cfg)
+    return _apply_go_sc_gate(events, cfg, tau_now, baseline_ttl_tau, nightly_cfg, working_memory_bias=working_memory_bias)
 
 
 def _event(meta):
@@ -87,3 +88,43 @@ def test_hygiene_filter_blocks_extension() -> None:
     assert events[0]["meta"]["ttl_scale"] == 1.0
     assert events[0]["meta"]["resolution_reason"] == "hygiene_filtered"
     assert report["hygiene"]["filtered"] == 1
+
+
+def test_working_memory_bias_prefers_matching_replay_candidate() -> None:
+    cfg = {
+        "gate": {"ttl_scale_range": [0.8, 1.4], "winner_min_percentile": 0.5},
+        "precedence": {"interference_overrides_go_sc": False},
+    }
+    events = [
+        {
+            "id": "match",
+            "meta": {"go_score": 0.0},
+            "text": "the harbor promise still feels fragile tonight",
+            "value": {"total": 1.0},
+            "uncertainty": 0.5,
+        },
+        {
+            "id": "miss",
+            "meta": {"go_score": 0.0},
+            "text": "the garden was bright and calm",
+            "value": {"total": 1.0},
+            "uncertainty": 0.5,
+        },
+    ]
+    working_memory_bias = {
+        "current_focus": "meaning",
+        "focus_anchor": "harbor slope",
+        "strength": 0.6,
+        "terms": ["harbor", "promise", "fragile"],
+    }
+
+    report = _run_gate(events, cfg, working_memory_bias=working_memory_bias)
+
+    assert events[0]["meta"]["go_percentile"] > events[1]["meta"]["go_percentile"]
+    assert events[0]["meta"]["ttl_scale"] == 1.4
+    assert events[1]["meta"]["ttl_scale"] == 0.8
+    assert "working_memory_replay_bias" in events[0]["meta"]
+    wm_report = report["nightly_metrics"]["working_memory_replay_bias"]
+    assert wm_report["matched_events"] == 1
+    assert wm_report["focus"] == "meaning"
+    assert wm_report["top_matches"][0]["id"] == "match"

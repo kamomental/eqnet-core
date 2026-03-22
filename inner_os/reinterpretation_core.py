@@ -15,6 +15,8 @@ REINTERPRETATION_WEIGHTS = {
     "social_self_culture_resonance": 0.08,
     "social_self_community_resonance": 0.1,
     "social_self_transition": 0.1,
+    "social_self_profile_ritual": 0.08,
+    "social_self_profile_institution": 0.08,
     "reflective_temporal": 0.35,
     "reflective_social_self": 0.4,
     "reflective_low_trust": 0.18,
@@ -32,8 +34,11 @@ REINTERPRETATION_WEIGHTS = {
     "meaning_culture_resonance": 0.05,
     "meaning_community_resonance": 0.06,
     "meaning_transition": 0.12,
+    "meaning_profile_ritual": 0.06,
+    "meaning_profile_institution": 0.05,
     "meaning_sim_bonus": 0.08,
     "meaning_roughness_penalty": 0.12,
+    "meaning_profile_roughness_penalty": 0.08,
     "meaning_check_in_afterglow_penalty": 0.12,
     "meaning_afterglow_penalty": 0.08,
     "meaning_inertia_penalty": 0.16,
@@ -52,9 +57,12 @@ REINTERPRETATION_WEIGHTS = {
     "narrative_social_grounding": 0.08,
     "narrative_culture_resonance": 0.08,
     "narrative_community_resonance": 0.1,
+    "narrative_profile_ritual": 0.05,
+    "narrative_profile_institution": 0.05,
     "narrative_recent_strain_penalty": 0.06,
     "narrative_transition_penalty": 0.08,
     "narrative_roughness_penalty": 0.15,
+    "narrative_profile_roughness_penalty": 0.06,
     "narrative_afterglow_penalty": 0.04,
     "narrative_anticipation_penalty": 0.04,
     "narrative_replay_penalty": 0.02,
@@ -88,6 +96,11 @@ REINTERPRETATION_THRESHOLDS = {
     "reopening_clarity": 0.38,
     "reopening_inertia_ceiling": 0.5,
     "community_transition": 0.35,
+    "community_profile_reframing": 0.46,
+    "grounding_deferral_roughness": 0.48,
+    "grounding_deferral_defensive": 0.34,
+    "grounding_deferral_narrative": 0.4,
+    "grounding_deferral_grounding": 0.38,
     "social_reframing_pressure": 0.6,
     "reflective_reconsolidation": 0.45,
     "light_reinterpretation_meaning": 0.28,
@@ -124,6 +137,7 @@ class ReinterpretationSnapshot:
     interaction_afterglow: float = 0.0
     interaction_afterglow_intent: Optional[str] = None
     recovery_reopening: float = 0.0
+    community_profile_pressure: float = 0.0
     object_affordance_bias: float = 0.0
     fragility_guard: float = 0.0
     object_attachment: float = 0.0
@@ -165,6 +179,10 @@ class ReinterpretationCore:
         recent_strain = _float_from(current_state, 'recent_strain', 0.32)
         culture_resonance = _float_from(current_state, 'culture_resonance', 0.0)
         community_resonance = _float_from(current_state, 'community_resonance', 0.0)
+        ritual_memory = _float_from(current_state, 'ritual_memory', 0.0)
+        institutional_memory = _float_from(current_state, 'institutional_memory', 0.0)
+        roughness_dwell = _float_from(current_state, 'roughness_dwell', 0.0)
+        defensive_dwell = _float_from(current_state, 'defensive_dwell', 0.0)
         resource_pressure = _float_from(environment_pressure, 'resource_pressure', 0.0)
         hazard_pressure = _float_from(environment_pressure, 'hazard_pressure', 0.0)
         ritual_pressure = _float_from(environment_pressure, 'ritual_pressure', 0.0)
@@ -192,7 +210,13 @@ class ReinterpretationCore:
         defensive_salience = _float_from(current_state, 'defensive_salience', 0.0)
         approach_confidence = _float_from(current_state, 'approach_confidence', 0.0)
 
-        social_self_pressure = _clamp(norm_pressure * REINTERPRETATION_WEIGHTS['social_self_norm'] + role_commitment * REINTERPRETATION_WEIGHTS['social_self_role'] + culture_present * REINTERPRETATION_WEIGHTS['social_self_culture_presence'] + community_present * REINTERPRETATION_WEIGHTS['social_self_community_presence'] + social_density * REINTERPRETATION_WEIGHTS['social_self_density'] + institutional_pressure * REINTERPRETATION_WEIGHTS['social_self_institution'] + recent_strain * REINTERPRETATION_WEIGHTS['social_self_recent_strain'] + culture_resonance * REINTERPRETATION_WEIGHTS['social_self_culture_resonance'] + community_resonance * REINTERPRETATION_WEIGHTS['social_self_community_resonance'] + transition_intensity * REINTERPRETATION_WEIGHTS['social_self_transition'])
+        community_profile_pressure = _clamp(
+            ritual_memory * 0.46
+            + institutional_memory * 0.44
+            + culture_resonance * 0.08
+            + community_resonance * 0.1
+        )
+        social_self_pressure = _clamp(norm_pressure * REINTERPRETATION_WEIGHTS['social_self_norm'] + role_commitment * REINTERPRETATION_WEIGHTS['social_self_role'] + culture_present * REINTERPRETATION_WEIGHTS['social_self_culture_presence'] + community_present * REINTERPRETATION_WEIGHTS['social_self_community_presence'] + social_density * REINTERPRETATION_WEIGHTS['social_self_density'] + institutional_pressure * REINTERPRETATION_WEIGHTS['social_self_institution'] + recent_strain * REINTERPRETATION_WEIGHTS['social_self_recent_strain'] + culture_resonance * REINTERPRETATION_WEIGHTS['social_self_culture_resonance'] + community_resonance * REINTERPRETATION_WEIGHTS['social_self_community_resonance'] + transition_intensity * REINTERPRETATION_WEIGHTS['social_self_transition'] + ritual_memory * REINTERPRETATION_WEIGHTS['social_self_profile_ritual'] + institutional_memory * REINTERPRETATION_WEIGHTS['social_self_profile_institution'])
         reflective_tension = _clamp(temporal_pressure * REINTERPRETATION_WEIGHTS['reflective_temporal'] + social_self_pressure * REINTERPRETATION_WEIGHTS['reflective_social_self'] + (1.0 - trust_bias) * REINTERPRETATION_WEIGHTS['reflective_low_trust'] + (1.0 - belonging) * REINTERPRETATION_WEIGHTS['reflective_low_belonging'] + hazard_pressure * REINTERPRETATION_WEIGHTS['reflective_hazard'] + resource_pressure * REINTERPRETATION_WEIGHTS['reflective_resource'] + recent_strain * REINTERPRETATION_WEIGHTS['reflective_recent_strain'] + (1.0 - continuity_score) * REINTERPRETATION_WEIGHTS['reflective_discontinuity'] + transition_intensity * REINTERPRETATION_WEIGHTS['reflective_transition'])
         meaning_push = _clamp(
             MEANING_ALLOCATION_WEIGHTS['base']
@@ -201,8 +225,12 @@ class ReinterpretationCore:
             + ritual_pressure * MEANING_ALLOCATION_WEIGHTS['ritual_push']
             + institutional_pressure * MEANING_ALLOCATION_WEIGHTS['institution_push']
             + transition_intensity * MEANING_ALLOCATION_WEIGHTS['transition_push']
+            + ritual_memory * REINTERPRETATION_WEIGHTS['meaning_profile_ritual']
+            + institutional_memory * REINTERPRETATION_WEIGHTS['meaning_profile_institution']
             + (MEANING_ALLOCATION_WEIGHTS['sim_push'] if record_kind in {'experienced_sim', 'transferred_learning'} else 0.0)
             - terrain_transition_roughness * MEANING_ALLOCATION_WEIGHTS['roughness_hold']
+            - roughness_dwell * REINTERPRETATION_WEIGHTS['meaning_profile_roughness_penalty']
+            - defensive_dwell * REINTERPRETATION_WEIGHTS['meaning_profile_roughness_penalty']
             - interaction_afterglow * (MEANING_ALLOCATION_WEIGHTS['check_in_hold'] if interaction_afterglow_intent == 'check_in' else MEANING_ALLOCATION_WEIGHTS['afterglow_hold'])
             - meaning_inertia * MEANING_ALLOCATION_WEIGHTS['inertia_hold']
             - relational_clarity * MEANING_ALLOCATION_WEIGHTS['clarity_hold']
@@ -225,9 +253,13 @@ class ReinterpretationCore:
             + social_grounding * REINTERPRETATION_WEIGHTS['narrative_social_grounding']
             + culture_resonance * REINTERPRETATION_WEIGHTS['narrative_culture_resonance']
             + community_resonance * REINTERPRETATION_WEIGHTS['narrative_community_resonance']
+            + ritual_memory * REINTERPRETATION_WEIGHTS['narrative_profile_ritual']
+            + institutional_memory * REINTERPRETATION_WEIGHTS['narrative_profile_institution']
             - recent_strain * REINTERPRETATION_WEIGHTS['narrative_recent_strain_penalty']
             - transition_intensity * REINTERPRETATION_WEIGHTS['narrative_transition_penalty']
             - terrain_transition_roughness * REINTERPRETATION_WEIGHTS['narrative_roughness_penalty']
+            - roughness_dwell * REINTERPRETATION_WEIGHTS['narrative_profile_roughness_penalty']
+            - defensive_dwell * REINTERPRETATION_WEIGHTS['narrative_profile_roughness_penalty']
             - interaction_afterglow * REINTERPRETATION_WEIGHTS['narrative_afterglow_penalty']
             - anticipation_tension * REINTERPRETATION_WEIGHTS['narrative_anticipation_penalty']
             - replay_intensity * REINTERPRETATION_WEIGHTS['narrative_replay_penalty']
@@ -238,10 +270,21 @@ class ReinterpretationCore:
             + approach_confidence * REINTERPRETATION_WEIGHTS['narrative_approach_bonus']
         )
 
+        grounding_deferral = (
+            terrain_transition_roughness >= REINTERPRETATION_THRESHOLDS['grounding_deferral_roughness']
+            and defensive_salience >= REINTERPRETATION_THRESHOLDS['grounding_deferral_defensive']
+            and narrative_pull <= REINTERPRETATION_THRESHOLDS['grounding_deferral_narrative']
+            and social_grounding <= REINTERPRETATION_THRESHOLDS['grounding_deferral_grounding']
+        )
+
         if record_kind in {'experienced_sim', 'transferred_learning'}:
             mode = 'transfer_caution'
         elif record_kind == 'verified':
             mode = 'grounded_recall'
+        elif grounding_deferral:
+            mode = 'grounding_deferral'
+        elif community_profile_pressure >= REINTERPRETATION_THRESHOLDS['community_profile_reframing'] and transition_intensity < REINTERPRETATION_THRESHOLDS['community_transition']:
+            mode = 'community_profile_reframing'
         elif interaction_afterglow_intent == 'check_in' and interaction_afterglow >= REINTERPRETATION_THRESHOLDS['check_in_afterglow']:
             mode = 'relational_check_in_reframing'
         elif anticipation_tension >= REINTERPRETATION_THRESHOLDS['stabilizing_anticipation'] and meaning_inertia >= REINTERPRETATION_THRESHOLDS['stabilizing_inertia']:
@@ -257,6 +300,19 @@ class ReinterpretationCore:
         else:
             mode = 'steady_recall'
 
+        if grounding_deferral:
+            meaning_push = min(
+                meaning_push,
+                _clamp(
+                    0.42
+                    - terrain_transition_roughness * 0.08
+                    - defensive_salience * 0.06
+                    + approach_confidence * 0.02
+                ),
+            )
+            meaning_hold = 1.0 - meaning_push
+            meaning_shift = meaning_push
+
         summary = self._summary(mode=mode, record_kind=record_kind, meaning_shift=meaning_shift, social_self_pressure=social_self_pressure)
         return ReinterpretationSnapshot(
             mode=mode,
@@ -270,6 +326,7 @@ class ReinterpretationCore:
             interaction_afterglow=interaction_afterglow,
             interaction_afterglow_intent=interaction_afterglow_intent,
             recovery_reopening=recovery_reopening,
+            community_profile_pressure=community_profile_pressure,
             object_affordance_bias=object_affordance_bias,
             fragility_guard=fragility_guard,
             object_attachment=object_attachment,
@@ -310,6 +367,8 @@ class ReinterpretationCore:
             and record_kind not in {'experienced_sim', 'transferred_learning'}
         ):
             return None
+        if snapshot.mode == 'grounding_deferral' and record_kind not in {'experienced_sim', 'transferred_learning', 'verified'}:
+            return None
         anchor = str(recall_payload.get('memory_anchor') or recall_payload.get('summary') or '').strip()
         if not anchor:
             return None
@@ -343,6 +402,7 @@ class ReinterpretationCore:
             'meaning_push': round(snapshot.meaning_push, 4),
             'meaning_hold': round(snapshot.meaning_hold, 4),
             'terrain_transition_roughness': round(snapshot.terrain_transition_roughness, 4),
+            'community_profile_pressure': round(snapshot.community_profile_pressure, 4),
             'tentative_bias': round(tentative_bias, 4),
             'recovery_reopening': round(snapshot.recovery_reopening, 4),
             'object_affordance_bias': round(snapshot.object_affordance_bias, 4),
@@ -364,6 +424,10 @@ class ReinterpretationCore:
             return 'simulation lesson held as cautious guidance'
         if mode == 'grounded_recall':
             return 'verified memory stays close to lived form'
+        if mode == 'grounding_deferral':
+            return 'memory is kept near grounded observation until the surrounding field settles'
+        if mode == 'community_profile_reframing':
+            return 'memory is being read through the longer communal pattern carried by this place'
         if mode == 'community_transition_reframing':
             return 'memory is being re-read while the social world is changing'
         if mode == 'relational_check_in_reframing':

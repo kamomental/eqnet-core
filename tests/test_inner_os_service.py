@@ -37,6 +37,7 @@ def test_inner_os_service_roundtrip(tmp_path: Path) -> None:
     )
     assert recall["ignition_hints"]["recall_active"] is True
     assert recall["ignition_hints"]["environment_pressure"]["summary"]
+    assert "community_profile_pressure" in recall["recall_payload"]
 
     gate = service.response_gate(
         {
