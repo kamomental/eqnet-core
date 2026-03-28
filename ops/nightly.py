@@ -67,8 +67,17 @@ from inner_os.group_thread_registry import (
     build_group_thread_key,
     summarize_group_thread_registry_snapshot,
 )
+from inner_os.discussion_thread_registry import (
+    summarize_discussion_thread_registry_snapshot,
+    update_discussion_thread_registry_snapshot,
+)
 from inner_os.memory_core import MemoryCore
 from inner_os.daily_carry_summary import DailyCarrySummaryBuilder
+from inner_os.identity_arc import IdentityArcSummaryBuilder
+from inner_os.identity_memory import IdentityArcRegistry
+from inner_os.group_relation_arc import GroupRelationArcSummaryBuilder
+from inner_os.relation_arc import RelationArcSummaryBuilder
+from inner_os.relation_memory import RelationArcRegistry
 
 def _dump_events_if_requested(events):
     out_path = os.getenv("EQNET_DUMP_REPLAY_EVENTS_JSONL", "").strip()
@@ -837,12 +846,30 @@ def run(hub, cfg: Dict[str, Any] | None = None) -> Dict[str, Any]:
     group_thread_registry_summary = _summarize_inner_os_group_thread_registry(cfg_dict)
     if group_thread_registry_summary:
         report["inner_os_group_thread_registry_summary"] = group_thread_registry_summary
+    discussion_thread_registry_summary = _summarize_inner_os_discussion_thread_registry(cfg_dict)
+    if discussion_thread_registry_summary:
+        report["inner_os_discussion_thread_registry_summary"] = discussion_thread_registry_summary
     partner_relation_summary = _summarize_inner_os_partner_relation(
         cfg_dict,
         registry_summary=partner_relation_registry_summary,
     )
     if partner_relation_summary:
         report["inner_os_partner_relation_summary"] = partner_relation_summary
+    relation_arc_summary = RelationArcSummaryBuilder().build(report).to_dict()
+    if relation_arc_summary.get("arc_kind") or relation_arc_summary.get("summary"):
+        report["inner_os_relation_arc_summary"] = relation_arc_summary
+    group_relation_arc_summary = GroupRelationArcSummaryBuilder().build(report).to_dict()
+    if group_relation_arc_summary.get("arc_kind") or group_relation_arc_summary.get("summary"):
+        report["inner_os_group_relation_arc_summary"] = group_relation_arc_summary
+    identity_arc_summary = IdentityArcSummaryBuilder().build(report).to_dict()
+    if identity_arc_summary.get("arc_kind") or identity_arc_summary.get("summary"):
+        report["inner_os_identity_arc_summary"] = identity_arc_summary
+    relation_arc_registry_summary = _summarize_inner_os_relation_arc_registry(cfg_dict)
+    if relation_arc_registry_summary:
+        report["inner_os_relation_arc_registry_summary"] = relation_arc_registry_summary
+    identity_arc_registry_summary = _summarize_inner_os_identity_arc_registry(cfg_dict)
+    if identity_arc_registry_summary:
+        report["inner_os_identity_arc_registry_summary"] = identity_arc_registry_summary
 
     def _hub_tau_now() -> float:
         tk = getattr(hub, "timekeeper", None)
@@ -2418,6 +2445,22 @@ def _generate_telemetry_section(
                 report["inner_os_sleep_agenda_bias"] = float(snapshot["agenda_bias"] or 0.0)
             if snapshot.get("agenda_reason"):
                 report["inner_os_sleep_agenda_reason"] = str(snapshot["agenda_reason"])
+            if snapshot.get("agenda_window_focus"):
+                report["inner_os_sleep_agenda_window_focus"] = str(snapshot["agenda_window_focus"])
+            if snapshot.get("agenda_window_bias") is not None:
+                report["inner_os_sleep_agenda_window_bias"] = float(snapshot["agenda_window_bias"] or 0.0)
+            if snapshot.get("agenda_window_reason"):
+                report["inner_os_sleep_agenda_window_reason"] = str(snapshot["agenda_window_reason"])
+            if snapshot.get("agenda_window_carry_target"):
+                report["inner_os_sleep_agenda_window_carry_target"] = str(snapshot["agenda_window_carry_target"])
+            if snapshot.get("learning_mode_focus"):
+                report["inner_os_sleep_learning_mode_focus"] = str(snapshot["learning_mode_focus"])
+            if snapshot.get("learning_mode_carry_bias") is not None:
+                report["inner_os_sleep_learning_mode_carry_bias"] = float(snapshot["learning_mode_carry_bias"] or 0.0)
+            if snapshot.get("social_experiment_focus"):
+                report["inner_os_sleep_social_experiment_focus"] = str(snapshot["social_experiment_focus"])
+            if snapshot.get("social_experiment_carry_bias") is not None:
+                report["inner_os_sleep_social_experiment_carry_bias"] = float(snapshot["social_experiment_carry_bias"] or 0.0)
             if snapshot.get("commitment_target_focus"):
                 report["inner_os_sleep_commitment_target_focus"] = str(snapshot["commitment_target_focus"])
             if snapshot.get("commitment_state_focus"):
@@ -2478,6 +2521,26 @@ def _generate_telemetry_section(
                 report["inner_os_sleep_group_thread_focus"] = str(snapshot["group_thread_focus"])
             if snapshot.get("group_thread_carry_bias") is not None:
                 report["inner_os_sleep_group_thread_carry_bias"] = float(snapshot["group_thread_carry_bias"] or 0.0)
+            if snapshot.get("autobiographical_thread_mode"):
+                report["inner_os_sleep_autobiographical_thread_mode"] = str(snapshot["autobiographical_thread_mode"])
+            if snapshot.get("autobiographical_thread_anchor"):
+                report["inner_os_sleep_autobiographical_thread_anchor"] = str(snapshot["autobiographical_thread_anchor"])
+            if snapshot.get("autobiographical_thread_focus"):
+                report["inner_os_sleep_autobiographical_thread_focus"] = str(snapshot["autobiographical_thread_focus"])
+            if snapshot.get("autobiographical_thread_strength") is not None:
+                report["inner_os_sleep_autobiographical_thread_strength"] = float(snapshot["autobiographical_thread_strength"] or 0.0)
+            if snapshot.get("temporal_membrane_focus"):
+                report["inner_os_sleep_temporal_membrane_focus"] = str(snapshot["temporal_membrane_focus"])
+            if snapshot.get("temporal_timeline_bias") is not None:
+                report["inner_os_sleep_temporal_timeline_bias"] = float(snapshot["temporal_timeline_bias"] or 0.0)
+            if snapshot.get("temporal_reentry_bias") is not None:
+                report["inner_os_sleep_temporal_reentry_bias"] = float(snapshot["temporal_reentry_bias"] or 0.0)
+            if snapshot.get("temporal_supersession_bias") is not None:
+                report["inner_os_sleep_temporal_supersession_bias"] = float(snapshot["temporal_supersession_bias"] or 0.0)
+            if snapshot.get("temporal_continuity_bias") is not None:
+                report["inner_os_sleep_temporal_continuity_bias"] = float(snapshot["temporal_continuity_bias"] or 0.0)
+            if snapshot.get("temporal_relation_reentry_bias") is not None:
+                report["inner_os_sleep_temporal_relation_reentry_bias"] = float(snapshot["temporal_relation_reentry_bias"] or 0.0)
             if snapshot.get("expressive_style_focus"):
                 report["inner_os_sleep_expressive_style_focus"] = str(snapshot["expressive_style_focus"])
             if snapshot.get("expressive_style_carry_bias") is not None:
@@ -2493,6 +2556,9 @@ def _generate_telemetry_section(
     daily_carry_summary = DailyCarrySummaryBuilder().build(report).to_dict()
     if daily_carry_summary.get("same_turn_focus") or daily_carry_summary.get("active_carry_channels"):
         report["inner_os_daily_carry_summary"] = daily_carry_summary
+        temporal_alignment = dict(daily_carry_summary.get("temporal_alignment") or {})
+        if temporal_alignment:
+            report["inner_os_temporal_alignment"] = temporal_alignment
     nightly_id = report.setdefault("nightly_id", dt.datetime.utcnow().strftime("N-%Y%m%d-%H%M%S"))
     tuning = _derive_tuning_suggestion(field_state, cfg_dict)
     if tuning:
@@ -3642,6 +3708,63 @@ def _resolve_inner_os_memory_path(cfg_dict: Mapping[str, Any]) -> Path:
     return MemoryCore().path
 
 
+def _resolve_diary_state_path(cfg_dict: Mapping[str, Any]) -> Path:
+    nightly_cfg = cfg_dict.get("nightly", {}) if isinstance(cfg_dict, Mapping) else {}
+    explicit = None
+    if isinstance(nightly_cfg, Mapping):
+        explicit = nightly_cfg.get("diary_state_path")
+    if not explicit and isinstance(cfg_dict, Mapping):
+        explicit = cfg_dict.get("diary_state_path")
+    if isinstance(explicit, str) and explicit.strip():
+        return Path(explicit.strip())
+    state_dir = cfg_dict.get("state_dir") if isinstance(cfg_dict, Mapping) else None
+    if isinstance(state_dir, str) and state_dir.strip():
+        return Path(state_dir.strip()) / "diary.json"
+    return Path("data/state/diary.json")
+
+
+def _summarize_inner_os_identity_arc_registry(
+    cfg_dict: Mapping[str, Any],
+) -> Dict[str, Any]:
+    path = _resolve_diary_state_path(cfg_dict)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(payload, Mapping):
+        return {}
+    registry_payload = payload.get("identity_arc_registry")
+    if not isinstance(registry_payload, Mapping):
+        return {}
+    summary = IdentityArcRegistry.from_dict(registry_payload).summary()
+    if int(summary.get("total_arcs") or 0) <= 0:
+        return {}
+    return dict(summary)
+
+
+def _summarize_inner_os_relation_arc_registry(
+    cfg_dict: Mapping[str, Any],
+) -> Dict[str, Any]:
+    path = _resolve_diary_state_path(cfg_dict)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(payload, Mapping):
+        return {}
+    registry_payload = payload.get("relation_arc_registry")
+    if not isinstance(registry_payload, Mapping):
+        return {}
+    summary = RelationArcRegistry.from_dict(registry_payload).summary()
+    if int(summary.get("total_arcs") or 0) <= 0:
+        return {}
+    return dict(summary)
+
+
 def _summarize_inner_os_partner_relation_registry(
     cfg_dict: Mapping[str, Any],
     *,
@@ -3942,6 +4065,73 @@ def _summarize_inner_os_group_thread_registry(
     return {
         "threads": threads,
         "uncertainty": summary.get("uncertainty", 1.0),
+        **summary,
+        "lookback_hours": int(lookback_hours),
+    }
+
+
+def _summarize_inner_os_discussion_thread_registry(
+    cfg_dict: Mapping[str, Any],
+    *,
+    now: Optional[dt.datetime] = None,
+    lookback_hours: int = 72,
+) -> Dict[str, Any]:
+    path = _resolve_inner_os_memory_path(cfg_dict)
+    if not path.exists():
+        return {}
+    current_time = now or dt.datetime.utcnow()
+    cutoff = current_time - dt.timedelta(hours=max(1, int(lookback_hours)))
+    snapshot: Dict[str, Any] = {}
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if str(payload.get("kind") or "") != "discussion_thread_trace":
+                    continue
+                stamp = _coerce_inner_os_record_time(payload.get("timestamp"))
+                if stamp is None or stamp < cutoff:
+                    continue
+                snapshot = update_discussion_thread_registry_snapshot(
+                    existing_snapshot=snapshot,
+                    recent_dialogue_state={
+                        "state": str(payload.get("recent_dialogue_state") or "").strip(),
+                        "thread_carry": _safe_float(payload.get("recent_dialogue_thread_carry"), 0.0) or 0.0,
+                        "reopen_pressure": _safe_float(payload.get("recent_dialogue_reopen_pressure"), 0.0) or 0.0,
+                        "recent_anchor": str(
+                            payload.get("issue_anchor")
+                            or payload.get("discussion_thread_anchor")
+                            or payload.get("memory_anchor")
+                            or ""
+                        ).strip(),
+                    },
+                    discussion_thread_state={
+                        "state": str(payload.get("discussion_thread_state") or "").strip(),
+                        "topic_anchor": str(payload.get("discussion_thread_anchor") or "").strip(),
+                        "unresolved_pressure": _safe_float(payload.get("discussion_unresolved_pressure"), 0.0) or 0.0,
+                        "revisit_readiness": _safe_float(payload.get("discussion_revisit_readiness"), 0.0) or 0.0,
+                        "thread_visibility": _safe_float(payload.get("discussion_thread_visibility"), 0.0) or 0.0,
+                    },
+                    issue_state={
+                        "state": str(payload.get("issue_state") or "").strip(),
+                        "issue_anchor": str(payload.get("issue_anchor") or "").strip(),
+                        "question_pressure": _safe_float(payload.get("issue_question_pressure"), 0.0) or 0.0,
+                        "pause_readiness": _safe_float(payload.get("issue_pause_readiness"), 0.0) or 0.0,
+                        "resolution_readiness": _safe_float(payload.get("issue_resolution_readiness"), 0.0) or 0.0,
+                    },
+                )
+    except OSError:
+        return {}
+    if not snapshot:
+        return {}
+    summary = summarize_discussion_thread_registry_snapshot(snapshot)
+    return {
+        **snapshot,
         **summary,
         "lookback_hours": int(lookback_hours),
     }
@@ -4652,6 +4842,16 @@ def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Pat
         payload["inner_os_working_memory_replay_bias"] = report["inner_os_working_memory_replay_bias"]
     if report.get("inner_os_long_term_theme_summary"):
         payload["inner_os_long_term_theme_summary"] = report["inner_os_long_term_theme_summary"]
+    if report.get("inner_os_relation_arc_summary"):
+        payload["inner_os_relation_arc_summary"] = report["inner_os_relation_arc_summary"]
+    if report.get("inner_os_group_relation_arc_summary"):
+        payload["inner_os_group_relation_arc_summary"] = report["inner_os_group_relation_arc_summary"]
+    if report.get("inner_os_identity_arc_summary"):
+        payload["inner_os_identity_arc_summary"] = report["inner_os_identity_arc_summary"]
+    if report.get("inner_os_relation_arc_registry_summary"):
+        payload["inner_os_relation_arc_registry_summary"] = report["inner_os_relation_arc_registry_summary"]
+    if report.get("inner_os_identity_arc_registry_summary"):
+        payload["inner_os_identity_arc_registry_summary"] = report["inner_os_identity_arc_registry_summary"]
     if report.get("inner_os_memory_class_summary"):
         payload["inner_os_memory_class_summary"] = report["inner_os_memory_class_summary"]
     if report.get("inner_os_agenda_summary"):
@@ -4664,10 +4864,14 @@ def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Pat
         payload["inner_os_partner_relation_registry_summary"] = report["inner_os_partner_relation_registry_summary"]
     if report.get("inner_os_group_thread_registry_summary"):
         payload["inner_os_group_thread_registry_summary"] = report["inner_os_group_thread_registry_summary"]
+    if report.get("inner_os_discussion_thread_registry_summary"):
+        payload["inner_os_discussion_thread_registry_summary"] = report["inner_os_discussion_thread_registry_summary"]
     if report.get("inner_os_partner_relation_summary"):
         payload["inner_os_partner_relation_summary"] = report["inner_os_partner_relation_summary"]
     if report.get("inner_os_daily_carry_summary"):
         payload["inner_os_daily_carry_summary"] = report["inner_os_daily_carry_summary"]
+    if report.get("inner_os_temporal_alignment"):
+        payload["inner_os_temporal_alignment"] = report["inner_os_temporal_alignment"]
     if report.get("inner_os_sleep_memory_class_focus"):
         payload["inner_os_sleep_memory_class_focus"] = report["inner_os_sleep_memory_class_focus"]
     if report.get("inner_os_sleep_agenda_focus"):
@@ -4676,6 +4880,22 @@ def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Pat
         payload["inner_os_sleep_agenda_bias"] = report["inner_os_sleep_agenda_bias"]
     if report.get("inner_os_sleep_agenda_reason"):
         payload["inner_os_sleep_agenda_reason"] = report["inner_os_sleep_agenda_reason"]
+    if report.get("inner_os_sleep_agenda_window_focus"):
+        payload["inner_os_sleep_agenda_window_focus"] = report["inner_os_sleep_agenda_window_focus"]
+    if report.get("inner_os_sleep_agenda_window_bias") is not None:
+        payload["inner_os_sleep_agenda_window_bias"] = report["inner_os_sleep_agenda_window_bias"]
+    if report.get("inner_os_sleep_agenda_window_reason"):
+        payload["inner_os_sleep_agenda_window_reason"] = report["inner_os_sleep_agenda_window_reason"]
+    if report.get("inner_os_sleep_agenda_window_carry_target"):
+        payload["inner_os_sleep_agenda_window_carry_target"] = report["inner_os_sleep_agenda_window_carry_target"]
+    if report.get("inner_os_sleep_learning_mode_focus"):
+        payload["inner_os_sleep_learning_mode_focus"] = report["inner_os_sleep_learning_mode_focus"]
+    if report.get("inner_os_sleep_learning_mode_carry_bias") is not None:
+        payload["inner_os_sleep_learning_mode_carry_bias"] = report["inner_os_sleep_learning_mode_carry_bias"]
+    if report.get("inner_os_sleep_social_experiment_focus"):
+        payload["inner_os_sleep_social_experiment_focus"] = report["inner_os_sleep_social_experiment_focus"]
+    if report.get("inner_os_sleep_social_experiment_carry_bias") is not None:
+        payload["inner_os_sleep_social_experiment_carry_bias"] = report["inner_os_sleep_social_experiment_carry_bias"]
     if report.get("inner_os_sleep_commitment_target_focus"):
         payload["inner_os_sleep_commitment_target_focus"] = report["inner_os_sleep_commitment_target_focus"]
     if report.get("inner_os_sleep_commitment_state_focus"):
@@ -4736,6 +4956,26 @@ def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Pat
         payload["inner_os_sleep_group_thread_focus"] = report["inner_os_sleep_group_thread_focus"]
     if report.get("inner_os_sleep_group_thread_carry_bias") is not None:
         payload["inner_os_sleep_group_thread_carry_bias"] = report["inner_os_sleep_group_thread_carry_bias"]
+    if report.get("inner_os_sleep_autobiographical_thread_mode"):
+        payload["inner_os_sleep_autobiographical_thread_mode"] = report["inner_os_sleep_autobiographical_thread_mode"]
+    if report.get("inner_os_sleep_autobiographical_thread_anchor"):
+        payload["inner_os_sleep_autobiographical_thread_anchor"] = report["inner_os_sleep_autobiographical_thread_anchor"]
+    if report.get("inner_os_sleep_autobiographical_thread_focus"):
+        payload["inner_os_sleep_autobiographical_thread_focus"] = report["inner_os_sleep_autobiographical_thread_focus"]
+    if report.get("inner_os_sleep_autobiographical_thread_strength") is not None:
+        payload["inner_os_sleep_autobiographical_thread_strength"] = report["inner_os_sleep_autobiographical_thread_strength"]
+    if report.get("inner_os_sleep_temporal_membrane_focus"):
+        payload["inner_os_sleep_temporal_membrane_focus"] = report["inner_os_sleep_temporal_membrane_focus"]
+    if report.get("inner_os_sleep_temporal_timeline_bias") is not None:
+        payload["inner_os_sleep_temporal_timeline_bias"] = report["inner_os_sleep_temporal_timeline_bias"]
+    if report.get("inner_os_sleep_temporal_reentry_bias") is not None:
+        payload["inner_os_sleep_temporal_reentry_bias"] = report["inner_os_sleep_temporal_reentry_bias"]
+    if report.get("inner_os_sleep_temporal_supersession_bias") is not None:
+        payload["inner_os_sleep_temporal_supersession_bias"] = report["inner_os_sleep_temporal_supersession_bias"]
+    if report.get("inner_os_sleep_temporal_continuity_bias") is not None:
+        payload["inner_os_sleep_temporal_continuity_bias"] = report["inner_os_sleep_temporal_continuity_bias"]
+    if report.get("inner_os_sleep_temporal_relation_reentry_bias") is not None:
+        payload["inner_os_sleep_temporal_relation_reentry_bias"] = report["inner_os_sleep_temporal_relation_reentry_bias"]
     if report.get("inner_os_sleep_expressive_style_focus"):
         payload["inner_os_sleep_expressive_style_focus"] = report["inner_os_sleep_expressive_style_focus"]
     if report.get("inner_os_sleep_expressive_style_carry_bias") is not None:

@@ -43,6 +43,10 @@ def test_build_inner_os_sleep_snapshot_wraps_legacy_signals() -> None:
             "forgetting": {"forgetting_pressure": 0.52, "replay_horizon": 1},
             "culture_stats": {"harbor": {"count": 8, "mean_politeness": 0.52, "mean_intimacy": 0.41}},
             "policy_feedback": {"enabled": True, "intimacy_after": 0.48},
+            "inner_os_sleep_autobiographical_thread_mode": "unfinished_thread",
+            "inner_os_sleep_autobiographical_thread_anchor": "harbor promise",
+            "inner_os_sleep_autobiographical_thread_focus": "unfinished promise",
+            "inner_os_sleep_autobiographical_thread_strength": 0.44,
             "inner_os_partner_relation_summary": {
                 "person_id": "user",
                 "attachment": 0.74,
@@ -61,6 +65,8 @@ def test_build_inner_os_sleep_snapshot_wraps_legacy_signals() -> None:
     assert result["derived_inputs"]["current_state"]["recovery_need"] > 0.0
     assert result["derived_inputs"]["current_state"]["related_person_id"] == "user"
     assert result["derived_inputs"]["current_state"]["relation_seed_strength"] == 0.76
+    assert result["derived_inputs"]["current_state"]["autobiographical_thread_mode"] == "unfinished_thread"
+    assert result["snapshot"]["autobiographical_thread_anchor"] == "harbor promise"
     assert result["derived_inputs"]["forgetting_snapshot"]["replay_horizon"] == 1
     assert result["derived_inputs"]["memory_orchestration"]["consolidation_priority"] > 0.0
 
@@ -181,6 +187,15 @@ def test_build_inner_os_sleep_snapshot_carries_partner_relation_registry_into_cu
                     }
                 },
             },
+            "inner_os_discussion_thread_registry_summary": {
+                "dominant_thread_id": "repair_anchor",
+                "dominant_anchor": "repair anchor",
+                "dominant_issue_state": "pausing_issue",
+                "top_thread_ids": ["repair_anchor"],
+                "total_threads": 1,
+                "thread_scores": {"repair_anchor": 0.71},
+                "uncertainty": 0.18,
+            },
         },
         memory_inventory={"l1_count": 8, "l2_count": 4, "l3_count": 1, "recent_experiences": 4},
     )
@@ -188,6 +203,7 @@ def test_build_inner_os_sleep_snapshot_carries_partner_relation_registry_into_cu
     current_state = result["derived_inputs"]["current_state"]
     assert current_state["person_registry_snapshot"]["dominant_person_id"] == "user"
     assert current_state["group_thread_registry_snapshot"]["dominant_thread_id"] == "threaded_group:user|friend"
+    assert current_state["discussion_thread_registry_snapshot"]["dominant_anchor"] == "repair anchor"
     assert current_state["related_person_id"] == "user"
     assert current_state["related_person_ids"] == ["user", "friend"]
     assert current_state["attachment"] == 0.78
@@ -301,6 +317,10 @@ def test_build_inner_os_sleep_snapshot_carries_agenda_summary_into_current_state
             "inner_os_sleep_agenda_focus": "repair",
             "inner_os_sleep_agenda_bias": 0.31,
             "inner_os_sleep_agenda_reason": "repair_window",
+            "inner_os_sleep_agenda_window_focus": "next_same_group_window",
+            "inner_os_sleep_agenda_window_bias": 0.17,
+            "inner_os_sleep_agenda_window_reason": "wait_for_group_thread",
+            "inner_os_sleep_agenda_window_carry_target": "same_group_window",
         },
         memory_inventory={"l1_count": 8, "l2_count": 4, "l3_count": 1, "recent_experiences": 4},
     )
@@ -309,6 +329,54 @@ def test_build_inner_os_sleep_snapshot_carries_agenda_summary_into_current_state
     assert current_state["agenda_focus"] == "repair"
     assert current_state["agenda_bias"] == 0.31
     assert current_state["agenda_reason"] == "repair_window"
+    assert current_state["agenda_window_focus"] == "next_same_group_window"
+    assert current_state["agenda_window_bias"] == 0.17
+    assert current_state["agenda_window_reason"] == "wait_for_group_thread"
+    assert current_state["agenda_window_carry_target"] == "same_group_window"
+
+
+def test_build_inner_os_sleep_snapshot_carries_learning_and_social_experiment_bias_into_current_state() -> None:
+    result = build_inner_os_sleep_snapshot(
+        rest_state={"active": False, "history": []},
+        latest_field_metrics={"entropy": 4.0, "enthalpy": 0.3},
+        nightly_summary={
+            "inner_os_sleep_learning_mode_focus": "repair_probe",
+            "inner_os_sleep_learning_mode_carry_bias": 0.15,
+            "inner_os_sleep_social_experiment_focus": "repair_signal_probe",
+            "inner_os_sleep_social_experiment_carry_bias": 0.13,
+        },
+        memory_inventory={"l1_count": 8, "l2_count": 4, "l3_count": 1, "recent_experiences": 4},
+    )
+
+    current_state = result["derived_inputs"]["current_state"]
+    assert current_state["learning_mode_focus"] == "repair_probe"
+    assert current_state["learning_mode_carry_bias"] == 0.15
+    assert current_state["social_experiment_focus"] == "repair_signal_probe"
+    assert current_state["social_experiment_carry_bias"] == 0.13
+
+
+def test_build_inner_os_sleep_snapshot_carries_temporal_membrane_bias_into_current_state() -> None:
+    result = build_inner_os_sleep_snapshot(
+        rest_state={"active": False, "history": []},
+        latest_field_metrics={"entropy": 4.0, "enthalpy": 0.3},
+        nightly_summary={
+            "inner_os_sleep_temporal_membrane_focus": "reentry",
+            "inner_os_sleep_temporal_timeline_bias": 0.12,
+            "inner_os_sleep_temporal_reentry_bias": 0.17,
+            "inner_os_sleep_temporal_supersession_bias": 0.04,
+            "inner_os_sleep_temporal_continuity_bias": 0.11,
+            "inner_os_sleep_temporal_relation_reentry_bias": 0.09,
+        },
+        memory_inventory={"l1_count": 8, "l2_count": 4, "l3_count": 1, "recent_experiences": 4},
+    )
+
+    current_state = result["derived_inputs"]["current_state"]
+    assert current_state["temporal_membrane_focus"] == "reentry"
+    assert current_state["temporal_timeline_bias"] == 0.12
+    assert current_state["temporal_reentry_bias"] == 0.17
+    assert current_state["temporal_supersession_bias"] == 0.04
+    assert current_state["temporal_continuity_bias"] == 0.11
+    assert current_state["temporal_relation_reentry_bias"] == 0.09
 
 
 def test_build_inner_os_sleep_snapshot_carries_temperament_sleep_bias_into_current_state() -> None:

@@ -514,6 +514,12 @@ class EmotionalMemorySystem:
     def diary_state(self):
         return self.diary.to_json()
 
+    def identity_arc_registry_state(self):
+        return self.diary.identity_arc_registry_summary()
+
+    def relation_arc_registry_state(self):
+        return self.diary.relation_arc_registry_summary()
+
     def ethics_state(self):
         return self.ethics.to_json()
 
@@ -684,6 +690,8 @@ class EmotionalMemorySystem:
         working_memory_signature_summary = self._working_memory_signature_summary()
         working_memory_replay_summary = self._latest_nightly_working_memory_replay_summary()
         long_term_theme_summary = self._long_term_theme_summary()
+        identity_arc_summary = self._latest_nightly_identity_arc_summary()
+        relation_arc_summary = self._latest_nightly_relation_arc_summary()
         use_llm = os.getenv("USE_LLM", "0") != "0"
         self.diary.record_daily_entry(
             timestamp.date(),
@@ -700,6 +708,8 @@ class EmotionalMemorySystem:
             working_memory_signature_summary=working_memory_signature_summary,
             working_memory_replay_summary=working_memory_replay_summary,
             long_term_theme_summary=long_term_theme_summary,
+            identity_arc_summary=identity_arc_summary,
+            relation_arc_summary=relation_arc_summary,
         )
 
     def _working_memory_summary_for_day(self, day: date) -> Optional[Dict[str, Any]]:
@@ -853,6 +863,41 @@ class EmotionalMemorySystem:
         conscious_summary = self._latest_conscious_working_memory_seed()
         final_summary = merge_conscious_working_memory_seed(merged or nightly_summary, conscious_summary)
         return final_summary or merged or nightly_summary
+
+    def _latest_nightly_identity_arc_summary(self) -> Optional[Dict[str, Any]]:
+        for candidate in (Path("reports/nightly.json"), Path("reports/nightly") / "nightly.json"):
+            if not candidate.exists():
+                continue
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            summary = payload.get("inner_os_identity_arc_summary")
+            if isinstance(summary, dict) and (
+                str(summary.get("arc_kind") or "").strip()
+                or str(summary.get("summary") or "").strip()
+                or str(summary.get("memory_anchor") or "").strip()
+            ):
+                return dict(summary)
+        return None
+
+    def _latest_nightly_relation_arc_summary(self) -> Optional[Dict[str, Any]]:
+        for candidate in (Path("reports/nightly.json"), Path("reports/nightly") / "nightly.json"):
+            if not candidate.exists():
+                continue
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            summary = payload.get("inner_os_relation_arc_summary")
+            if isinstance(summary, dict) and (
+                str(summary.get("arc_kind") or "").strip()
+                or str(summary.get("summary") or "").strip()
+                or str(summary.get("related_person_id") or "").strip()
+                or str(summary.get("group_thread_id") or "").strip()
+            ):
+                return dict(summary)
+        return None
 
     def _latest_conscious_working_memory_seed(self) -> Optional[Dict[str, Any]]:
         memory_path = os.getenv("CONSCIOUS_MEMORY_PATH", "logs/conscious_episodes.jsonl")

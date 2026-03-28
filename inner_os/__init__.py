@@ -80,6 +80,11 @@ from .access_projection import AccessProjection, AccessRegion, project_access_re
 from .affect_blend import AffectBlendState, derive_affect_blend_state
 from .agenda_state import AgendaState, derive_agenda_state
 from .agenda_window_state import AgendaWindowState, derive_agenda_window_state
+from .boundary_transformer import (
+    BoundaryCandidateDecision,
+    BoundaryTransformResult,
+    derive_boundary_transform_result,
+)
 from .constraint_field import ConstraintField, derive_constraint_field
 from .commitment_state import CommitmentState, derive_commitment_state
 from .conscious_workspace import ConsciousWorkspace, WorkspaceSlot, ignite_conscious_workspace
@@ -91,14 +96,64 @@ from .conversational_objects import (
 )
 from .contact_dynamics import ContactDynamicPoint, ContactDynamicsState, advance_contact_dynamics
 from .contact_field import ContactField, ContactPoint, derive_contact_field
+from .contact_reflection_state import (
+    ContactReflectionState,
+    derive_contact_reflection_state,
+)
 from .cultural_conversation_state import (
     CulturalConversationState,
     derive_cultural_conversation_state,
 )
 from .dot_seed import DotSeed, DotSeedSet, derive_dot_seeds
 from .expressive_style_state import ExpressiveStyleState, derive_expressive_style_state
+from .emergency_posture import EmergencyPosture, derive_emergency_posture
 from .lightness_budget_state import LightnessBudgetState, derive_lightness_budget_state
+from .live_engagement_state import LiveEngagementState, derive_live_engagement_state
+from .learning_mode_state import LearningModeState, derive_learning_mode_state
+from .matrix_relation_memory import (
+    MatrixMemoryHeadSpec,
+    MatrixMemoryHeadState,
+    MatrixMemoryReadout,
+    MatrixRelationMemoryConfig,
+    MatrixRelationMemoryCore,
+    MatrixRelationMemoryState,
+)
+from .memory_evidence_bundle import (
+    MemoryEvidenceBundle,
+    MemoryEvidenceItem,
+    ReentryContext,
+    TemporalConstraint,
+    build_memory_evidence_bundle,
+)
+from .temporal_memory_orchestration import build_temporal_memory_evidence_bundle
+from .persona_memory_fragment import PersonaMemoryFragment, build_persona_memory_fragments
+from .persona_memory_selector import PersonaMemorySelection, derive_persona_memory_selection
+from .discussion_thread_state import DiscussionThreadState, derive_discussion_thread_state
+from .issue_state import IssueState, derive_issue_state
+from .recent_dialogue_state import RecentDialogueState, derive_recent_dialogue_state
+from .autobiographical_thread import (
+    AutobiographicalThreadSummary,
+    derive_autobiographical_thread_summary,
+)
 from .ignition_loop import IgnitionLoopState, run_ignition_loop
+from .identity_arc import IdentityArcSummary, IdentityArcSummaryBuilder
+from .identity_memory import IdentityArcRecord, IdentityArcRegistry
+from .group_relation_arc import GroupRelationArcSummary, GroupRelationArcSummaryBuilder
+from .relation_arc import RelationArcSummary, RelationArcSummaryBuilder
+from .relation_memory import RelationArcRecord, RelationArcRegistry
+from .green_kernel_contracts import (
+    FieldDelta,
+    GreenKernelComposition,
+    SharedInnerField,
+    build_green_kernel_composition,
+    compose_shared_inner_field,
+    project_affective_green_delta,
+    project_boundary_transform_delta,
+    project_memory_green_delta,
+    project_relational_green_delta,
+    project_residual_carry_delta,
+)
+from .residual_reflector import ResidualReflection, derive_residual_reflection
 from .interaction_effects import InteractionEffect, InteractionEffectsPlan, derive_interaction_effects
 from .interaction_judgement_view import (
     InferredSignal,
@@ -149,6 +204,11 @@ from .group_thread_registry import (
     summarize_group_thread_registry_snapshot,
     update_group_thread_registry_snapshot,
 )
+from .discussion_thread_registry import (
+    build_discussion_thread_key,
+    summarize_discussion_thread_registry_snapshot,
+    update_discussion_thread_registry_snapshot,
+)
 from .reportability_gate import ReportabilityGate, derive_reportability_gate
 from .relation_competition import (
     ActiveRelationEntry,
@@ -164,6 +224,10 @@ from .relational_style_memory import (
 from .object_operations import ObjectOperation, ObjectOperationPlan, derive_object_operations
 from .protection_mode import ProtectionModeState, derive_protection_mode
 from .qualia_projector import BasicQualiaProjector, QualiaProjector, QualiaState
+from .qualia_membrane_operator import (
+    QualiaMembraneTemporalBias,
+    derive_qualia_membrane_temporal_bias,
+)
 from .qualia_kernel_adapter import QualiaPlannerView
 from .association_graph import (
     AssociationGraph,
@@ -189,7 +253,12 @@ from .social_topology_state import (
     coerce_social_topology_label,
     derive_social_topology_state,
 )
+from .social_experiment_loop import (
+    SocialExperimentLoopState,
+    derive_social_experiment_loop_state,
+)
 from .self_estimator import Estimate, EstimatorHealth, ResidualLinearSelfEstimator, SelfEstimator, evaluate_estimator_health
+from .situation_risk_state import SituationRiskState, derive_situation_risk_state
 from .terrain_plasticity import (
     TerrainPlasticityUpdate,
     apply_terrain_plasticity,
@@ -233,7 +302,9 @@ from .schemas import (
     INNER_OS_POST_TURN_INPUT_SCHEMA,
     INNER_OS_POST_TURN_RESULT_SCHEMA,
     INNER_OS_DISTILLATION_RECORD_SCHEMA,
+    INNER_OS_MEMORY_EVIDENCE_BUNDLE_SCHEMA,
     INNER_OS_TRANSFER_PACKAGE_SCHEMA,
+    memory_evidence_bundle_contract,
     distillation_record_contract,
     memory_record_contract,
     recall_payload_contract,

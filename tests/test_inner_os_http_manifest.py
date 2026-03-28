@@ -17,7 +17,9 @@ def test_build_inner_os_manifest_contains_all_hooks() -> None:
         "post_turn_update",
     }
     assert manifest["hooks"]["memory_recall"]["recall_payload_schema"] == "inner_os_recall_payload/v1"
+    assert manifest["hooks"]["memory_recall"]["memory_evidence_bundle_schema"] == "inner_os_memory_evidence_bundle/v1"
     assert manifest["contracts"]["recall_payload"]["required_fields"] == ["memory_anchor", "summary", "record_kind", "record_provenance"]
+    assert "facts_current" in manifest["contracts"]["memory_evidence_bundle"]["required_fields"]
 
 
 def test_inner_os_manifest_route() -> None:

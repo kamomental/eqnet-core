@@ -19,6 +19,7 @@ import hashlib
 import logging
 import uuid
 import platform
+import re
 
 import numpy as np
 from pathlib import Path
@@ -41,7 +42,7 @@ from eqnet.culture_model import (
 from eqnet.logs.moment_log import MomentLogEntry, MomentLogWriter
 from eqnet.hub.streaming_sensor import StreamingSensorState
 from eqnet.hub.runtime_sensors import RuntimeSensors
-from emot_terrain_lab.i18n.locale import lookup_text, truncate_text
+from emot_terrain_lab.i18n.locale import lookup_text, lookup_value, truncate_text
 from eqnet.qualia_model import (
     FutureReplayConfig,
     blend_emotion_axes,
@@ -84,9 +85,21 @@ from emot_terrain_lab.vision.lmstudio_vlm import LMStudioVLMAdapter
 from emot_terrain_lab.rag.sse_search import SSESearchAdapter
 from emot_terrain_lab.memory.vision_memory_store import VisionMemoryStore
 from inner_os.conscious_access import ConsciousAccessCore
-from inner_os.expression.content_policy import derive_content_sequence, derive_content_skeleton, render_content_sequence
+from inner_os.expression.content_policy import (
+    derive_content_sequence,
+    derive_content_skeleton,
+    localize_content_sequence,
+    render_content_sequence,
+)
+from inner_os.discussion_thread_registry import update_discussion_thread_registry_snapshot
+from inner_os.anchor_normalization import normalize_anchor_hint
 from inner_os.expression.hint_bridge import build_expression_hints_from_gate_result
 from inner_os.expression.surface_language_profile import shape_surface_language_text
+from inner_os.expression.surface_expression_selector import (
+    build_surface_expression_candidates,
+    choose_surface_expression,
+)
+from inner_os.expression.surface_context_packet import build_surface_context_packet
 from inner_os.headless_runtime import HeadlessInnerOSRuntime
 from inner_os.integration_hooks import IntegrationHooks
 from inner_os.memory_bridge import collect_runtime_memory_candidates
@@ -133,6 +146,148 @@ INNER_OS_SURFACE_THRESHOLDS = {
     "probe_question_bias": 0.28,
     "reopening_recovery": 0.24,
 }
+
+
+def _runtime_response_locale(runtime: Any) -> str:
+    locale_fn = getattr(runtime, "_response_locale", None)
+    if callable(locale_fn):
+        try:
+            locale = str(locale_fn() or "").strip()
+            if locale:
+                return locale
+        except Exception:
+            pass
+    runtime_cfg = getattr(runtime, "_runtime_cfg", None)
+    if runtime_cfg is not None and hasattr(runtime_cfg, "backchannel"):
+        locale = str(getattr(runtime_cfg.backchannel, "culture", "") or "").strip()
+        if locale:
+            return locale
+    return "en-US"
+
+
+def _runtime_recent_surface_response_history(runtime: Any) -> list[str]:
+    history_fn = getattr(runtime, "_recent_surface_response_history", None)
+    if callable(history_fn):
+        try:
+            history = history_fn()
+            if isinstance(history, list):
+                return [
+                    text
+                    for text in (
+                        str(item or "").strip()
+                        for item in history
+                    )
+                    if text
+                ]
+        except Exception:
+            pass
+    return [
+        text
+        for text in (
+            str(item or "").strip()
+            for item in getattr(runtime, "_surface_response_history", ())
+        )
+        if text
+    ]
+
+
+def _choose_compact_phrase(
+    runtime: Any,
+    *,
+    locale: str,
+    primary_key: str,
+    alternatives_key: str = "",
+    surface_profile: Mapping[str, Any] | None = None,
+    candidate_profile: str = "",
+) -> str:
+    primary = str(lookup_text(locale, primary_key) or "").strip()
+    alternatives = lookup_value(locale, alternatives_key) if alternatives_key else None
+    candidates: list[str] = [primary] if primary else []
+    if isinstance(alternatives, list):
+        candidates.extend(
+            str(item).strip()
+            for item in alternatives
+            if str(item).strip()
+        )
+    history = _runtime_recent_surface_response_history(runtime)
+    if locale.lower().startswith("ja"):
+        selected = choose_surface_expression(
+            build_surface_expression_candidates(
+                candidates,
+                candidate_profile=candidate_profile,
+            ),
+            cultural_register=str((surface_profile or {}).get("cultural_register") or "").strip(),
+            group_register=str((surface_profile or {}).get("group_register") or "").strip(),
+            sentence_temperature=str((surface_profile or {}).get("sentence_temperature") or "").strip(),
+            mode=str((surface_profile or {}).get("surface_mode") or "").strip(),
+            recent_history=history,
+        )
+        if selected:
+            return selected
+    for candidate in candidates:
+        if candidate and not any(candidate in entry for entry in history):
+            return candidate
+    return candidates[0] if candidates else ""
+
+
+def _format_locale_template(locale: str, key: str, **kwargs: str) -> str:
+    template = str(lookup_text(locale, key) or "").strip()
+    if not template:
+        return ""
+    try:
+        return template.format(**kwargs).strip()
+    except Exception:
+        return template
+
+
+_SURFACE_ACT_CANDIDATE_PROFILES: dict[str, str] = {
+    "quiet_presence": "quiet_presence",
+    "stay_with_present_need": "stay_with_present_need",
+    "gentle_question_hidden_need": "light_question",
+    "gentle_question_hidden_need_continuing": "light_question",
+    "gentle_question_weight": "light_question",
+    "gentle_question_weight_continuing": "light_question",
+    "gentle_question_fear": "light_question",
+    "gentle_question_fear_continuing": "light_question",
+    "gentle_question_self_blame": "light_question",
+    "gentle_question_self_blame_continuing": "light_question",
+}
+
+
+def _choose_surface_act_text(
+    runtime: Any,
+    *,
+    act: str,
+    text: str,
+    locale: str,
+    surface_profile: Mapping[str, Any] | None = None,
+) -> str:
+    body = str(text or "").strip()
+    if not body or not locale.lower().startswith("ja"):
+        return body
+    candidate_profile = _SURFACE_ACT_CANDIDATE_PROFILES.get(str(act or "").strip())
+    if not candidate_profile:
+        return body
+    alternatives = lookup_value(locale, f"inner_os.content_policy_segments.{act}_alternatives")
+    texts: list[str] = [body]
+    if isinstance(alternatives, list):
+        texts.extend(
+            str(item).strip()
+            for item in alternatives
+            if str(item).strip()
+        )
+    selected = choose_surface_expression(
+        build_surface_expression_candidates(
+            texts,
+            candidate_profile=candidate_profile,
+        ),
+        cultural_register=str((surface_profile or {}).get("cultural_register") or "").strip(),
+        group_register=str((surface_profile or {}).get("group_register") or "").strip(),
+        sentence_temperature=str((surface_profile or {}).get("sentence_temperature") or "").strip(),
+        mode=str((surface_profile or {}).get("surface_mode") or "").strip(),
+        recent_history=_runtime_recent_surface_response_history(runtime),
+    )
+    return selected or body
 
 
 @dataclass
@@ -300,6 +455,7 @@ class RuntimeConfig:
     policy: PolicyConfig = field(default_factory=PolicyConfig)
     llm: LLMHubConfig = field(default_factory=LLMHubConfig)
     use_eqnet_core: bool = False
+    force_llm_bridge: bool = False
     eqnet_state_dir: str = "data/state_hub"
     robot: RobotBridgeConfig = field(default_factory=RobotBridgeConfig)
     mask_layer: MaskLayerConfig = field(default_factory=MaskLayerConfig)
@@ -533,6 +689,9 @@ class EmotionalHubRuntime:
         self._force_listen: bool = False
         self._engaged_override: Optional[bool] = None
         self._last_user_ts: float = 0.0
+        self._last_surface_user_text: str = ""
+        self._surface_user_history = deque(maxlen=4)
+        self._surface_response_history = deque(maxlen=3)
         self._prev_affect_vec: Optional[np.ndarray] = None
         self._prev_prev_affect_vec: Optional[np.ndarray] = None
         self._prev_qualia_vec: Optional[np.ndarray] = None
@@ -1016,6 +1175,27 @@ class EmotionalHubRuntime:
                 "trust_memory",
                 "relation_seed_summary",
                 "relation_seed_strength",
+                "identity_arc_kind",
+                "identity_arc_phase",
+                "identity_arc_summary",
+                "identity_arc_open_tension",
+                "identity_arc_stability",
+                "identity_arc_registry_summary",
+                "relation_arc_kind",
+                "relation_arc_phase",
+                "relation_arc_summary",
+                "relation_arc_open_tension",
+                "relation_arc_stability",
+                "relation_arc_registry_summary",
+                "group_relation_arc_kind",
+                "group_relation_arc_phase",
+                "group_relation_arc_summary",
+                "group_relation_arc_boundary_mode",
+                "group_relation_arc_reentry_window_focus",
+                "group_relation_arc_group_thread_id",
+                "group_relation_arc_topology_focus",
+                "group_relation_arc_dominant_person_id",
+                "group_relation_arc_stability",
             ):
                 if key in seed:
                     normalized[key] = seed[key]
@@ -1035,9 +1215,17 @@ class EmotionalHubRuntime:
             except Exception:
                 conscious_theme = {}
         nightly_theme = self._latest_nightly_long_term_theme_summary()
+        nightly_identity_arc = self._latest_nightly_identity_arc_summary()
+        nightly_identity_arc_registry = self._latest_nightly_identity_arc_registry_summary()
+        nightly_relation_arc = self._latest_nightly_relation_arc_summary()
+        nightly_relation_arc_registry = self._latest_nightly_relation_arc_registry_summary()
+        nightly_group_relation_arc = self._latest_nightly_group_relation_arc_summary()
         nightly_partner = self._latest_nightly_partner_relation_summary()
         nightly_partner_registry = self._latest_nightly_partner_relation_registry_summary()
         nightly_theme_seed: Dict[str, Any] = {}
+        nightly_identity_arc_seed: Dict[str, Any] = {}
+        nightly_relation_arc_seed: Dict[str, Any] = {}
+        nightly_group_relation_arc_seed: Dict[str, Any] = {}
         nightly_partner_seed: Dict[str, Any] = {}
         if isinstance(nightly_theme, Mapping):
             theme_focus = str(nightly_theme.get("focus") or "").strip()
@@ -1082,6 +1270,47 @@ class EmotionalHubRuntime:
             dominant_person_id = str(nightly_partner_registry.get("dominant_person_id") or "").strip()
             if dominant_person_id and not nightly_partner_seed.get("related_person_id"):
                 nightly_partner_seed["related_person_id"] = dominant_person_id
+        if isinstance(nightly_identity_arc, Mapping):
+            arc_kind = str(nightly_identity_arc.get("arc_kind") or "").strip()
+            arc_summary = str(nightly_identity_arc.get("summary") or "").strip()
+            if arc_kind or arc_summary:
+                nightly_identity_arc_seed = {
+                    "identity_arc_kind": arc_kind,
+                    "identity_arc_phase": str(nightly_identity_arc.get("phase") or "").strip(),
+                    "identity_arc_summary": arc_summary,
+                    "identity_arc_open_tension": str(nightly_identity_arc.get("open_tension") or "").strip(),
+                    "identity_arc_stability": round(float(nightly_identity_arc.get("stability") or 0.0), 4),
+                }
+        if isinstance(nightly_identity_arc_registry, Mapping) and int(nightly_identity_arc_registry.get("total_arcs") or 0) > 0:
+            nightly_identity_arc_seed["identity_arc_registry_summary"] = dict(nightly_identity_arc_registry)
+        if isinstance(nightly_relation_arc, Mapping):
+            arc_kind = str(nightly_relation_arc.get("arc_kind") or "").strip()
+            arc_summary = str(nightly_relation_arc.get("summary") or "").strip()
+            if arc_kind or arc_summary:
+                nightly_relation_arc_seed = {
+                    "relation_arc_kind": arc_kind,
+                    "relation_arc_phase": str(nightly_relation_arc.get("phase") or "").strip(),
+                    "relation_arc_summary": arc_summary,
+                    "relation_arc_open_tension": str(nightly_relation_arc.get("open_tension") or "").strip(),
+                    "relation_arc_stability": round(float(nightly_relation_arc.get("stability") or 0.0), 4),
+                }
+        if isinstance(nightly_relation_arc_registry, Mapping) and int(nightly_relation_arc_registry.get("total_arcs") or 0) > 0:
+            nightly_relation_arc_seed["relation_arc_registry_summary"] = dict(nightly_relation_arc_registry)
+        if isinstance(nightly_group_relation_arc, Mapping):
+            arc_kind = str(nightly_group_relation_arc.get("arc_kind") or "").strip()
+            arc_summary = str(nightly_group_relation_arc.get("summary") or "").strip()
+            if arc_kind or arc_summary:
+                nightly_group_relation_arc_seed = {
+                    "group_relation_arc_kind": arc_kind,
+                    "group_relation_arc_phase": str(nightly_group_relation_arc.get("phase") or "").strip(),
+                    "group_relation_arc_summary": arc_summary,
+                    "group_relation_arc_boundary_mode": str(nightly_group_relation_arc.get("boundary_mode") or "").strip(),
+                    "group_relation_arc_reentry_window_focus": str(nightly_group_relation_arc.get("reentry_window_focus") or "").strip(),
+                    "group_relation_arc_group_thread_id": str(nightly_group_relation_arc.get("group_thread_id") or "").strip(),
+                    "group_relation_arc_topology_focus": str(nightly_group_relation_arc.get("topology_focus") or "").strip(),
+                    "group_relation_arc_dominant_person_id": str(nightly_group_relation_arc.get("dominant_person_id") or "").strip(),
+                    "group_relation_arc_stability": round(float(nightly_group_relation_arc.get("stability") or 0.0), 4),
+                }
         eqnet_system = getattr(self, "eqnet_system", None)
         derived: Dict[str, Any] = {}
         if eqnet_system is not None:
@@ -1108,6 +1337,12 @@ class EmotionalHubRuntime:
         derived = self._merge_conscious_long_term_theme(derived, conscious_theme)
         if nightly_partner_seed:
             derived.update({k: v for k, v in nightly_partner_seed.items() if k not in derived or not derived.get(k)})
+        if nightly_identity_arc_seed:
+            derived.update({k: v for k, v in nightly_identity_arc_seed.items() if k not in derived or not derived.get(k)})
+        if nightly_relation_arc_seed:
+            derived.update({k: v for k, v in nightly_relation_arc_seed.items() if k not in derived or not derived.get(k)})
+        if nightly_group_relation_arc_seed:
+            derived.update({k: v for k, v in nightly_group_relation_arc_seed.items() if k not in derived or not derived.get(k)})
         if not conscious_seed:
             return derived
         if not derived:
@@ -1208,6 +1443,84 @@ class EmotionalHubRuntime:
                 return dict(summary)
         return {}
 
+    def _latest_nightly_identity_arc_summary(self) -> Dict[str, Any]:
+        for candidate in (Path("reports/nightly.json"), Path("reports/nightly") / "nightly.json"):
+            if not candidate.exists():
+                continue
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            summary = payload.get("inner_os_identity_arc_summary")
+            if isinstance(summary, Mapping) and (
+                str(summary.get("arc_kind") or "").strip()
+                or str(summary.get("summary") or "").strip()
+                or str(summary.get("memory_anchor") or "").strip()
+            ):
+                return dict(summary)
+        return {}
+
+    def _latest_nightly_identity_arc_registry_summary(self) -> Dict[str, Any]:
+        for candidate in (Path("reports/nightly.json"), Path("reports/nightly") / "nightly.json"):
+            if not candidate.exists():
+                continue
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            summary = payload.get("inner_os_identity_arc_registry_summary")
+            if isinstance(summary, Mapping) and int(summary.get("total_arcs") or 0) > 0:
+                return dict(summary)
+        return {}
+
+    def _latest_nightly_relation_arc_summary(self) -> Dict[str, Any]:
+        for candidate in (Path("reports/nightly.json"), Path("reports/nightly") / "nightly.json"):
+            if not candidate.exists():
+                continue
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            summary = payload.get("inner_os_relation_arc_summary")
+            if isinstance(summary, Mapping) and (
+                str(summary.get("arc_kind") or "").strip()
+                or str(summary.get("summary") or "").strip()
+                or str(summary.get("related_person_id") or "").strip()
+                or str(summary.get("group_thread_id") or "").strip()
+            ):
+                return dict(summary)
+        return {}
+
+    def _latest_nightly_relation_arc_registry_summary(self) -> Dict[str, Any]:
+        for candidate in (Path("reports/nightly.json"), Path("reports/nightly") / "nightly.json"):
+            if not candidate.exists():
+                continue
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            summary = payload.get("inner_os_relation_arc_registry_summary")
+            if isinstance(summary, Mapping) and int(summary.get("total_arcs") or 0) > 0:
+                return dict(summary)
+        return {}
+
+    def _latest_nightly_group_relation_arc_summary(self) -> Dict[str, Any]:
+        for candidate in (Path("reports/nightly.json"), Path("reports/nightly") / "nightly.json"):
+            if not candidate.exists():
+                continue
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            summary = payload.get("inner_os_group_relation_arc_summary")
+            if isinstance(summary, Mapping) and (
+                str(summary.get("arc_kind") or "").strip()
+                or str(summary.get("summary") or "").strip()
+                or str(summary.get("group_thread_id") or "").strip()
+            ):
+                return dict(summary)
+        return {}
+
     def _latest_nightly_partner_relation_summary(self) -> Dict[str, Any]:
         for candidate in (Path("reports/nightly.json"), Path("reports/nightly") / "nightly.json"):
             if not candidate.exists():
@@ -1243,6 +1556,7 @@ class EmotionalHubRuntime:
         image_path: Optional[str] = None,
         transferred_lessons: Optional[list[Mapping[str, Any]]] = None,
     ) -> RuntimeTurnResult:
+        self._last_surface_user_text = str(user_text or "").strip()
         sensor_snapshot = getattr(self._runtime_sensors, "snapshot", None)
         sensor_metrics = (
             getattr(sensor_snapshot, "metrics", {}) if sensor_snapshot is not None else {}
@@ -1318,6 +1632,26 @@ class EmotionalHubRuntime:
             "inner_os/long_term_theme_strength",
             round(float(working_memory_seed.get("long_term_theme_strength") or 0.0), 4),
         )
+        result.metrics.setdefault(
+            "inner_os/identity_arc_stability",
+            round(float(working_memory_seed.get("identity_arc_stability") or 0.0), 4),
+        )
+        result.metrics.setdefault(
+            "inner_os/identity_arc_visible",
+            1.0
+            if str(working_memory_seed.get("identity_arc_kind") or "").strip()
+            or str(working_memory_seed.get("identity_arc_summary") or "").strip()
+            else 0.0,
+        )
+        llm_raw_text = str(payload.get("llm_bridge_raw_text") or "").strip()
+        llm_raw_model = str(payload.get("llm_bridge_raw_model") or "").strip()
+        llm_raw_model_source = str(payload.get("llm_bridge_raw_model_source") or "").strip()
+        llm_final_text = (
+            str(getattr(result.response, "text", None) or "").strip()
+            if result.response is not None
+            else ""
+        )
+        qualia_gate_snapshot = dict(result.qualia_gate or {})
 
         visual_cue = ""
         retrieval_summary = None
@@ -1363,6 +1697,12 @@ class EmotionalHubRuntime:
         current_state["recalled_reinterpretation_mode"] = str(recall_hook.recall_payload.get("reinterpretation_mode") or "").strip() or None
         current_state["route"] = str(result.response_route or pre_hook.state.route)
         current_state["talk_mode"] = str(result.talk_mode or pre_hook.state.talk_mode)
+        current_state["surface_user_text"] = str(user_text or "").strip()
+        recent_dialogue_history_fn = getattr(self, "_recent_dialogue_thread_history", None)
+        if callable(recent_dialogue_history_fn):
+            current_state["recent_dialogue_history"] = recent_dialogue_history_fn()
+        else:
+            current_state["recent_dialogue_history"] = self._recent_surface_user_history()
         current_state["contact_dynamics"] = dict(self._last_gate_context.get("inner_os_contact_dynamics") or {})
         current_state["access_dynamics"] = dict(self._last_gate_context.get("inner_os_access_dynamics") or {})
         current_state["conscious_workspace"] = dict(self._last_gate_context.get("inner_os_conscious_workspace") or {})
@@ -1412,6 +1752,16 @@ class EmotionalHubRuntime:
         recalled_agenda_window_focus = (recall_state or {}).get("agenda_window_focus")
         recalled_agenda_window_bias = (recall_state or {}).get("agenda_window_bias")
         recalled_agenda_window_reason = (recall_state or {}).get("agenda_window_reason")
+        recalled_learning_mode_focus = (recall_state or {}).get("learning_mode_focus")
+        recalled_learning_mode_carry_bias = (recall_state or {}).get("learning_mode_carry_bias")
+        recalled_social_experiment_focus = (recall_state or {}).get("social_experiment_focus")
+        recalled_social_experiment_carry_bias = (recall_state or {}).get("social_experiment_carry_bias")
+        recalled_temporal_membrane_focus = (recall_state or {}).get("temporal_membrane_focus")
+        recalled_temporal_timeline_bias = (recall_state or {}).get("temporal_timeline_bias")
+        recalled_temporal_reentry_bias = (recall_state or {}).get("temporal_reentry_bias")
+        recalled_temporal_supersession_bias = (recall_state or {}).get("temporal_supersession_bias")
+        recalled_temporal_continuity_bias = (recall_state or {}).get("temporal_continuity_bias")
+        recalled_temporal_relation_reentry_bias = (recall_state or {}).get("temporal_relation_reentry_bias")
         recalled_temperament_trace = (recall_state or {}).get("temperament_trace")
         recalled_body_homeostasis_focus = (recall_state or {}).get("body_homeostasis_focus")
         recalled_body_homeostasis_carry_bias = (recall_state or {}).get("body_homeostasis_carry_bias")
@@ -1421,6 +1771,7 @@ class EmotionalHubRuntime:
         recalled_relational_continuity_focus = (recall_state or {}).get("relational_continuity_focus")
         recalled_relational_continuity_carry_bias = (recall_state or {}).get("relational_continuity_carry_bias")
         recalled_group_thread_registry_snapshot = (recall_state or {}).get("group_thread_registry_snapshot")
+        recalled_discussion_thread_registry_snapshot = (recall_state or {}).get("discussion_thread_registry_snapshot")
         recalled_group_thread_focus = (recall_state or {}).get("group_thread_focus")
         recalled_group_thread_carry_bias = (recall_state or {}).get("group_thread_carry_bias")
         recalled_expressive_style_focus = (recall_state or {}).get("expressive_style_focus")
@@ -1544,6 +1895,56 @@ class EmotionalHubRuntime:
             if recalled_agenda_window_reason is not None
             else self._last_gate_context.get("inner_os_agenda_window_reason") or ""
         ).strip()
+        current_state["learning_mode_focus"] = str(
+            recalled_learning_mode_focus
+            if recalled_learning_mode_focus is not None
+            else self._last_gate_context.get("inner_os_learning_mode_focus") or ""
+        ).strip()
+        current_state["learning_mode_carry_bias"] = float(
+            recalled_learning_mode_carry_bias
+            if recalled_learning_mode_carry_bias is not None
+            else self._last_gate_context.get("inner_os_learning_mode_carry_bias") or 0.0
+        )
+        current_state["social_experiment_focus"] = str(
+            recalled_social_experiment_focus
+            if recalled_social_experiment_focus is not None
+            else self._last_gate_context.get("inner_os_social_experiment_focus") or ""
+        ).strip()
+        current_state["social_experiment_carry_bias"] = float(
+            recalled_social_experiment_carry_bias
+            if recalled_social_experiment_carry_bias is not None
+            else self._last_gate_context.get("inner_os_social_experiment_carry_bias") or 0.0
+        )
+        current_state["temporal_membrane_focus"] = str(
+            recalled_temporal_membrane_focus
+            if recalled_temporal_membrane_focus is not None
+            else self._last_gate_context.get("inner_os_temporal_membrane_focus") or ""
+        ).strip()
+        current_state["temporal_timeline_bias"] = float(
+            recalled_temporal_timeline_bias
+            if recalled_temporal_timeline_bias is not None
+            else self._last_gate_context.get("inner_os_temporal_timeline_bias") or 0.0
+        )
+        current_state["temporal_reentry_bias"] = float(
+            recalled_temporal_reentry_bias
+            if recalled_temporal_reentry_bias is not None
+            else self._last_gate_context.get("inner_os_temporal_reentry_bias") or 0.0
+        )
+        current_state["temporal_supersession_bias"] = float(
+            recalled_temporal_supersession_bias
+            if recalled_temporal_supersession_bias is not None
+            else self._last_gate_context.get("inner_os_temporal_supersession_bias") or 0.0
+        )
+        current_state["temporal_continuity_bias"] = float(
+            recalled_temporal_continuity_bias
+            if recalled_temporal_continuity_bias is not None
+            else self._last_gate_context.get("inner_os_temporal_continuity_bias") or 0.0
+        )
+        current_state["temporal_relation_reentry_bias"] = float(
+            recalled_temporal_relation_reentry_bias
+            if recalled_temporal_relation_reentry_bias is not None
+            else self._last_gate_context.get("inner_os_temporal_relation_reentry_bias") or 0.0
+        )
         current_state["body_homeostasis_focus"] = str(
             recalled_body_homeostasis_focus
             if recalled_body_homeostasis_focus is not None
@@ -1583,6 +1984,31 @@ class EmotionalHubRuntime:
             recalled_group_thread_registry_snapshot
             if isinstance(recalled_group_thread_registry_snapshot, Mapping)
             else self._last_gate_context.get("inner_os_group_thread_registry_snapshot") or {}
+        )
+        current_state["discussion_thread_registry_snapshot"] = dict(
+            recalled_discussion_thread_registry_snapshot
+            if isinstance(recalled_discussion_thread_registry_snapshot, Mapping)
+            else self._last_gate_context.get("inner_os_discussion_thread_registry_snapshot") or {}
+        )
+        current_state["autobiographical_thread_mode"] = str(
+            current_state.get("autobiographical_thread_mode")
+            or self._last_gate_context.get("inner_os_autobiographical_thread_mode")
+            or ""
+        ).strip()
+        current_state["autobiographical_thread_anchor"] = str(
+            current_state.get("autobiographical_thread_anchor")
+            or self._last_gate_context.get("inner_os_autobiographical_thread_anchor")
+            or ""
+        ).strip()
+        current_state["autobiographical_thread_focus"] = str(
+            current_state.get("autobiographical_thread_focus")
+            or self._last_gate_context.get("inner_os_autobiographical_thread_focus")
+            or ""
+        ).strip()
+        current_state["autobiographical_thread_strength"] = float(
+            current_state.get("autobiographical_thread_strength")
+            or self._last_gate_context.get("inner_os_autobiographical_thread_strength")
+            or 0.0
         )
         current_state["group_thread_focus"] = str(
             recalled_group_thread_focus
@@ -1646,6 +2072,14 @@ class EmotionalHubRuntime:
             existing_hints=response_hook.expression_hints,
             expected_source="shared",
         )
+        llm_raw_text_hint = str(
+            getattr(self, "_last_guarded_narrative_bridge_text", "") or ""
+        ).strip()
+        if llm_raw_text_hint:
+            response_hook.expression_hints["llm_raw_text"] = llm_raw_text_hint
+            response_hook.expression_hints["allow_guarded_narrative_bridge"] = bool(
+                getattr(self, "_last_guarded_narrative_bridge_allowed", False)
+            )
         current_state["conscious_workspace"] = dict(response_hook.expression_hints.get("conscious_workspace") or {})
         headless_actuation = self._inner_os_headless_runtime.step(
             actuation_plan=response_hook.expression_hints.get("actuation_plan"),
@@ -1661,7 +2095,12 @@ class EmotionalHubRuntime:
             merged_retrieval.setdefault("inner_os", {})
             merged_retrieval["inner_os"].update(recall_hook.ignition_hints)
             result.response.retrieval_summary = merged_retrieval
-            merged_controls = dict(result.response.controls or {})
+            merged_controls = dict(getattr(result.response, "controls", {}) or {})
+            merged_controls_used = dict(
+                getattr(result.response, "controls_used", {}) or {}
+            )
+            for key, value in merged_controls_used.items():
+                merged_controls.setdefault(key, value)
             inner_os_controls = response_hook.to_dict()
             inner_os_controls["live_response_steps"] = live_response_steps
             inner_os_controls["surface_policy_level"] = self._inner_os_surface_policy_level(getattr(result.response, "controls_used", {}) or {})
@@ -1692,9 +2131,39 @@ class EmotionalHubRuntime:
         result.metrics.setdefault("inner_os/surface_policy_layered", 1.0 if surface_policy_level == "layered" else 0.0)
         result.metrics.setdefault("inner_os/surface_policy_intent_clarify", 1.0 if surface_policy_intent == "clarify" else 0.0)
         result.metrics.setdefault("inner_os/surface_policy_intent_check_in", 1.0 if surface_policy_intent == "check_in" else 0.0)
+        boundary_transform = dict(response_hook.expression_hints.get("boundary_transform") or {})
+        residual_reflection = dict(response_hook.expression_hints.get("residual_reflection") or {})
         current_state["surface_policy_active"] = 0.0 if surface_policy_level == "none" else 1.0
         current_state["surface_policy_level"] = surface_policy_level
         current_state["surface_policy_intent"] = surface_policy_intent or None
+        current_state["boundary_gate_mode"] = str(boundary_transform.get("gate_mode") or "").strip()
+        current_state["boundary_transform_mode"] = str(boundary_transform.get("transformation_mode") or "").strip()
+        current_state["boundary_authority_scope"] = str(boundary_transform.get("authority_scope") or "").strip()
+        current_state["boundary_softened_acts"] = list(boundary_transform.get("softened_acts") or [])
+        current_state["boundary_withheld_acts"] = list(boundary_transform.get("withheld_acts") or [])
+        current_state["boundary_deferred_topics"] = list(boundary_transform.get("deferred_topics") or [])
+        current_state["boundary_residual_pressure"] = round(float(boundary_transform.get("residual_pressure") or 0.0), 4)
+        current_state["residual_reflection_mode"] = str(residual_reflection.get("mode") or "").strip()
+        current_state["residual_reflection_focus"] = str(residual_reflection.get("focus") or "").strip()
+        current_state["residual_reflection_strength"] = round(float(residual_reflection.get("strength") or 0.0), 4)
+        current_state["residual_reflection_reasons"] = list(residual_reflection.get("reason_tokens") or [])
+        current_state["autobiographical_thread_mode"] = str(current_state.get("autobiographical_thread_mode") or "").strip()
+        current_state["autobiographical_thread_anchor"] = str(current_state.get("autobiographical_thread_anchor") or "").strip()
+        current_state["autobiographical_thread_focus"] = str(current_state.get("autobiographical_thread_focus") or "").strip()
+        current_state["autobiographical_thread_strength"] = round(
+            float(current_state.get("autobiographical_thread_strength") or 0.0),
+            4,
+        )
+        current_state["autobiographical_thread_reasons"] = list(current_state.get("autobiographical_thread_reasons") or [])
+        current_state["recent_dialogue_state"] = dict(response_hook.expression_hints.get("recent_dialogue_state") or {})
+        current_state["discussion_thread_state"] = dict(response_hook.expression_hints.get("discussion_thread_state") or {})
+        current_state["issue_state"] = dict(response_hook.expression_hints.get("issue_state") or {})
+        current_state["discussion_thread_registry_snapshot"] = update_discussion_thread_registry_snapshot(
+            existing_snapshot=current_state.get("discussion_thread_registry_snapshot"),
+            recent_dialogue_state=current_state.get("recent_dialogue_state"),
+            discussion_thread_state=current_state.get("discussion_thread_state"),
+            issue_state=current_state.get("issue_state"),
+        )
         current_state["opening_pace_windowed"] = response_hook.expression_hints.get("opening_pace_windowed")
         current_state["return_gaze_expectation"] = response_hook.expression_hints.get("return_gaze_expectation")
         current_state["contact_dynamics"] = dict(response_hook.expression_hints.get("contact_dynamics") or {})
@@ -1958,6 +2427,9 @@ class EmotionalHubRuntime:
         )
         self._last_gate_context["inner_os_person_registry_snapshot"] = dict(post_hook.person_registry_snapshot or {})
         self._last_gate_context["inner_os_group_thread_registry_snapshot"] = dict(post_hook.group_thread_registry_snapshot or {})
+        self._last_gate_context["inner_os_discussion_thread_registry_snapshot"] = dict(
+            current_state.get("discussion_thread_registry_snapshot") or {}
+        )
         previous_budget_focus = str(current_state.get("homeostasis_budget_focus") or "").strip()
         previous_budget_bias = float(current_state.get("homeostasis_budget_bias") or 0.0)
         next_budget_state = dict(
@@ -2024,6 +2496,41 @@ class EmotionalHubRuntime:
         self._last_gate_context["inner_os_agenda_window_reason"] = str(
             agenda_window_state.get("reason") or current_state.get("agenda_window_reason") or ""
         ).strip()
+        learning_mode_state = dict(
+            response_hook.expression_hints.get("interaction_policy_learning_mode_state") or {}
+        )
+        self._last_gate_context["inner_os_learning_mode_focus"] = str(
+            learning_mode_state.get("state") or current_state.get("learning_mode_focus") or ""
+        ).strip()
+        self._last_gate_context["inner_os_learning_mode_carry_bias"] = round(
+            max(
+                0.0,
+                min(
+                    1.0,
+                    float(learning_mode_state.get("score") or 0.0) * 0.18
+                    + float(learning_mode_state.get("winner_margin") or 0.0) * 0.08,
+                ),
+            ),
+            4,
+        )
+        social_experiment_loop_state = dict(
+            response_hook.expression_hints.get("interaction_policy_social_experiment_loop_state") or {}
+        )
+        self._last_gate_context["inner_os_social_experiment_focus"] = str(
+            social_experiment_loop_state.get("state") or current_state.get("social_experiment_focus") or ""
+        ).strip()
+        self._last_gate_context["inner_os_social_experiment_carry_bias"] = round(
+            max(
+                0.0,
+                min(
+                    1.0,
+                    float(social_experiment_loop_state.get("score") or 0.0) * 0.16
+                    + float(social_experiment_loop_state.get("winner_margin") or 0.0) * 0.08
+                    + float(social_experiment_loop_state.get("probe_intensity") or 0.0) * 0.06,
+                ),
+            ),
+            4,
+        )
         commitment_carry = dict(
             ((response_hook.expression_hints.get("interaction_policy_packet") or {}).get("commitment_carry") or {})
         )
@@ -2089,6 +2596,12 @@ class EmotionalHubRuntime:
         self._last_gate_context["inner_os_conscious_residue_anchor"] = post_hook.state.conscious_residue_anchor
         self._last_gate_context["inner_os_conscious_residue_summary"] = post_hook.state.conscious_residue_summary
         self._last_gate_context["inner_os_conscious_residue_strength"] = float(post_hook.state.conscious_residue_strength)
+        self._last_gate_context["inner_os_autobiographical_thread_mode"] = post_hook.state.autobiographical_thread_mode
+        self._last_gate_context["inner_os_autobiographical_thread_anchor"] = post_hook.state.autobiographical_thread_anchor
+        self._last_gate_context["inner_os_autobiographical_thread_focus"] = post_hook.state.autobiographical_thread_focus
+        self._last_gate_context["inner_os_autobiographical_thread_strength"] = float(
+            post_hook.state.autobiographical_thread_strength
+        )
         result.metrics.setdefault(
             "inner_os/temporal_pressure_after",
             round(float(post_hook.state.temporal_pressure), 4),
@@ -2179,6 +2692,8 @@ class EmotionalHubRuntime:
         overnight_commitment_focus = str(current_state.get("commitment_target_focus") or "").strip()
         overnight_agenda_focus = str(current_state.get("agenda_focus") or "").strip()
         overnight_agenda_window_focus = str(current_state.get("agenda_window_focus") or "").strip()
+        overnight_learning_mode_focus = str(current_state.get("learning_mode_focus") or "").strip()
+        overnight_social_experiment_focus = str(current_state.get("social_experiment_focus") or "").strip()
         result.metrics.setdefault(
             "inner_os/overnight_association_bias_active",
             1.0 if overnight_association_focus else 0.0,
@@ -2202,6 +2717,14 @@ class EmotionalHubRuntime:
         result.metrics.setdefault(
             "inner_os/overnight_agenda_window_bias_active",
             1.0 if overnight_agenda_window_focus or float(current_state.get("agenda_window_bias") or 0.0) > 0.0 else 0.0,
+        )
+        result.metrics.setdefault(
+            "inner_os/overnight_learning_mode_bias_active",
+            1.0 if overnight_learning_mode_focus or float(current_state.get("learning_mode_carry_bias") or 0.0) > 0.0 else 0.0,
+        )
+        result.metrics.setdefault(
+            "inner_os/overnight_social_experiment_bias_active",
+            1.0 if overnight_social_experiment_focus or float(current_state.get("social_experiment_carry_bias") or 0.0) > 0.0 else 0.0,
         )
         result.metrics.setdefault(
             "inner_os/overnight_body_homeostasis_bias_active",
@@ -2240,6 +2763,10 @@ class EmotionalHubRuntime:
         result.metrics.setdefault(
             "inner_os/group_thread_total_threads",
             float(int((current_state.get("group_thread_registry_snapshot") or {}).get("total_threads") or 0)),
+        )
+        result.metrics.setdefault(
+            "inner_os/discussion_thread_total_threads",
+            float(int((current_state.get("discussion_thread_registry_snapshot") or {}).get("total_threads") or 0)),
         )
         result.metrics.setdefault(
             "inner_os/overnight_group_thread_bias_active",
@@ -2332,6 +2859,14 @@ class EmotionalHubRuntime:
         result.metrics.setdefault(
             "inner_os/agenda_window_deferral_budget",
             round(float(agenda_window_state.get("deferral_budget") or 0.0), 4),
+        )
+        result.metrics.setdefault(
+            "inner_os/learning_mode_winner_margin",
+            round(float(learning_mode_state.get("winner_margin") or 0.0), 4),
+        )
+        result.metrics.setdefault(
+            "inner_os/social_experiment_winner_margin",
+            round(float(social_experiment_loop_state.get("winner_margin") or 0.0), 4),
         )
         result.metrics.setdefault(
             "inner_os/expressive_style_winner_margin",
@@ -2431,10 +2966,16 @@ class EmotionalHubRuntime:
         association_graph_state = (post_hook.audit_record or {}).get("association_graph_state") or {}
         raw_response = payload.get("response") if isinstance(payload, Mapping) else None
         resolved_llm_model = str(
-            getattr(result.response, "model", "") or getattr(raw_response, "model", "") or ""
+            getattr(result.response, "model", "")
+            or getattr(raw_response, "model", "")
+            or llm_raw_model
+            or ""
         )
         resolved_llm_model_source = str(
-            getattr(result.response, "model_source", "") or getattr(raw_response, "model_source", "") or ""
+            getattr(result.response, "model_source", "")
+            or getattr(raw_response, "model_source", "")
+            or llm_raw_model_source
+            or ""
         )
         result.metrics.setdefault(
             "inner_os/terrain_plasticity_applied",
@@ -2473,6 +3014,8 @@ class EmotionalHubRuntime:
                 "question_bias": response_hook.expression_hints.get("question_bias"),
                 "surface_policy_level": self._inner_os_surface_policy_level(getattr(result.response, "controls_used", {}) if result.response is not None else {}),
                 "surface_policy_intent": self._inner_os_surface_policy_intent(getattr(result.response, "controls_used", {}) if result.response is not None else {}),
+                "boundary_transform": dict(response_hook.expression_hints.get("boundary_transform") or {}),
+                "residual_reflection": dict(response_hook.expression_hints.get("residual_reflection") or {}),
                 "actuation_execution_mode": headless_actuation.execution_mode,
                 "actuation_primary_action": headless_actuation.primary_action,
                 "actuation_reply_permission": headless_actuation.reply_permission,
@@ -2495,6 +3038,11 @@ class EmotionalHubRuntime:
                 "current_focus": post_hook.state.current_focus,
                 "pending_meaning": round(float(post_hook.state.pending_meaning), 4),
                 "working_memory_pressure": round(float(post_hook.state.working_memory_pressure), 4),
+                "autobiographical_thread_mode": post_hook.state.autobiographical_thread_mode,
+                "autobiographical_thread_anchor": post_hook.state.autobiographical_thread_anchor,
+                "autobiographical_thread_focus": post_hook.state.autobiographical_thread_focus,
+                "autobiographical_thread_strength": round(float(post_hook.state.autobiographical_thread_strength), 4),
+                "autobiographical_thread_reasons": list(post_hook.state.autobiographical_thread_reasons or []),
                 "contact_dynamics_mode": response_hook.expression_hints.get("contact_dynamics_mode"),
                 "access_dynamics_mode": response_hook.expression_hints.get("access_dynamics_mode"),
                 "conscious_workspace_mode": response_hook.expression_hints.get("conscious_workspace_mode"),
@@ -2546,6 +3094,13 @@ class EmotionalHubRuntime:
                     "dominant_thread_id": str((current_state.get("group_thread_registry_snapshot") or {}).get("dominant_thread_id") or ""),
                     "total_threads": int((current_state.get("group_thread_registry_snapshot") or {}).get("total_threads") or 0),
                     "top_thread_ids": list((current_state.get("group_thread_registry_snapshot") or {}).get("top_thread_ids") or []),
+                },
+                "discussion_thread_registry_summary": {
+                    "dominant_thread_id": str((current_state.get("discussion_thread_registry_snapshot") or {}).get("dominant_thread_id") or ""),
+                    "dominant_anchor": str((current_state.get("discussion_thread_registry_snapshot") or {}).get("dominant_anchor") or ""),
+                    "dominant_issue_state": str((current_state.get("discussion_thread_registry_snapshot") or {}).get("dominant_issue_state") or ""),
+                    "total_threads": int((current_state.get("discussion_thread_registry_snapshot") or {}).get("total_threads") or 0),
+                    "top_thread_ids": list((current_state.get("discussion_thread_registry_snapshot") or {}).get("top_thread_ids") or []),
                 },
                 "group_thread_focus": str(current_state.get("group_thread_focus") or ""),
                 "group_thread_carry_bias": round(float(current_state.get("group_thread_carry_bias") or 0.0), 4),
@@ -2627,6 +3182,57 @@ class EmotionalHubRuntime:
                 "long_term_theme_strength": round(float(working_memory_seed.get("long_term_theme_strength") or 0.0), 4),
                 "long_term_theme_kind": working_memory_seed.get("long_term_theme_kind"),
                 "long_term_theme_summary": working_memory_seed.get("long_term_theme_summary"),
+                "identity_arc_kind": working_memory_seed.get("identity_arc_kind"),
+                "identity_arc_phase": working_memory_seed.get("identity_arc_phase"),
+                "identity_arc_summary": working_memory_seed.get("identity_arc_summary"),
+                "identity_arc_open_tension": working_memory_seed.get("identity_arc_open_tension"),
+                "identity_arc_stability": round(float(working_memory_seed.get("identity_arc_stability") or 0.0), 4),
+                "identity_arc_registry_summary": dict(working_memory_seed.get("identity_arc_registry_summary") or {}),
+                "relation_arc_kind": working_memory_seed.get("relation_arc_kind"),
+                "relation_arc_phase": working_memory_seed.get("relation_arc_phase"),
+                "relation_arc_summary": working_memory_seed.get("relation_arc_summary"),
+                "relation_arc_open_tension": working_memory_seed.get("relation_arc_open_tension"),
+                "relation_arc_stability": round(float(working_memory_seed.get("relation_arc_stability") or 0.0), 4),
+                "relation_arc_registry_summary": dict(working_memory_seed.get("relation_arc_registry_summary") or {}),
+                "group_relation_arc_kind": working_memory_seed.get("group_relation_arc_kind"),
+                "group_relation_arc_phase": working_memory_seed.get("group_relation_arc_phase"),
+                "group_relation_arc_summary": working_memory_seed.get("group_relation_arc_summary"),
+                "group_relation_arc_boundary_mode": working_memory_seed.get("group_relation_arc_boundary_mode"),
+                "group_relation_arc_reentry_window_focus": working_memory_seed.get("group_relation_arc_reentry_window_focus"),
+                "group_relation_arc_group_thread_id": working_memory_seed.get("group_relation_arc_group_thread_id"),
+                "group_relation_arc_topology_focus": working_memory_seed.get("group_relation_arc_topology_focus"),
+                "group_relation_arc_dominant_person_id": working_memory_seed.get("group_relation_arc_dominant_person_id"),
+                "group_relation_arc_stability": round(float(working_memory_seed.get("group_relation_arc_stability") or 0.0), 4),
+                "identity_arc": {
+                    "arc_kind": working_memory_seed.get("identity_arc_kind"),
+                    "phase": working_memory_seed.get("identity_arc_phase"),
+                    "summary": working_memory_seed.get("identity_arc_summary"),
+                    "open_tension": working_memory_seed.get("identity_arc_open_tension"),
+                    "stability": round(float(working_memory_seed.get("identity_arc_stability") or 0.0), 4),
+                    "memory_anchor": working_memory_seed.get("semantic_seed_anchor"),
+                    "long_term_theme_focus": working_memory_seed.get("long_term_theme_focus"),
+                    "long_term_theme_kind": working_memory_seed.get("long_term_theme_kind"),
+                },
+                "relation_arc": {
+                    "arc_kind": working_memory_seed.get("relation_arc_kind"),
+                    "phase": working_memory_seed.get("relation_arc_phase"),
+                    "summary": working_memory_seed.get("relation_arc_summary"),
+                    "open_tension": working_memory_seed.get("relation_arc_open_tension"),
+                    "stability": round(float(working_memory_seed.get("relation_arc_stability") or 0.0), 4),
+                    "related_person_id": working_memory_seed.get("related_person_id"),
+                    "group_thread_id": working_memory_seed.get("group_thread_id"),
+                },
+                "group_relation_arc": {
+                    "arc_kind": working_memory_seed.get("group_relation_arc_kind"),
+                    "phase": working_memory_seed.get("group_relation_arc_phase"),
+                    "summary": working_memory_seed.get("group_relation_arc_summary"),
+                    "boundary_mode": working_memory_seed.get("group_relation_arc_boundary_mode"),
+                    "reentry_window_focus": working_memory_seed.get("group_relation_arc_reentry_window_focus"),
+                    "group_thread_id": working_memory_seed.get("group_relation_arc_group_thread_id"),
+                    "topology_focus": working_memory_seed.get("group_relation_arc_topology_focus"),
+                    "dominant_person_id": working_memory_seed.get("group_relation_arc_dominant_person_id"),
+                    "stability": round(float(working_memory_seed.get("group_relation_arc_stability") or 0.0), 4),
+                },
                 "relation_seed_summary": working_memory_seed.get("relation_seed_summary"),
                 "relation_seed_strength": round(float(working_memory_seed.get("relation_seed_strength") or 0.0), 4),
                 "partner_address_hint": working_memory_seed.get("partner_address_hint"),
@@ -2640,6 +3246,18 @@ class EmotionalHubRuntime:
                 "prospective_memory_pull": round(float(post_hook.state.prospective_memory_pull), 4),
                 "llm_model": resolved_llm_model,
                 "llm_model_source": resolved_llm_model_source,
+                "force_llm_bridge": bool(
+                    getattr(getattr(self, "config", None), "force_llm_bridge", False)
+                ),
+                "llm_bridge_called": bool(result.metrics.get("inner_os/llm_bridge_called") or 0.0),
+                "llm_raw_text": llm_raw_text,
+                "llm_raw_model": llm_raw_model,
+                "llm_raw_model_source": llm_raw_model_source,
+                "llm_final_text": llm_final_text,
+                "llm_raw_differs_from_final": bool(
+                    llm_raw_text and llm_final_text and llm_raw_text != llm_final_text
+                ),
+                "qualia_gate_reason": str(qualia_gate_snapshot.get("reason") or "").strip(),
             }
         )
         result.metrics.setdefault(
@@ -2676,6 +3294,27 @@ class EmotionalHubRuntime:
             "inner_os/transfer_target_model_requested",
             1.0 if transfer_summary.get("target_model") else 0.0,
         )
+        current_state.setdefault("identity_arc_kind", working_memory_seed.get("identity_arc_kind"))
+        current_state.setdefault("identity_arc_phase", working_memory_seed.get("identity_arc_phase"))
+        current_state.setdefault("identity_arc_summary", working_memory_seed.get("identity_arc_summary"))
+        current_state.setdefault("identity_arc_open_tension", working_memory_seed.get("identity_arc_open_tension"))
+        current_state.setdefault("identity_arc_stability", working_memory_seed.get("identity_arc_stability"))
+        current_state.setdefault("identity_arc_registry_summary", working_memory_seed.get("identity_arc_registry_summary"))
+        current_state.setdefault("relation_arc_kind", working_memory_seed.get("relation_arc_kind"))
+        current_state.setdefault("relation_arc_phase", working_memory_seed.get("relation_arc_phase"))
+        current_state.setdefault("relation_arc_summary", working_memory_seed.get("relation_arc_summary"))
+        current_state.setdefault("relation_arc_open_tension", working_memory_seed.get("relation_arc_open_tension"))
+        current_state.setdefault("relation_arc_stability", working_memory_seed.get("relation_arc_stability"))
+        current_state.setdefault("relation_arc_registry_summary", working_memory_seed.get("relation_arc_registry_summary"))
+        current_state.setdefault("group_relation_arc_kind", working_memory_seed.get("group_relation_arc_kind"))
+        current_state.setdefault("group_relation_arc_phase", working_memory_seed.get("group_relation_arc_phase"))
+        current_state.setdefault("group_relation_arc_summary", working_memory_seed.get("group_relation_arc_summary"))
+        current_state.setdefault("group_relation_arc_boundary_mode", working_memory_seed.get("group_relation_arc_boundary_mode"))
+        current_state.setdefault("group_relation_arc_reentry_window_focus", working_memory_seed.get("group_relation_arc_reentry_window_focus"))
+        current_state.setdefault("group_relation_arc_group_thread_id", working_memory_seed.get("group_relation_arc_group_thread_id"))
+        current_state.setdefault("group_relation_arc_topology_focus", working_memory_seed.get("group_relation_arc_topology_focus"))
+        current_state.setdefault("group_relation_arc_dominant_person_id", working_memory_seed.get("group_relation_arc_dominant_person_id"))
+        current_state.setdefault("group_relation_arc_stability", working_memory_seed.get("group_relation_arc_stability"))
         continuity_summary = ContinuitySummaryBuilder().build(
             interaction_policy_packet=interaction_policy_packet,
             current_state=current_state,
@@ -2712,6 +3351,16 @@ class EmotionalHubRuntime:
             "inner_os/dashboard_snapshot_written",
             1.0 if self._persist_inner_os_dashboard_snapshot(dashboard_snapshot) else 0.0,
         )
+        final_surface_text = str(getattr(result.response, "text", "") or "").strip()
+        final_user_text = str(user_text or "").strip()
+        if final_user_text:
+            if not hasattr(self, "_surface_user_history"):
+                self._surface_user_history = deque(maxlen=4)
+            self._surface_user_history.append(final_user_text)
+        if final_surface_text:
+            if not hasattr(self, "_surface_response_history"):
+                self._surface_response_history = deque(maxlen=3)
+            self._surface_response_history.append(final_surface_text)
         self._emit_inner_os_distillation_record(
             user_text=user_text,
             context_text=context,
@@ -2826,6 +3475,31 @@ class EmotionalHubRuntime:
             "agenda_bias": restored_seed.get("agenda_bias", 0.0),
             "agenda_window_focus": restored_seed.get("agenda_window_focus", ""),
             "agenda_window_bias": restored_seed.get("agenda_window_bias", 0.0),
+            "learning_mode_focus": restored_seed.get("learning_mode_focus", ""),
+            "learning_mode_carry_bias": restored_seed.get("learning_mode_carry_bias", 0.0),
+            "social_experiment_focus": restored_seed.get("social_experiment_focus", ""),
+            "social_experiment_carry_bias": restored_seed.get("social_experiment_carry_bias", 0.0),
+            "temporal_membrane_focus": restored_seed.get("temporal_membrane_focus", ""),
+            "temporal_timeline_bias": restored_seed.get("temporal_timeline_bias", 0.0),
+            "temporal_reentry_bias": restored_seed.get("temporal_reentry_bias", 0.0),
+            "temporal_supersession_bias": restored_seed.get("temporal_supersession_bias", 0.0),
+            "temporal_continuity_bias": restored_seed.get("temporal_continuity_bias", 0.0),
+            "temporal_relation_reentry_bias": restored_seed.get("temporal_relation_reentry_bias", 0.0),
+            "identity_arc_kind": restored_seed.get("identity_arc_kind", ""),
+            "identity_arc_phase": restored_seed.get("identity_arc_phase", ""),
+            "identity_arc_summary": restored_seed.get("identity_arc_summary", ""),
+            "identity_arc_registry_summary": dict(restored_seed.get("identity_arc_registry_summary") or {}),
+            "relation_arc_kind": restored_seed.get("relation_arc_kind", ""),
+            "relation_arc_phase": restored_seed.get("relation_arc_phase", ""),
+            "relation_arc_summary": restored_seed.get("relation_arc_summary", ""),
+            "relation_arc_registry_summary": dict(restored_seed.get("relation_arc_registry_summary") or {}),
+            "group_relation_arc_kind": restored_seed.get("group_relation_arc_kind", ""),
+            "group_relation_arc_phase": restored_seed.get("group_relation_arc_phase", ""),
+            "group_relation_arc_summary": restored_seed.get("group_relation_arc_summary", ""),
+            "group_relation_arc_boundary_mode": restored_seed.get("group_relation_arc_boundary_mode", ""),
+            "group_relation_arc_reentry_window_focus": restored_seed.get("group_relation_arc_reentry_window_focus", ""),
+            "group_relation_arc_group_thread_id": restored_seed.get("group_relation_arc_group_thread_id", ""),
+            "group_relation_arc_stability": restored_seed.get("group_relation_arc_stability", 0.0),
             "initiative_followup_state": restored_seed.get("initiative_followup_state", "hold"),
             "homeostasis_budget_focus": restored_seed.get("homeostasis_budget_focus", ""),
             "homeostasis_budget_bias": restored_seed.get("homeostasis_budget_bias", 0.0),
@@ -2835,6 +3509,19 @@ class EmotionalHubRuntime:
             "group_thread_total_threads": int(
                 ((restored_seed.get("group_thread_registry_snapshot") or {}).get("total_threads") or 0)
             ),
+            "discussion_thread_total_threads": int(
+                ((restored_seed.get("discussion_thread_registry_snapshot") or {}).get("total_threads") or 0)
+            ),
+            "discussion_thread_dominant_anchor": str(
+                ((restored_seed.get("discussion_thread_registry_snapshot") or {}).get("dominant_anchor") or "")
+            ),
+            "discussion_thread_dominant_issue_state": str(
+                ((restored_seed.get("discussion_thread_registry_snapshot") or {}).get("dominant_issue_state") or "")
+            ),
+            "autobiographical_thread_mode": restored_seed.get("autobiographical_thread_mode", ""),
+            "autobiographical_thread_anchor": restored_seed.get("autobiographical_thread_anchor", ""),
+            "autobiographical_thread_focus": restored_seed.get("autobiographical_thread_focus", ""),
+            "autobiographical_thread_strength": restored_seed.get("autobiographical_thread_strength", 0.0),
             "group_thread_focus": restored_seed.get("group_thread_focus", ""),
             "group_thread_carry_bias": restored_seed.get("group_thread_carry_bias", 0.0),
             "semantic_seed_focus": working_memory_seed.get("semantic_seed_focus", ""),
@@ -2927,6 +3614,37 @@ class EmotionalHubRuntime:
         gate["inner_os_agenda_window_focus"] = str(seed.get("agenda_window_focus") or "")
         gate["inner_os_agenda_window_bias"] = float(seed.get("agenda_window_bias") or 0.0)
         gate["inner_os_agenda_window_reason"] = str(seed.get("agenda_window_reason") or "")
+        gate["inner_os_learning_mode_focus"] = str(seed.get("learning_mode_focus") or "")
+        gate["inner_os_learning_mode_carry_bias"] = float(seed.get("learning_mode_carry_bias") or 0.0)
+        gate["inner_os_social_experiment_focus"] = str(seed.get("social_experiment_focus") or "")
+        gate["inner_os_social_experiment_carry_bias"] = float(seed.get("social_experiment_carry_bias") or 0.0)
+        gate["inner_os_temporal_membrane_focus"] = str(seed.get("temporal_membrane_focus") or "")
+        gate["inner_os_temporal_timeline_bias"] = float(seed.get("temporal_timeline_bias") or 0.0)
+        gate["inner_os_temporal_reentry_bias"] = float(seed.get("temporal_reentry_bias") or 0.0)
+        gate["inner_os_temporal_supersession_bias"] = float(seed.get("temporal_supersession_bias") or 0.0)
+        gate["inner_os_temporal_continuity_bias"] = float(seed.get("temporal_continuity_bias") or 0.0)
+        gate["inner_os_temporal_relation_reentry_bias"] = float(seed.get("temporal_relation_reentry_bias") or 0.0)
+        gate["inner_os_identity_arc_kind"] = str(seed.get("identity_arc_kind") or "")
+        gate["inner_os_identity_arc_phase"] = str(seed.get("identity_arc_phase") or "")
+        gate["inner_os_identity_arc_summary"] = str(seed.get("identity_arc_summary") or "")
+        gate["inner_os_identity_arc_open_tension"] = str(seed.get("identity_arc_open_tension") or "")
+        gate["inner_os_identity_arc_stability"] = float(seed.get("identity_arc_stability") or 0.0)
+        gate["inner_os_identity_arc_registry_summary"] = dict(seed.get("identity_arc_registry_summary") or {})
+        gate["inner_os_relation_arc_kind"] = str(seed.get("relation_arc_kind") or "")
+        gate["inner_os_relation_arc_phase"] = str(seed.get("relation_arc_phase") or "")
+        gate["inner_os_relation_arc_summary"] = str(seed.get("relation_arc_summary") or "")
+        gate["inner_os_relation_arc_open_tension"] = str(seed.get("relation_arc_open_tension") or "")
+        gate["inner_os_relation_arc_stability"] = float(seed.get("relation_arc_stability") or 0.0)
+        gate["inner_os_relation_arc_registry_summary"] = dict(seed.get("relation_arc_registry_summary") or {})
+        gate["inner_os_group_relation_arc_kind"] = str(seed.get("group_relation_arc_kind") or "")
+        gate["inner_os_group_relation_arc_phase"] = str(seed.get("group_relation_arc_phase") or "")
+        gate["inner_os_group_relation_arc_summary"] = str(seed.get("group_relation_arc_summary") or "")
+        gate["inner_os_group_relation_arc_boundary_mode"] = str(seed.get("group_relation_arc_boundary_mode") or "")
+        gate["inner_os_group_relation_arc_reentry_window_focus"] = str(seed.get("group_relation_arc_reentry_window_focus") or "")
+        gate["inner_os_group_relation_arc_group_thread_id"] = str(seed.get("group_relation_arc_group_thread_id") or "")
+        gate["inner_os_group_relation_arc_topology_focus"] = str(seed.get("group_relation_arc_topology_focus") or "")
+        gate["inner_os_group_relation_arc_dominant_person_id"] = str(seed.get("group_relation_arc_dominant_person_id") or "")
+        gate["inner_os_group_relation_arc_stability"] = float(seed.get("group_relation_arc_stability") or 0.0)
         gate["inner_os_body_homeostasis_focus"] = str(seed.get("body_homeostasis_focus") or "")
         gate["inner_os_body_homeostasis_carry_bias"] = float(seed.get("body_homeostasis_carry_bias") or 0.0)
         gate["inner_os_homeostasis_budget_focus"] = str(seed.get("homeostasis_budget_focus") or "")
@@ -2941,6 +3659,11 @@ class EmotionalHubRuntime:
         gate["inner_os_lexical_variation_carry_bias"] = float(seed.get("lexical_variation_carry_bias") or 0.0)
         gate["inner_os_person_registry_snapshot"] = dict(seed.get("person_registry_snapshot") or {})
         gate["inner_os_group_thread_registry_snapshot"] = dict(seed.get("group_thread_registry_snapshot") or {})
+        gate["inner_os_discussion_thread_registry_snapshot"] = dict(seed.get("discussion_thread_registry_snapshot") or {})
+        gate["inner_os_autobiographical_thread_mode"] = str(seed.get("autobiographical_thread_mode") or "")
+        gate["inner_os_autobiographical_thread_anchor"] = str(seed.get("autobiographical_thread_anchor") or "")
+        gate["inner_os_autobiographical_thread_focus"] = str(seed.get("autobiographical_thread_focus") or "")
+        gate["inner_os_autobiographical_thread_strength"] = float(seed.get("autobiographical_thread_strength") or 0.0)
         gate["inner_os_group_thread_focus"] = str(seed.get("group_thread_focus") or "")
         gate["inner_os_group_thread_carry_bias"] = float(seed.get("group_thread_carry_bias") or 0.0)
         gate["inner_os_temperament_trace"] = {
@@ -3001,6 +3724,33 @@ class EmotionalHubRuntime:
         overnight = dict((continuity_summary or {}).get("overnight") or {})
         carry_strengths = dict((continuity_summary or {}).get("carry_strengths") or {})
         transfer = dict((continuity_summary or {}).get("transfer") or {})
+        same_turn_temporal_mode = str(same_turn.get("temporal_membrane_mode") or "")
+        same_turn_temporal_reentry_pull = round(float(same_turn.get("temporal_reentry_pull") or 0.0), 4)
+        overnight_temporal_focus = str(overnight.get("temporal_membrane_focus") or "")
+        overnight_temporal_reentry_bias = round(float(overnight.get("temporal_reentry_bias") or 0.0), 4)
+        transfer_temporal_focus = str(transfer_summary.get("temporal_membrane_focus") or "")
+        transfer_temporal_reentry_bias = round(float(transfer_summary.get("temporal_reentry_bias") or 0.0), 4)
+        temporal_reentry_carry_strength = round(float(carry_strengths.get("temporal_reentry") or 0.0), 4)
+        temporal_focus_alignment = bool(
+            overnight_temporal_focus
+            and transfer_temporal_focus
+            and overnight_temporal_focus == transfer_temporal_focus
+        )
+        same_turn_boundary_gate_mode = str(same_turn.get("boundary_gate_mode") or "")
+        same_turn_boundary_transform_mode = str(same_turn.get("boundary_transform_mode") or "")
+        same_turn_boundary_softened = list(same_turn.get("boundary_softened_acts") or [])
+        same_turn_boundary_withheld = list(same_turn.get("boundary_withheld_acts") or [])
+        same_turn_boundary_deferred = list(same_turn.get("boundary_deferred_topics") or [])
+        same_turn_boundary_residual_pressure = round(float(same_turn.get("boundary_residual_pressure") or 0.0), 4)
+        same_turn_residual_mode = str(same_turn.get("residual_reflection_mode") or "")
+        same_turn_residual_focus = str(same_turn.get("residual_reflection_focus") or "")
+        same_turn_residual_strength = round(float(same_turn.get("residual_reflection_strength") or 0.0), 4)
+        same_turn_contact_state = str(same_turn.get("contact_reflection_state") or "")
+        same_turn_contact_style = str(same_turn.get("contact_reflection_style") or "")
+        same_turn_contact_transmit = round(float(same_turn.get("contact_transmit_share") or 0.0), 4)
+        same_turn_contact_reflect = round(float(same_turn.get("contact_reflect_share") or 0.0), 4)
+        same_turn_contact_absorb = round(float(same_turn.get("contact_absorb_share") or 0.0), 4)
+        same_turn_contact_block = round(float(same_turn.get("contact_block_share") or 0.0), 4)
         return {
             "schema": "inner_os_dashboard_snapshot/v1",
             "timestamp_ms": int(time.time() * 1000),
@@ -3017,6 +3767,27 @@ class EmotionalHubRuntime:
                 "agenda_window_state": str(same_turn.get("agenda_window_state") or ""),
                 "agenda_window_carry_target": str(same_turn.get("agenda_window_carry_target") or ""),
                 "commitment_target": str(same_turn.get("commitment_target") or ""),
+                "temporal_membrane_mode": same_turn_temporal_mode,
+                "temporal_timeline_coherence": round(float(same_turn.get("temporal_timeline_coherence") or 0.0), 4),
+                "temporal_reentry_pull": same_turn_temporal_reentry_pull,
+                "temporal_supersession_pressure": round(float(same_turn.get("temporal_supersession_pressure") or 0.0), 4),
+                "temporal_continuity_pressure": round(float(same_turn.get("temporal_continuity_pressure") or 0.0), 4),
+                "temporal_relation_reentry_pull": round(float(same_turn.get("temporal_relation_reentry_pull") or 0.0), 4),
+                "boundary_gate_mode": same_turn_boundary_gate_mode,
+                "boundary_transform_mode": same_turn_boundary_transform_mode,
+                "boundary_softened_count": len(same_turn_boundary_softened),
+                "boundary_withheld_count": len(same_turn_boundary_withheld),
+                "boundary_deferred_count": len(same_turn_boundary_deferred),
+                "boundary_residual_pressure": same_turn_boundary_residual_pressure,
+                "residual_reflection_mode": same_turn_residual_mode,
+                "residual_reflection_focus": same_turn_residual_focus,
+                "residual_reflection_strength": same_turn_residual_strength,
+                "contact_reflection_state": same_turn_contact_state,
+                "contact_reflection_style": same_turn_contact_style,
+                "contact_transmit_share": same_turn_contact_transmit,
+                "contact_reflect_share": same_turn_contact_reflect,
+                "contact_absorb_share": same_turn_contact_absorb,
+                "contact_block_share": same_turn_contact_block,
                 "body_homeostasis_state": str(same_turn.get("body_homeostasis_state") or ""),
                 "homeostasis_budget_state": str(same_turn.get("homeostasis_budget_state") or ""),
                 "relational_continuity_state": str(same_turn.get("relational_continuity_state") or ""),
@@ -3036,6 +3807,62 @@ class EmotionalHubRuntime:
                 "semantic_seed_visible": bool(transfer.get("semantic_seed_visible", False)),
                 "commitment_carry_visible": bool(transfer.get("commitment_carry_visible", False)),
                 "target_model_requested": str(transfer.get("target_model_requested") or ""),
+                "temporal_membrane_focus": transfer_temporal_focus,
+                "temporal_timeline_bias": round(float(transfer_summary.get("temporal_timeline_bias") or 0.0), 4),
+                "temporal_reentry_bias": transfer_temporal_reentry_bias,
+                "temporal_supersession_bias": round(float(transfer_summary.get("temporal_supersession_bias") or 0.0), 4),
+                "temporal_continuity_bias": round(float(transfer_summary.get("temporal_continuity_bias") or 0.0), 4),
+                "temporal_relation_reentry_bias": round(float(transfer_summary.get("temporal_relation_reentry_bias") or 0.0), 4),
+            },
+            "temporal_alignment": {
+                "same_turn_mode": same_turn_temporal_mode,
+                "overnight_focus": overnight_temporal_focus,
+                "transfer_focus": transfer_temporal_focus,
+                "focus_alignment": temporal_focus_alignment,
+                "same_to_overnight_reentry_delta": round(
+                    overnight_temporal_reentry_bias - same_turn_temporal_reentry_pull,
+                    4,
+                ),
+                "overnight_to_transfer_reentry_delta": round(
+                    transfer_temporal_reentry_bias - overnight_temporal_reentry_bias,
+                    4,
+                ),
+                "reentry_carry_visible": temporal_reentry_carry_strength > 0.0,
+                "reentry_carry_strength": temporal_reentry_carry_strength,
+            },
+            "boundary_alignment": {
+                "gate_mode": same_turn_boundary_gate_mode,
+                "transform_mode": same_turn_boundary_transform_mode,
+                "softened_count": len(same_turn_boundary_softened),
+                "withheld_count": len(same_turn_boundary_withheld),
+                "deferred_count": len(same_turn_boundary_deferred),
+                "residual_pressure": same_turn_boundary_residual_pressure,
+                "residual_mode": same_turn_residual_mode,
+                "residual_focus": same_turn_residual_focus,
+                "residual_strength": same_turn_residual_strength,
+                "unsaid_pressure_visible": bool(
+                    same_turn_boundary_gate_mode
+                    or same_turn_boundary_transform_mode
+                    or same_turn_boundary_softened
+                    or same_turn_boundary_withheld
+                    or same_turn_boundary_deferred
+                    or same_turn_residual_strength > 0.0
+                ),
+            },
+            "contact_alignment": {
+                "state": same_turn_contact_state,
+                "style": same_turn_contact_style,
+                "transmit_share": same_turn_contact_transmit,
+                "reflect_share": same_turn_contact_reflect,
+                "absorb_share": same_turn_contact_absorb,
+                "block_share": same_turn_contact_block,
+                "reflection_visible": bool(
+                    same_turn_contact_state
+                    or same_turn_contact_style
+                    or same_turn_contact_reflect > 0.0
+                    or same_turn_contact_absorb > 0.0
+                    or same_turn_contact_block > 0.0
+                ),
             },
             "metrics": {
                 "social_topology_score": round(float(metrics.get("inner_os/social_topology_score") or 0.0), 4),
@@ -3108,7 +3935,87 @@ class EmotionalHubRuntime:
         loop_state = dict(current_state)
         previous_stream = self._inner_os_stream_state_from_hints(hook.expression_hints)
         last_style_feedback: Dict[str, Any] = {}
+        persistent_planning_hints = {
+            key: value
+            for key, value in (
+                (
+                    "interaction_policy_packet",
+                    dict(hook.expression_hints.get("interaction_policy_packet") or {}),
+                ),
+                (
+                    "interaction_policy_dialogue_act",
+                    str(hook.expression_hints.get("interaction_policy_dialogue_act") or ""),
+                ),
+                (
+                    "actuation_plan",
+                    dict(hook.expression_hints.get("actuation_plan") or {}),
+                ),
+                (
+                    "action_posture",
+                    dict(hook.expression_hints.get("action_posture") or {}),
+                ),
+                (
+                    "planned_content_sequence",
+                    list(
+                        (getattr(response, "controls_used", {}) or {}).get(
+                            "inner_os_planned_content_sequence"
+                        )
+                        or getattr(self, "_last_planned_content_sequence", [])
+                        or []
+                    ),
+                ),
+            )
+            if value
+        }
+        bridge_allowed = getattr(response, "controls_used", {}).get(
+            "inner_os_allow_guarded_narrative_bridge"
+        )
+        if any(
+            str(item.get("act") or "").strip()
+            in {"offer_small_opening_line", "offer_small_opening_frame"}
+            for item in (persistent_planning_hints.get("planned_content_sequence") or [])
+            if isinstance(item, Mapping)
+        ):
+            bridge_allowed = False
+        if bridge_allowed is None:
+            bridge_allowed = hook.expression_hints.get("allow_guarded_narrative_bridge")
+        persistent_bridge_hints = {
+            "llm_raw_text": str(
+                hook.expression_hints.get("llm_raw_text")
+                or getattr(response, "controls_used", {}).get("inner_os_llm_raw_text")
+                or ""
+            ).strip(),
+            "allow_guarded_narrative_bridge": bool(bridge_allowed),
+        }
+        if persistent_bridge_hints["llm_raw_text"]:
+            hook.expression_hints.update(persistent_bridge_hints)
+        if persistent_planning_hints:
+            hook.expression_hints.update(persistent_planning_hints)
+
+        def _stamp_persistent_inner_os_controls(
+            target: Optional[HubResponse],
+        ) -> Optional[HubResponse]:
+            if target is None:
+                return target
+            controls_used = dict(getattr(target, "controls_used", {}) or {})
+            planned_sequence = persistent_planning_hints.get("planned_content_sequence")
+            if isinstance(planned_sequence, list) and planned_sequence:
+                controls_used["inner_os_planned_content_sequence"] = [
+                    dict(item)
+                    for item in planned_sequence
+                    if isinstance(item, Mapping)
+                ]
+            raw_bridge_text = str(persistent_bridge_hints.get("llm_raw_text") or "").strip()
+            if raw_bridge_text:
+                controls_used["inner_os_llm_raw_text"] = raw_bridge_text
+            controls_used["inner_os_allow_guarded_narrative_bridge"] = bool(
+                persistent_bridge_hints.get("allow_guarded_narrative_bridge", False)
+            )
+            target.controls_used = controls_used
+            return target
+
         while steps < max_steps:
+            shaped_response = _stamp_persistent_inner_os_controls(shaped_response)
             shaped_response = self._apply_inner_os_surface_policy(
                 shaped_response,
                 hook.expression_hints,
@@ -3199,6 +4106,10 @@ class EmotionalHubRuntime:
                 existing_hints=next_hook.expression_hints,
                 expected_source="shared",
             )
+            if persistent_planning_hints:
+                next_hook.expression_hints.update(persistent_planning_hints)
+            if persistent_bridge_hints["llm_raw_text"]:
+                next_hook.expression_hints.update(persistent_bridge_hints)
             next_stream = self._inner_os_stream_state_from_hints(next_hook.expression_hints)
             hook = next_hook
             if steps >= min_steps and self._inner_os_stream_converged(previous_stream, next_stream):
@@ -3213,6 +4124,20 @@ class EmotionalHubRuntime:
                 existing_hints=hook.expression_hints,
                 expected_source="shared",
             )
+        if persistent_planning_hints:
+            hook.expression_hints.update(persistent_planning_hints)
+        if persistent_bridge_hints["llm_raw_text"]:
+            hook.expression_hints.update(persistent_bridge_hints)
+        shaped_response = _stamp_persistent_inner_os_controls(shaped_response)
+        shaped_response = self._apply_inner_os_surface_policy(
+            shaped_response,
+            hook.expression_hints,
+            hook.conscious_access,
+        )
+        shaped_response = self._apply_inner_os_surface_profile(
+            shaped_response,
+            hook.expression_hints,
+        )
         return shaped_response, hook, steps
 
     def _inner_os_stream_state_from_hints(self, expression_hint: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
@@ -3872,13 +4797,23 @@ class EmotionalHubRuntime:
         elif text_input and self._talk_mode == TalkMode.WATCH:
             ack_text = self._render_ack_for_mode(TalkMode.WATCH, gate_ctx)
 
+        force_llm_bridge = bool(self.config.force_llm_bridge and text_input and not fast_only)
+        metrics["inner_os/force_llm_bridge"] = 1.0 if force_llm_bridge else 0.0
+
         route_response: Optional[str] = None
-        if route == ResponseRoute.REFLEX:
+        if route == ResponseRoute.REFLEX and not force_llm_bridge:
             route_response = self._reflex_prompt(prediction_error)
-        elif route == ResponseRoute.HABIT and text_input:
+        elif route == ResponseRoute.HABIT and text_input and not force_llm_bridge:
             route_response = self._habit_prompt(user_text)
 
         response: Optional[HubResponse] = None
+        llm_bridge_called = False
+        llm_bridge_raw_text = ""
+        llm_bridge_raw_model = ""
+        llm_bridge_raw_model_source = ""
+        self._last_guarded_narrative_bridge_text = ""
+        self._last_guarded_narrative_bridge_allowed = False
+        self._last_planned_content_sequence = []
         memory_reference: Optional[Dict[str, Any]] = None
         retrieval_summary: Optional[Dict[str, Any]] = None
         persona_meta: Dict[str, Any] = {}
@@ -3956,11 +4891,18 @@ class EmotionalHubRuntime:
                         hit_lines.append(f"- {hit_text}")
                 if hit_lines:
                     context = "[sse-recall]\n" + "\n".join(hit_lines)
+        masked_user_text = user_text or ""
+        masked_context = context
         should_call_llm = (
             text_input
-            and self._talk_mode == TalkMode.TALK
-            and route == ResponseRoute.CONSCIOUS
             and not route_response
+            and (
+                force_llm_bridge
+                or (
+                    self._talk_mode == TalkMode.TALK
+                    and route == ResponseRoute.CONSCIOUS
+                )
+            )
         )
         if (
             not should_call_llm
@@ -4060,6 +5002,7 @@ class EmotionalHubRuntime:
                 metrics["tension_score"] = eqframe.tension_score
                 self._last_metrics = metrics
                 self._update_emotion_axes_from_sensors(affect, metrics)
+                llm_bridge_called = True
                 response = self.llm.generate(
                     user_text=masked_user_text,
                     context=masked_context,
@@ -4076,12 +5019,27 @@ class EmotionalHubRuntime:
                     interaction_judgement_summary=inner_os_llm_guidance.get("interaction_judgement_summary"),
                     interaction_condition_report=inner_os_llm_guidance.get("interaction_condition_report"),
                     content_sequence=inner_os_llm_guidance.get("content_sequence"),
+                    surface_context_packet=inner_os_llm_guidance.get("surface_context_packet"),
                     surface_profile=inner_os_llm_guidance.get("surface_profile"),
                     utterance_stance=inner_os_llm_guidance.get("utterance_stance"),
                 )
+                llm_bridge_raw_text = str(getattr(response, "text", "") or "")
+                llm_bridge_raw_model = str(getattr(response, "model", "") or "")
+                llm_bridge_raw_model_source = str(
+                    getattr(response, "model_source", "") or ""
+                )
+                self._last_planned_content_sequence = list(
+                    inner_os_llm_guidance.get("content_sequence") or []
+                )
+                response_controls = dict(getattr(response, "controls_used", {}) or {})
+                response_controls["inner_os_planned_content_sequence"] = list(
+                    self._last_planned_content_sequence
+                )
+                response.controls_used = response_controls
                 response = self._attach_visual_reflection(response, perception_summary)
         elif response is None and ack_text:
             response = self._wrap_ack_response(ack_text, self._talk_mode)
+        metrics["inner_os/llm_bridge_called"] = 1.0 if llm_bridge_called else 0.0
         if self.robot_bridge:
             self.robot_bridge.publish(
                 {
@@ -4143,6 +5101,9 @@ class EmotionalHubRuntime:
             "controls": controls,
             "metrics": metrics,
             "response": response,
+            "llm_bridge_raw_text": llm_bridge_raw_text,
+            "llm_bridge_raw_model": llm_bridge_raw_model,
+            "llm_bridge_raw_model_source": llm_bridge_raw_model_source,
             "memory_reference": memory_reference,
             "robot_state": self.robot_bridge.state if self.robot_bridge else None,
             "qualia": self._last_qualia,
@@ -4277,15 +5238,56 @@ class EmotionalHubRuntime:
         metrics["qualia/load"] = load_t
         metrics["qualia/gate_allow"] = 1.0 if allow else 0.0
         if not allow:
-            minimal = ack_text or ack_for_fast
+            planned_sequence = localize_content_sequence(
+                [
+                    dict(item)
+                    for item in (getattr(self, "_last_planned_content_sequence", []) or [])
+                    if isinstance(item, Mapping) and str(item.get("text") or "").strip()
+                ],
+                locale=_runtime_response_locale(self),
+            )
+            planned_text = render_content_sequence(planned_sequence).strip()
+            minimal = planned_text or ack_text or ack_for_fast
             if not minimal and self._talk_mode == TalkMode.PRESENCE:
                 minimal = self._render_presence_ack(gate_ctx)
             if not minimal:
                 minimal = self._render_ack_for_mode(TalkMode.WATCH, gate_ctx)
+            response_controls = dict(getattr(response, "controls_used", {}) or {})
+            raw_narrative = str(narrative_text or "").strip()
+            self._last_guarded_narrative_bridge_text = raw_narrative
+            if raw_narrative:
+                response_controls["inner_os_llm_raw_text"] = raw_narrative
+            response_controls["inner_os_qualia_gate_suppressed"] = True
+            response_controls["inner_os_qualia_gate_reason"] = str(
+                gate_result.get("reason") or ""
+            ).strip()
+            self._last_guarded_narrative_bridge_allowed = bool(
+                raw_narrative
+                and not bool(gate_result.get("override"))
+                and str(gate_result.get("reason") or "").strip() == "normal"
+                and boundary_score < 0.18
+                and self._talk_mode != TalkMode.PRESENCE
+            )
+            if any(
+                str(item.get("act") or "").strip() == "offer_small_opening_line"
+                for item in (getattr(self, "_last_planned_content_sequence", []) or [])
+                if isinstance(item, Mapping)
+            ):
+                self._last_guarded_narrative_bridge_allowed = False
+            response_controls["inner_os_allow_guarded_narrative_bridge"] = bool(
+                self._last_guarded_narrative_bridge_allowed
+            )
             if minimal:
-                response = self._wrap_ack_response(minimal, self._talk_mode)
+                response = self._wrap_ack_response(
+                    minimal,
+                    self._talk_mode,
+                    controls_used=response_controls,
+                )
             narrative_text = None
             payload["suppress_narrative"] = True
+            payload["guarded_narrative_bridge"] = bool(
+                response_controls.get("inner_os_allow_guarded_narrative_bridge")
+            )
             payload["unconscious_success"] = 1
         else:
             payload["unconscious_success"] = 0
@@ -5237,6 +6239,14 @@ class EmotionalHubRuntime:
             return None
         return truncate_text(text, int(getattr(cfg, "max_chars", 0)) or None)
 
+    def _response_locale(self) -> str:
+        locale = "ja-JP"
+        if self._runtime_cfg and hasattr(self._runtime_cfg, "backchannel"):
+            locale = str(
+                getattr(self._runtime_cfg.backchannel, "culture", locale) or locale
+            )
+        return locale
+
     def _estimate_interpersonal_distance(self, gate_ctx: GateContext) -> float:
         distance = 0.7
         if gate_ctx.engaged:
@@ -5370,15 +6380,24 @@ class EmotionalHubRuntime:
             return result
         return None
 
-    def _wrap_ack_response(self, text: str, mode: TalkMode) -> HubResponse:
+    def _wrap_ack_response(
+        self,
+        text: str,
+        mode: TalkMode,
+        *,
+        controls_used: Optional[Mapping[str, Any]] = None,
+    ) -> HubResponse:
         if mode == TalkMode.PRESENCE:
             self._last_presence_ack_ts = time.time()
+        merged_controls: Dict[str, Any] = {"mode": mode.name.lower()}
+        if isinstance(controls_used, Mapping):
+            merged_controls.update(dict(controls_used))
         return HubResponse(
             text=text,
             model=None,
             trace_id=f"ack-{int(time.time() * 1000)}",
             latency_ms=0.0,
-            controls_used={"mode": mode.name.lower()},
+            controls_used=merged_controls,
             safety={"rating": "G", "ack": "true"},
         )
 
@@ -5454,11 +6473,59 @@ class EmotionalHubRuntime:
             existing = existing[len(prefix):].strip()
         if closing and existing.endswith(closing):
             existing = existing[: -len(closing)].strip()
-        existing = derive_content_skeleton(
-            current_text=existing,
-            interaction_policy=interaction_policy if isinstance(interaction_policy, Mapping) else None,
-            conscious_access=conscious_access if isinstance(conscious_access, Mapping) else None,
+        existing_controls_used = dict(getattr(response, "controls_used", {}) or {})
+        planned_content_sequence = existing_controls_used.get(
+            "inner_os_planned_content_sequence"
         )
+        if not isinstance(planned_content_sequence, list):
+            planned_content_sequence = expression_hint.get("planned_content_sequence")
+        if not isinstance(planned_content_sequence, list) or not planned_content_sequence:
+            runtime_planned = getattr(self, "_last_planned_content_sequence", [])
+            planned_content_sequence = runtime_planned if isinstance(runtime_planned, list) and runtime_planned else None
+        if isinstance(planned_content_sequence, list):
+            localized_sequence = localize_content_sequence(
+                [
+                    dict(item)
+                    for item in planned_content_sequence
+                    if isinstance(item, Mapping) and str(item.get("text") or "").strip()
+                ],
+                locale=_runtime_response_locale(self),
+            )
+            existing = render_content_sequence(localized_sequence)
+        else:
+            fallback_user_text = str(
+                getattr(self, "_last_surface_user_text", "") or ""
+            ).strip()
+            if fallback_user_text:
+                fallback_sequence = derive_content_sequence(
+                    current_text=fallback_user_text,
+                    interaction_policy=interaction_policy
+                    if isinstance(interaction_policy, Mapping)
+                    else None,
+                    conscious_access=conscious_access
+                    if isinstance(conscious_access, Mapping)
+                    else None,
+                    history=_runtime_recent_surface_response_history(self),
+                    locale=_runtime_response_locale(self),
+                )
+                if fallback_sequence:
+                    existing = render_content_sequence(fallback_sequence)
+                else:
+                    existing = derive_content_skeleton(
+                        current_text=existing,
+                        interaction_policy=interaction_policy
+                        if isinstance(interaction_policy, Mapping)
+                        else None,
+                        conscious_access=conscious_access
+                        if isinstance(conscious_access, Mapping)
+                        else None,
+                    )
+            else:
+                existing = derive_content_skeleton(
+                    current_text=existing,
+                    interaction_policy=interaction_policy if isinstance(interaction_policy, Mapping) else None,
+                    conscious_access=conscious_access if isinstance(conscious_access, Mapping) else None,
+                )
         shaped_existing = self._shape_inner_os_surface_text(existing, intent=intent)
         probe = self._inner_os_surface_probe(intent=intent, expression_hint=expression_hint, question_bias=question_bias)
         if probe:
@@ -5492,11 +6559,14 @@ class EmotionalHubRuntime:
         ).strip()
         current_text = str(user_text or "").strip()
         content_sequence = []
+        locale = _runtime_response_locale(self)
         if current_text:
             content_sequence = derive_content_sequence(
                 current_text=current_text,
                 interaction_policy=interaction_policy,
                 conscious_access={"intent": dialogue_act},
+                history=_runtime_recent_surface_response_history(self),
+                locale=locale,
             )
         surface_profile = {
             "opening_delay": str(expression_hint.get("surface_opening_delay") or "").strip(),
@@ -5507,12 +6577,35 @@ class EmotionalHubRuntime:
             "opening_pace_windowed": str(expression_hint.get("opening_pace_windowed") or "").strip(),
             "return_gaze_expectation": str(expression_hint.get("return_gaze_expectation") or "").strip(),
             "voice_texture": str(expression_hint.get("surface_voice_texture") or "").strip(),
+            "cultural_register": str(expression_hint.get("surface_cultural_register") or "").strip(),
             "lightness_room": float(expression_hint.get("surface_lightness_room") or 0.0),
             "continuity_weight": float(expression_hint.get("surface_continuity_weight") or 0.0),
             "banter_move": str(expression_hint.get("surface_banter_move") or "").strip(),
             "lexical_variation_mode": str(expression_hint.get("surface_lexical_variation_mode") or "").strip(),
             "group_register": str(expression_hint.get("surface_group_register") or "").strip(),
         }
+        surface_context_packet = dict(expression_hint.get("surface_context_packet") or {})
+        if not surface_context_packet:
+            surface_context_packet = build_surface_context_packet(
+                recent_dialogue_state=interaction_policy.get("recent_dialogue_state"),
+                discussion_thread_state=interaction_policy.get("discussion_thread_state"),
+                issue_state=interaction_policy.get("issue_state"),
+                turn_delta=expression_hint.get("turn_delta"),
+                interaction_constraints=expression_hint.get("interaction_constraints"),
+                boundary_transform=expression_hint.get("boundary_transform"),
+                residual_reflection=expression_hint.get("residual_reflection"),
+                surface_profile=surface_profile,
+                contact_reflection_state=expression_hint.get("contact_reflection_state"),
+                green_kernel_composition=expression_hint.get("green_kernel_composition"),
+                dialogue_context={"user_text": current_text},
+            ).to_dict()
+        if not str(surface_context_packet.get("conversation_phase") or "").strip():
+            surface_context_packet["conversation_phase"] = dialogue_act
+        content_sequence = self._apply_surface_context_packet_to_content_sequence(
+            content_sequence,
+            surface_context_packet=surface_context_packet,
+            surface_profile=surface_profile,
+        )
         return {
             "interaction_policy": dict(interaction_policy),
             "action_posture": dict(expression_hint.get("action_posture") or {}),
@@ -5531,9 +6624,131 @@ class EmotionalHubRuntime:
             "interaction_audit_reference_case_ids": list(expression_hint.get("interaction_audit_reference_case_ids") or []),
             "interaction_audit_reference_case_meta": dict(expression_hint.get("interaction_audit_reference_case_meta") or {}),
             "content_sequence": content_sequence,
+            "surface_context_packet": surface_context_packet,
             "surface_profile": surface_profile,
             "utterance_stance": str(expression_hint.get("partner_utterance_stance") or "").strip(),
         }
+
+    def _apply_surface_context_packet_to_content_sequence(
+        self,
+        content_sequence: Sequence[Mapping[str, Any]] | None,
+        *,
+        surface_context_packet: Optional[Mapping[str, Any]] = None,
+        surface_profile: Optional[Mapping[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        sequence = [
+            dict(item)
+            for item in (content_sequence or [])
+            if isinstance(item, Mapping) and str(item.get("text") or "").strip()
+        ]
+        if not sequence:
+            return []
+        packet = dict(surface_context_packet or {})
+        phase = str(packet.get("conversation_phase") or "").strip()
+        response_role = dict(packet.get("response_role") or {})
+        constraints = dict(packet.get("constraints") or {})
+        shared_core = dict(packet.get("shared_core") or {})
+        response_length = str((surface_profile or {}).get("response_length") or "").strip()
+        primary_role = str(response_role.get("primary") or "").strip()
+        anchor = str(shared_core.get("anchor") or "").strip()
+        max_questions = int(constraints.get("max_questions") or 0)
+        locale = _runtime_response_locale(self)
+
+        def _pick_by_acts(preferred_acts: Sequence[str], *, limit: int = 2) -> List[Dict[str, Any]]:
+            picked: List[Dict[str, Any]] = []
+            seen: set[str] = set()
+            for act_name in preferred_acts:
+                for item in sequence:
+                    act = str(item.get("act") or "").strip()
+                    if act != act_name or act in seen:
+                        continue
+                    picked.append(dict(item))
+                    seen.add(act)
+                    break
+                if len(picked) >= limit:
+                    break
+            return picked
+
+        if response_length == "short" and anchor and (
+            phase in {"issue_pause", "reopening_thread", "continuing_thread", "thread_reopening"}
+            or primary_role in {"leave_return_point_from_anchor", "reopen_from_anchor"}
+        ):
+            if len(sequence) == 1 and str(sequence[0].get("act") or "").strip() == "carry_text":
+                if primary_role == "leave_return_point_from_anchor":
+                    synthetic_text = _format_locale_template(
+                        locale,
+                        "inner_os.content_policy_templates.leave_return_point_from_anchor",
+                        anchor=anchor,
+                    )
+                    if synthetic_text:
+                        return [{"act": "leave_return_point_from_anchor", "text": synthetic_text}]
+                synthetic_text = _format_locale_template(
+                    locale,
+                    "inner_os.content_policy_templates.reopen_from_anchor",
+                    anchor=anchor,
+                )
+                if synthetic_text:
+                    return [{"act": "reopen_from_anchor", "text": synthetic_text}]
+            preferred = _pick_by_acts(
+                (
+                    "reopen_from_anchor_soft",
+                    "reopen_from_anchor",
+                    "leave_return_point_from_anchor_soft",
+                    "leave_return_point_from_anchor",
+                    "leave_return_point",
+                    "quiet_presence",
+                    "keep_shared_thread_visible",
+                ),
+                limit=2,
+            )
+            if preferred:
+                return preferred
+
+        if response_length == "short" and (
+            primary_role == "stay_with_present_need"
+            or phase in {"discussion_unresolved", "deep_disclosure", "exploring_issue"}
+        ):
+            preferred = _pick_by_acts(
+                (
+                    "reflect_hidden_need",
+                    "reflect_self_blame",
+                    "reflect_fear_of_being_seen",
+                    "reflect_unspoken_weight",
+                    "gentle_question_hidden_need_continuing",
+                    "gentle_question_hidden_need",
+                    "gentle_question_self_blame_continuing",
+                    "gentle_question_self_blame",
+                    "gentle_question_fear_continuing",
+                    "gentle_question_fear",
+                    "gentle_question_weight_continuing",
+                    "gentle_question_weight",
+                    "stay_with_present_need",
+                    "quiet_presence",
+                ),
+                limit=2 if max_questions <= 0 else 3,
+            )
+            if preferred:
+                if max_questions <= 0:
+                    preferred = [
+                        item
+                        for item in preferred
+                        if not str(item.get("act") or "").strip().startswith("gentle_question")
+                    ][:2]
+                    if (
+                        primary_role == "stay_with_present_need"
+                        and len(preferred) == 1
+                        and str(preferred[0].get("act") or "").strip().startswith("reflect_")
+                    ):
+                        stay_text = str(
+                            lookup_text(locale, "inner_os.content_policy_segments.stay_with_present_need") or ""
+                        ).strip()
+                        if stay_text:
+                            preferred.append(
+                                {"act": "stay_with_present_need", "text": stay_text}
+                            )
+                return preferred
+
+        return sequence
 
     def _inner_os_surface_prefix(
         self,
@@ -5625,15 +6840,54 @@ class EmotionalHubRuntime:
         text = str(getattr(response, "text", "") or "").strip()
         if not text:
             return response
+        fallback_user_text = str(
+            getattr(self, "_last_surface_user_text", "") or ""
+        ).strip()
+        existing_controls_used = dict(getattr(response, "controls_used", {}) or {})
         interaction_policy = expression_hint.get("interaction_policy_packet")
-        content_sequence = derive_content_sequence(
-            current_text=text,
-            interaction_policy=interaction_policy if isinstance(interaction_policy, Mapping) else None,
-            conscious_access={
-                "intent": str(expression_hint.get("interaction_policy_dialogue_act") or "")
-            },
+        planned_content_sequence = existing_controls_used.get(
+            "inner_os_planned_content_sequence"
         )
+        if not isinstance(planned_content_sequence, list):
+            planned_content_sequence = expression_hint.get("planned_content_sequence")
+        if not isinstance(planned_content_sequence, list) or not planned_content_sequence:
+            runtime_planned = getattr(self, "_last_planned_content_sequence", [])
+            planned_content_sequence = runtime_planned if isinstance(runtime_planned, list) and runtime_planned else None
+        if isinstance(planned_content_sequence, list):
+            content_sequence = [
+                dict(item)
+                for item in planned_content_sequence
+                if isinstance(item, Mapping) and str(item.get("text") or "").strip()
+            ]
+            content_sequence = localize_content_sequence(
+                content_sequence,
+                locale=_runtime_response_locale(self),
+            )
+        else:
+            content_seed_text = fallback_user_text or text
+            content_sequence = derive_content_sequence(
+                current_text=content_seed_text,
+                interaction_policy=interaction_policy if isinstance(interaction_policy, Mapping) else None,
+                conscious_access={
+                    "intent": str(expression_hint.get("interaction_policy_dialogue_act") or "")
+                },
+                history=_runtime_recent_surface_response_history(self),
+                locale=_runtime_response_locale(self),
+            )
+        surface_context_packet = dict(expression_hint.get("surface_context_packet") or {})
         text = render_content_sequence(content_sequence)
+        emergency_surface_acts = {
+            "emergency_deescalate_boundary",
+            "emergency_create_distance",
+            "emergency_exit_now",
+            "emergency_seek_help_now",
+            "emergency_protect_now",
+        }
+        emergency_surface_active = any(
+            str(item.get("act") or "").strip() in emergency_surface_acts
+            for item in content_sequence
+            if isinstance(item, Mapping)
+        )
         surface_profile = {
             "opening_delay": str(expression_hint.get("surface_opening_delay") or "").strip(),
             "response_length": str(expression_hint.get("surface_response_length") or "").strip(),
@@ -5643,6 +6897,7 @@ class EmotionalHubRuntime:
             "opening_pace_windowed": str(expression_hint.get("opening_pace_windowed") or "").strip(),
             "return_gaze_expectation": str(expression_hint.get("return_gaze_expectation") or "").strip(),
             "voice_texture": str(expression_hint.get("surface_voice_texture") or "").strip(),
+            "cultural_register": str(expression_hint.get("surface_cultural_register") or "").strip(),
             "lightness_room": float(expression_hint.get("surface_lightness_room") or 0.0),
             "continuity_weight": float(expression_hint.get("surface_continuity_weight") or 0.0),
             "banter_move": str(expression_hint.get("surface_banter_move") or "").strip(),
@@ -5652,6 +6907,28 @@ class EmotionalHubRuntime:
             "live_return_gaze_mismatch": float(expression_hint.get("live_return_gaze_mismatch") or 0.0),
             "stream_shared_attention_window_mean": float(expression_hint.get("stream_shared_attention_window_mean") or 0.0),
         }
+        if not surface_context_packet:
+            interaction_policy = (
+                interaction_policy if isinstance(interaction_policy, Mapping) else {}
+            )
+            surface_context_packet = build_surface_context_packet(
+                recent_dialogue_state=interaction_policy.get("recent_dialogue_state"),
+                discussion_thread_state=interaction_policy.get("discussion_thread_state"),
+                issue_state=interaction_policy.get("issue_state"),
+                turn_delta=expression_hint.get("turn_delta"),
+                interaction_constraints=expression_hint.get("interaction_constraints"),
+                boundary_transform=expression_hint.get("boundary_transform"),
+                residual_reflection=expression_hint.get("residual_reflection"),
+                surface_profile=surface_profile,
+                contact_reflection_state=expression_hint.get("contact_reflection_state"),
+                green_kernel_composition=expression_hint.get("green_kernel_composition"),
+                dialogue_context={"user_text": fallback_user_text},
+            ).to_dict()
+        content_sequence = self._apply_surface_context_packet_to_content_sequence(
+            content_sequence,
+            surface_context_packet=surface_context_packet,
+            surface_profile=surface_profile,
+        )
         actuation_plan = expression_hint.get("actuation_plan")
         if isinstance(actuation_plan, Mapping):
             execution_mode = str(actuation_plan.get("execution_mode") or "").strip()
@@ -5684,17 +6961,101 @@ class EmotionalHubRuntime:
             surface_profile["certainty_style"] = "careful"
         if live_mismatch >= 0.58 and shared_attention_window_mean <= 0.28:
             surface_profile["response_length"] = "short"
+        if emergency_surface_active:
+            surface_profile["response_length"] = "short"
+            surface_profile["certainty_style"] = "careful"
+            surface_profile["pause_insertion"] = "none"
+            surface_profile["opening_pace_windowed"] = ""
+            surface_profile["return_gaze_expectation"] = ""
+        narrative_bridge_text = ""
+        allow_guarded_narrative_bridge_value = existing_controls_used.get(
+            "inner_os_allow_guarded_narrative_bridge"
+        )
+        if allow_guarded_narrative_bridge_value is None:
+            allow_guarded_narrative_bridge_value = expression_hint.get(
+                "allow_guarded_narrative_bridge"
+            )
+        allow_guarded_narrative_bridge = bool(allow_guarded_narrative_bridge_value)
+        if any(
+            str(item.get("act") or "").strip()
+            in {"offer_small_opening_line", "offer_small_opening_frame"}
+            for item in content_sequence
+        ):
+            allow_guarded_narrative_bridge = False
+        if (
+            str(surface_profile.get("response_length") or "").strip() == "short"
+            and len(content_sequence) >= 3
+        ):
+            allow_guarded_narrative_bridge = False
+        if emergency_surface_active:
+            allow_guarded_narrative_bridge = False
+        if allow_guarded_narrative_bridge:
+            narrative_bridge_text = self._extract_guarded_narrative_bridge_text(
+                str(
+                    existing_controls_used.get("inner_os_llm_raw_text")
+                    or expression_hint.get("llm_raw_text")
+                    or ""
+                ),
+                locale=_runtime_response_locale(self),
+            )
         shaped = self._shape_inner_os_content_sequence(
             content_sequence,
             surface_profile=surface_profile,
             fallback_text=text,
+            narrative_bridge_text=narrative_bridge_text,
         )
         response.text = shaped
-        controls_used = dict(getattr(response, "controls_used", {}) or {})
+        controls_used = dict(existing_controls_used)
+        controls_used["inner_os_planned_content_sequence"] = [
+            dict(item) for item in content_sequence
+        ]
         controls_used["inner_os_surface_profile"] = dict(surface_profile)
         controls_used["inner_os_surface_profile"]["content_sequence_length"] = len(content_sequence)
+        controls_used["inner_os_boundary_transform"] = dict(
+            expression_hint.get("boundary_transform") or {}
+        )
+        controls_used["inner_os_residual_reflection"] = dict(
+            expression_hint.get("residual_reflection") or {}
+        )
+        controls_used["inner_os_allow_guarded_narrative_bridge"] = bool(
+            allow_guarded_narrative_bridge
+        )
+        controls_used["inner_os_guarded_narrative_bridge_used"] = bool(
+            narrative_bridge_text
+        )
         response.controls_used = controls_used
         return response
+
+    def _recent_surface_response_history(self) -> list[str]:
+        return [
+            text
+            for text in (
+                str(item or "").strip()
+                for item in getattr(self, "_surface_response_history", ())
+            )
+            if text
+        ]
+
+    def _recent_surface_user_history(self) -> list[str]:
+        return [
+            text
+            for text in (
+                str(item or "").strip()
+                for item in getattr(self, "_surface_user_history", ())
+            )
+            if text
+        ]
+
+    def _recent_dialogue_thread_history(self) -> list[str]:
+        merged: list[str] = []
+        for item in (
+            *self._recent_surface_user_history(),
+            *self._recent_surface_response_history(),
+        ):
+            text = str(item or "").strip()
+            if text and text not in merged:
+                merged.append(text)
+        return merged[-6:]
 
     def _inner_os_surface_probe(self, *, intent: str = "", expression_hint: Optional[Mapping[str, Any]] = None, question_bias: float = 0.0) -> str:
         if intent != "check_in" or not isinstance(expression_hint, Mapping):
@@ -5911,11 +7272,53 @@ class EmotionalHubRuntime:
         pause_insertion = str(profile.get("pause_insertion") or "").strip()
         opening_pace_windowed = str(profile.get("opening_pace_windowed") or "").strip()
         return_gaze_expectation = str(profile.get("return_gaze_expectation") or "").strip()
+        locale = _runtime_response_locale(self)
+        is_ja = locale.lower().startswith("ja")
+        skip_soft_pause_prefixes: tuple[str, ...] = ()
+        if is_ja:
+            configured_prefixes = lookup_value(
+                locale,
+                "inner_os.surface_profile_cues.skip_soft_pause_prefixes",
+            )
+            if isinstance(configured_prefixes, list):
+                skip_soft_pause_prefixes = tuple(
+                    str(item).strip()
+                    for item in configured_prefixes
+                    if str(item).strip()
+                )
 
         lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
         body = " ".join(lines).strip()
         if not body:
             return cleaned
+
+        ja_tentative_prefixes = ("たぶん、", "おそらく、", "最初は、", "切り出すなら、", "…", "...")
+        ja_careful_prefixes = (
+            "いまは、",
+            "慎重に言うと、",
+            "最初は、",
+            "切り出すなら、",
+            "助けてほしかったのに、",
+            "まだ言えていないことが、",
+            "言ったあとにどう見られるか、",
+            "そのことが、いまも",
+            "…",
+            "...",
+        )
+        ja_soft_return_prefixes = (
+            "ここにいます。",
+            "いまは、",
+            "最初は、",
+            "切り出すなら、",
+            "助けてほしかったのに、",
+            "まだ言えていないことが、",
+            "言ったあとにどう見られるか、",
+            "そのことが、いまも",
+            "…",
+            "...",
+        )
+        ja_reflective_tail = "もう少しゆっくり見ていけます。"
+        ja_forward_tail = "ここから先も、小さく一歩ずつで大丈夫です。"
 
         if response_length == "short":
             for marker in (". ", "? ", "! "):
@@ -5923,39 +7326,70 @@ class EmotionalHubRuntime:
                     body = body.split(marker, 1)[0].strip() + marker[0]
                     break
         elif response_length == "reflective":
-            if not body.endswith("I may need to stay with it a little longer."):
+            if is_ja and not body.endswith(ja_reflective_tail):
+                body = f"{body} {ja_reflective_tail}"
+            elif not is_ja and not body.endswith("I may need to stay with it a little longer."):
                 body = f"{body} I may need to stay with it a little longer."
         elif response_length == "forward_leaning":
-            if not body.endswith("I think we can take one next step from here."):
+            if is_ja and not body.endswith(ja_forward_tail):
+                body = f"{body} {ja_forward_tail}"
+            elif not is_ja and not body.endswith("I think we can take one next step from here."):
                 body = f"{body} I think we can take one next step from here."
 
-        if certainty_style == "tentative" and not body.lower().startswith("i think"):
-            body = f"I think {body[0].lower() + body[1:]}" if len(body) > 1 else f"I think {body}"
-        elif certainty_style == "careful" and not body.lower().startswith("carefully,"):
-            body = f"Carefully, {body[0].lower() + body[1:]}" if len(body) > 1 else f"Carefully, {body}"
+        if certainty_style == "tentative":
+            if is_ja and not body.startswith(ja_tentative_prefixes):
+                body = f"たぶん、{body}"
+            elif not is_ja and not body.lower().startswith("i think"):
+                body = f"I think {body[0].lower() + body[1:]}" if len(body) > 1 else f"I think {body}"
+        elif certainty_style == "careful":
+            if is_ja and not body.startswith(ja_careful_prefixes):
+                body = f"いまは、{body}"
+            elif not is_ja and not body.lower().startswith(("carefully,", "let me ")):
+                body = f"Carefully, {body[0].lower() + body[1:]}" if len(body) > 1 else f"Carefully, {body}"
 
-        if opening_pace_windowed == "held" and not body.startswith("..."):
-            body = f"... {body}"
-        elif opening_pace_windowed == "measured" and pause_insertion == "none" and not body.startswith(("...", "..")):
-            body = f".. {body}"
+        if opening_pace_windowed == "held" and not body.startswith(("…", "...")):
+            body = f"… {body}" if is_ja else f"... {body}"
+        elif opening_pace_windowed == "measured" and pause_insertion == "none" and not body.startswith(("…", "...", "..")):
+            body = f"… {body}" if is_ja else f".. {body}"
 
-        if return_gaze_expectation == "soft_return" and not body.lower().startswith(("gently,", "carefully,", "...", "..", "let me ", "i'm here")):
-            if sentence_temperature == "warm":
-                body = f"I'm here. {body}"
-            elif sentence_temperature == "gentle":
-                body = body
-            else:
-                body = f"Gently, {body[0].lower() + body[1:]}" if len(body) > 1 else f"Gently, {body}"
-        elif return_gaze_expectation == "careful_return" and not body.lower().startswith(("carefully,", "let me ")):
-            body = f"Carefully, {body[0].lower() + body[1:]}" if len(body) > 1 else f"Carefully, {body}"
-        elif return_gaze_expectation == "defer_return" and not body.startswith("...") and not body.lower().startswith("let me "):
-            body = f"... {body}"
+        if return_gaze_expectation == "soft_return":
+            if is_ja and not body.startswith(ja_soft_return_prefixes):
+                if sentence_temperature == "warm":
+                    body = f"ここにいます。{body}"
+            elif not is_ja and not body.lower().startswith(("gently,", "carefully,", "...", "..", "let me ", "i'm here")):
+                if sentence_temperature == "warm":
+                    body = f"I'm here. {body}"
+                elif sentence_temperature == "gentle":
+                    body = body
+                else:
+                    body = f"Gently, {body[0].lower() + body[1:]}" if len(body) > 1 else f"Gently, {body}"
+        elif return_gaze_expectation == "careful_return":
+            if is_ja and not body.startswith(ja_careful_prefixes):
+                body = f"いまは、{body}"
+            elif not is_ja and not body.lower().startswith(("carefully,", "let me ")):
+                body = f"Carefully, {body[0].lower() + body[1:]}" if len(body) > 1 else f"Carefully, {body}"
+        elif return_gaze_expectation == "defer_return" and not body.startswith(("…", "...")) and not body.lower().startswith("let me "):
+            body = f"… {body}" if is_ja else f"... {body}"
 
-        if pause_insertion == "visible_pause" and not body.startswith("..."):
-            body = f"... {body}"
-        elif pause_insertion == "soft_pause" and not body.startswith(("...", "..")):
-            body = f".. {body}"
-        return shape_surface_language_text(body, surface_profile=profile)
+        skip_soft_pause = bool(
+            is_ja
+            and (
+                (
+                    skip_soft_pause_prefixes
+                    and body.startswith(skip_soft_pause_prefixes)
+                )
+                or "のところなら、" in body[:24]
+            )
+        )
+        if pause_insertion == "visible_pause" and not body.startswith(("…", "...")):
+            body = f"… {body}" if is_ja else f"... {body}"
+        elif (
+            pause_insertion == "soft_pause"
+            and not body.startswith(("…", "...", ".."))
+            and not skip_soft_pause
+        ):
+            body = f"… {body}" if is_ja else f".. {body}"
+        return shape_surface_language_text(body, surface_profile=profile, locale=locale)
 
     def _shape_inner_os_content_sequence(
         self,
@@ -5963,6 +7397,7 @@ class EmotionalHubRuntime:
         *,
         surface_profile: Optional[Mapping[str, Any]] = None,
         fallback_text: str = "",
+        narrative_bridge_text: str = "",
     ) -> str:
         sequence = [dict(item) for item in (content_sequence or []) if str(item.get("text") or "").strip()]
         if not sequence:
@@ -5976,7 +7411,30 @@ class EmotionalHubRuntime:
         profile = dict(surface_profile or {})
         response_length = str(profile.get("response_length") or "").strip()
         if response_length == "short" and len(sequence) > 2:
-            sequence = sequence[:2]
+            sequence = self._select_short_inner_os_sequence(sequence)
+        locale = _runtime_response_locale(self)
+        sequence = [
+            {
+                **item,
+                "text": _choose_surface_act_text(
+                    self,
+                    act=str(item.get("act") or "").strip(),
+                    text=str(item.get("text") or "").strip(),
+                    locale=locale,
+                    surface_profile=profile,
+                ),
+            }
+            for item in sequence
+        ]
+        compact_text = self._compact_inner_os_sequence_text(
+            sequence,
+            surface_profile=profile,
+        )
+        if compact_text:
+            return self._shape_inner_os_surface_profile_text(
+                compact_text,
+                surface_profile=surface_profile,
+            )
 
         opening_profile = dict(profile)
         opening_profile["response_length"] = "balanced"
@@ -5990,6 +7448,19 @@ class EmotionalHubRuntime:
             surface_profile=opening_profile,
         )
         rendered: List[str] = [opening_text]
+        bridge_text = str(narrative_bridge_text or "").strip()
+        if bridge_text:
+            bridge_profile = dict(profile)
+            bridge_profile["certainty_style"] = ""
+            bridge_profile["pause_insertion"] = "none"
+            bridge_profile["opening_pace_windowed"] = ""
+            bridge_profile["return_gaze_expectation"] = ""
+            shaped_bridge = self._shape_inner_os_surface_profile_text(
+                bridge_text,
+                surface_profile=bridge_profile,
+            )
+            if shaped_bridge and shaped_bridge not in rendered:
+                rendered.append(shaped_bridge)
 
         trailing_segments = [
             str(item.get("text") or "").strip()
@@ -6009,6 +7480,388 @@ class EmotionalHubRuntime:
         elif response_length == "forward_leaning" and not joined.endswith("I think we can take one next step from here."):
             joined = f"{joined} I think we can take one next step from here."
         return joined
+
+    def _compact_inner_os_sequence_text(
+        self,
+        sequence: List[Mapping[str, Any]],
+        *,
+        surface_profile: Optional[Mapping[str, Any]] = None,
+    ) -> str:
+        locale = _runtime_response_locale(self)
+        if not locale.lower().startswith("ja"):
+            return ""
+        response_length = str((surface_profile or {}).get("response_length") or "").strip()
+        if response_length != "short":
+            return ""
+        act_to_text = {
+            str(item.get("act") or "").strip(): str(item.get("text") or "").strip()
+            for item in sequence
+            if str(item.get("act") or "").strip() and str(item.get("text") or "").strip()
+        }
+        disclosure_reflection_text = (
+            act_to_text.get("reflect_hidden_need")
+            or act_to_text.get("reflect_self_blame")
+            or act_to_text.get("reflect_fear_of_being_seen")
+            or act_to_text.get("reflect_unspoken_weight")
+        )
+        disclosure_question_text = (
+            act_to_text.get("gentle_question_hidden_need")
+            or act_to_text.get("gentle_question_hidden_need_continuing")
+            or act_to_text.get("gentle_question_self_blame")
+            or act_to_text.get("gentle_question_self_blame_continuing")
+            or act_to_text.get("gentle_question_fear")
+            or act_to_text.get("gentle_question_fear_continuing")
+            or act_to_text.get("gentle_question_weight")
+            or act_to_text.get("gentle_question_weight_continuing")
+        )
+        opening_text = act_to_text.get("offer_small_opening_line") or act_to_text.get(
+            "offer_small_opening_frame"
+        )
+        thread_opening_text = (
+            act_to_text.get("reopen_from_anchor_soft")
+            or act_to_text.get("reopen_from_anchor")
+            or act_to_text.get("leave_return_point_from_anchor_soft")
+            or act_to_text.get("leave_return_point_from_anchor")
+        )
+        if disclosure_reflection_text:
+            parts: List[str] = [disclosure_reflection_text]
+            if disclosure_question_text:
+                parts.append(disclosure_question_text)
+            elif "stay_with_present_need" in act_to_text:
+                compact_reflection_stay = _choose_compact_phrase(
+                    self,
+                    locale=locale,
+                    primary_key="inner_os.content_policy_compact.deep_reflection_stay",
+                    alternatives_key="inner_os.content_policy_compact.deep_reflection_stay_alternatives",
+                    surface_profile=surface_profile,
+                    candidate_profile="deep_reflection_stay",
+                )
+                parts.append(
+                    compact_reflection_stay
+                    or act_to_text.get("stay_with_present_need", "")
+                )
+            elif "quiet_presence" in act_to_text or any(
+                act in act_to_text
+                for act in (
+                    "keep_shared_thread_visible",
+                    "leave_return_point",
+                    "leave_unfinished_closed",
+                )
+            ):
+                compact_reflection_presence = _choose_compact_phrase(
+                    self,
+                    locale=locale,
+                    primary_key="inner_os.content_policy_compact.deep_reflection_presence",
+                    alternatives_key="inner_os.content_policy_compact.deep_reflection_presence_alternatives",
+                    surface_profile=surface_profile,
+                    candidate_profile="deep_reflection_presence",
+                )
+                parts.append(
+                    compact_reflection_presence
+                    or act_to_text.get("quiet_presence", "")
+                )
+            return " ".join(part.strip() for part in parts if str(part).strip()).strip()
+        if (
+            "respect_boundary" in act_to_text
+            and "keep_shared_thread_visible" in act_to_text
+            and "quiet_presence" in act_to_text
+            and not opening_text
+            and not thread_opening_text
+        ):
+            compact_continuity_opening = _choose_compact_phrase(
+                self,
+                locale=locale,
+                primary_key="inner_os.content_policy_compact.continuity_opening",
+                alternatives_key="inner_os.content_policy_compact.continuity_opening_alternatives",
+                surface_profile=surface_profile,
+                candidate_profile="continuity_opening",
+            )
+            if compact_continuity_opening:
+                return compact_continuity_opening
+        if not opening_text and not thread_opening_text:
+            return ""
+        parts: List[str] = [opening_text or thread_opening_text]
+        if thread_opening_text and not opening_text:
+            thread_anchor = normalize_anchor_hint(thread_opening_text, limit=32)
+            if thread_anchor and any(
+                act in act_to_text
+                for act in (
+                    "reopen_from_anchor",
+                    "reopen_from_anchor_soft",
+                    "leave_return_point_from_anchor",
+                    "leave_return_point_from_anchor_soft",
+                )
+            ):
+                compact_thread_opening = _format_locale_template(
+                    locale,
+                    "inner_os.thread_reopen_compact.from_anchor",
+                    anchor=thread_anchor,
+                )
+                if compact_thread_opening:
+                    parts = [compact_thread_opening]
+                    if any(
+                        act in act_to_text
+                        for act in ("leave_return_point", "leave_unfinished_closed")
+                    ):
+                        compact_thread_return = _choose_compact_phrase(
+                            self,
+                            locale=locale,
+                            primary_key="inner_os.thread_reopen_compact.return",
+                            alternatives_key="inner_os.thread_reopen_compact.return_alternatives",
+                            surface_profile=surface_profile,
+                            candidate_profile="thread_reopen_return",
+                        )
+                        if compact_thread_return:
+                            parts.append(compact_thread_return)
+                    elif "quiet_presence" in act_to_text:
+                        compact_thread_presence = _choose_compact_phrase(
+                            self,
+                            locale=locale,
+                            primary_key="inner_os.content_policy_compact.thread_presence",
+                            alternatives_key="inner_os.content_policy_compact.thread_presence_alternatives",
+                            surface_profile=surface_profile,
+                            candidate_profile="thread_presence",
+                        )
+                        if compact_thread_presence:
+                            parts.append(compact_thread_presence)
+                    return " ".join(
+                        part.strip() for part in parts if str(part).strip()
+                    ).strip()
+            compact_thread_presence = _choose_compact_phrase(
+                self,
+                locale=locale,
+                primary_key="inner_os.content_policy_compact.thread_presence",
+                alternatives_key="inner_os.content_policy_compact.thread_presence_alternatives",
+                surface_profile=surface_profile,
+                candidate_profile="thread_presence",
+            )
+            if compact_thread_presence and (
+                "quiet_presence" in act_to_text
+                or any(
+                    act in act_to_text
+                    for act in ("leave_return_point", "leave_unfinished_closed")
+                )
+            ):
+                parts.append(compact_thread_presence)
+            return " ".join(part.strip() for part in parts if str(part).strip()).strip()
+        if "quiet_presence" not in act_to_text:
+            return ""
+        compact_presence = lookup_text(
+            locale,
+            "inner_os.content_policy_compact.opening_presence",
+        )
+        if compact_presence:
+            parts.append(compact_presence)
+        if any(
+            act in act_to_text
+            for act in ("leave_return_point", "leave_unfinished_closed")
+        ):
+            compact_return = lookup_text(
+                locale,
+                "inner_os.content_policy_compact.opening_return",
+            )
+            if compact_return:
+                parts.append(compact_return)
+        return " ".join(part.strip() for part in parts if str(part).strip()).strip()
+
+    def _select_short_inner_os_sequence(
+        self,
+        sequence: List[Mapping[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        normalized = [
+            dict(item)
+            for item in sequence
+            if str(item.get("text") or "").strip()
+        ]
+        if len(normalized) <= 2:
+            return normalized
+
+        disclosure_candidate: Dict[str, Any] | None = None
+        disclosure_question_candidate: Dict[str, Any] | None = None
+        opening_candidate: Dict[str, Any] | None = None
+        thread_opening_candidate: Dict[str, Any] | None = None
+        for item in normalized:
+            act = str(item.get("act") or "").strip()
+            if disclosure_candidate is None and act in {
+                "reflect_hidden_need",
+                "reflect_self_blame",
+                "reflect_fear_of_being_seen",
+                "reflect_unspoken_weight",
+            }:
+                disclosure_candidate = dict(item)
+            if disclosure_question_candidate is None and act in {
+                "gentle_question_hidden_need",
+                "gentle_question_hidden_need_continuing",
+                "gentle_question_self_blame",
+                "gentle_question_self_blame_continuing",
+                "gentle_question_fear",
+                "gentle_question_fear_continuing",
+                "gentle_question_weight",
+                "gentle_question_weight_continuing",
+            }:
+                disclosure_question_candidate = dict(item)
+            if act in {"offer_small_opening_line", "offer_small_opening_frame"}:
+                opening_candidate = dict(item)
+                break
+            if thread_opening_candidate is None and act in {
+                "reopen_from_anchor",
+                "reopen_from_anchor_soft",
+                "leave_return_point_from_anchor",
+                "leave_return_point_from_anchor_soft",
+            }:
+                thread_opening_candidate = dict(item)
+
+        if disclosure_candidate is not None:
+            selected = [disclosure_candidate]
+            selected_acts = {
+                str(disclosure_candidate.get("act") or "").strip()
+            }
+        elif opening_candidate is not None:
+            selected = [opening_candidate]
+            selected_acts = {
+                str(opening_candidate.get("act") or "").strip()
+            }
+        elif thread_opening_candidate is not None:
+            selected = [thread_opening_candidate]
+            selected_acts = {
+                str(thread_opening_candidate.get("act") or "").strip()
+            }
+        else:
+            selected = [dict(normalized[0])]
+            selected_acts = {str(normalized[0].get("act") or "").strip()}
+
+        def append_first(*acts: str) -> None:
+            for item in normalized:
+                act = str(item.get("act") or "").strip()
+                if act in acts and act not in selected_acts:
+                    selected.append(dict(item))
+                    selected_acts.add(act)
+                    return
+
+        if disclosure_candidate is not None:
+            if disclosure_question_candidate is not None:
+                append_first(
+                    "gentle_question_hidden_need",
+                    "gentle_question_hidden_need_continuing",
+                    "gentle_question_self_blame",
+                    "gentle_question_self_blame_continuing",
+                    "gentle_question_fear",
+                    "gentle_question_fear_continuing",
+                    "gentle_question_weight",
+                    "gentle_question_weight_continuing",
+                )
+            else:
+                append_first("quiet_presence")
+        elif opening_candidate is None:
+            append_first(
+                "reopen_from_anchor",
+                "reopen_from_anchor_soft",
+                "leave_return_point_from_anchor",
+                "leave_return_point_from_anchor_soft",
+                "keep_shared_thread_visible",
+            )
+        if disclosure_candidate is None:
+            append_first("quiet_presence")
+        if (
+            disclosure_candidate is None
+            and opening_candidate is None
+            and thread_opening_candidate is None
+            and len(selected) < 2
+        ):
+            append_first("respect_boundary", "respect_boundary_soft")
+        if len(selected) < 3:
+            append_first(
+                "reopen_from_anchor",
+                "reopen_from_anchor_soft",
+                "leave_return_point_from_anchor",
+                "leave_return_point_from_anchor_soft",
+                "keep_shared_thread_visible",
+                "leave_return_point",
+                "leave_unfinished_closed",
+            )
+        if disclosure_candidate is not None and len(selected) < 3:
+            append_first("quiet_presence")
+        if len(selected) < 2:
+            for item in normalized:
+                act = str(item.get("act") or "").strip()
+                if act and act not in selected_acts:
+                    selected.append(dict(item))
+                    selected_acts.add(act)
+                    if len(selected) >= 2:
+                        break
+        if len(selected) < 3:
+            for item in normalized:
+                act = str(item.get("act") or "").strip()
+                if act and act not in selected_acts:
+                    selected.append(dict(item))
+                    selected_acts.add(act)
+                    if len(selected) >= 3:
+                        break
+        return selected
+
+    def _extract_guarded_narrative_bridge_text(
+        self,
+        raw_text: str,
+        *,
+        locale: str = "ja-JP",
+    ) -> str:
+        body = str(raw_text or "").replace("\r\n", "\n").strip()
+        if not body:
+            return ""
+
+        visible_lines: List[str] = []
+        for raw_line in body.splitlines():
+            line = re.sub(r"\s+", " ", str(raw_line or "").strip())
+            if not line:
+                continue
+            if line.startswith("※"):
+                continue
+            if re.match(r"^[-*•]\s*", line):
+                continue
+            if re.match(r"^\d+[.)]\s*", line):
+                continue
+            if line.startswith(("例：", "例:", "ポイントは", "For example", "Examples:")):
+                continue
+            visible_lines.append(line)
+            if len(visible_lines) >= 2:
+                break
+
+        if not visible_lines:
+            return ""
+
+        candidate = " ".join(visible_lines).strip()
+        parts = [
+            segment.strip()
+            for segment in re.split(r"(?<=[。！？!?])\s*|\n+", candidate)
+            if str(segment).strip()
+        ]
+        normalized_locale = str(locale or "").lower()
+        if normalized_locale.startswith("ja"):
+            japanese_parts = [
+                segment
+                for segment in parts
+                if re.search(r"[\u3040-\u30ff\u3400-\u9fff]", segment)
+            ]
+            if japanese_parts:
+                candidate = japanese_parts[0]
+            elif parts:
+                return ""
+        elif parts:
+            candidate = parts[0]
+        candidate = re.sub(r"\s+", " ", candidate).strip()
+        if not candidate:
+            return ""
+        generic_phrases = (
+            "お手伝いできること",
+            "詳しく教えて",
+            "内容が不明",
+            "ご質問",
+            "申し訳ありません",
+            "ごめんなさい",
+        )
+        if any(phrase in candidate for phrase in generic_phrases):
+            return ""
+        return truncate_text(candidate, 110)
 
     def _attach_visual_reflection(
         self,
@@ -6437,24 +8290,88 @@ class EmotionalHubRuntime:
     def _should_use_habit(self, text_input: bool, gate_ctx: GateContext) -> bool:
         if not text_input:
             return False
+        if self._has_prioritized_inner_os_surface():
+            return False
         low_motion = gate_ctx.delta_m < 0.05 and gate_ctx.jerk < 0.05
         low_voice = gate_ctx.voice_energy < 0.12
         return low_motion and low_voice
 
+    def _has_prioritized_inner_os_surface(self) -> bool:
+        expression_hint = self._last_gate_context.get("inner_os_expression_hint")
+        if not isinstance(expression_hint, Mapping):
+            return False
+
+        turn_delta = expression_hint.get("turn_delta")
+        if isinstance(turn_delta, Mapping):
+            kind = str(turn_delta.get("kind") or "").strip().lower()
+            preferred_act = str(turn_delta.get("preferred_act") or "").strip().lower()
+            if kind in {
+                "green_reflection_hold",
+                "reopening_thread",
+                "continuity_thread",
+                "lingering_thread",
+            }:
+                return True
+            if preferred_act in {
+                "reflect_hidden_need",
+                "reopen_from_anchor",
+                "reopen_from_anchor_soft",
+                "keep_shared_thread_visible",
+                "stay_with_present_need",
+            }:
+                return True
+
+        contact_reflection_state = expression_hint.get("contact_reflection_state")
+        if isinstance(contact_reflection_state, Mapping):
+            reflection_style = str(
+                contact_reflection_state.get("reflection_style") or ""
+            ).strip().lower()
+            if reflection_style in {"reflect_only", "boundary_only"}:
+                return True
+
+        planned_content_sequence = expression_hint.get("planned_content_sequence")
+        if isinstance(planned_content_sequence, list):
+            prioritized_acts = {
+                "reflect_hidden_need",
+                "reflect_self_blame",
+                "reflect_fear_of_being_seen",
+                "reflect_unspoken_weight",
+                "reopen_from_anchor",
+                "reopen_from_anchor_soft",
+                "keep_shared_thread_visible",
+                "leave_return_point_from_anchor",
+            }
+            for item in planned_content_sequence:
+                if not isinstance(item, Mapping):
+                    continue
+                act = str(item.get("act") or "").strip().lower()
+                if act in prioritized_acts:
+                    return True
+        return False
+
     def _reflex_prompt(self, prediction_error: float) -> str:
+        locale = self._response_locale()
         if prediction_error > 1.0:
             return (
-                "Hold on - I'm flagging something unexpected. Are you safe right now?"
+                lookup_text(locale, "inner_os.runtime_route_prompts.reflex_alert")
+                or "少し想定外の反応があります。いま安全かだけ先に確認したいです。"
             )
-        return "Give me a second; something feels off so I'm switching to safety mode."
+        return (
+            lookup_text(locale, "inner_os.runtime_route_prompts.reflex_shift")
+            or "少し違和感が強いので、いったん安全寄りで見ます。"
+        )
 
     def _habit_prompt(self, user_text: Optional[str]) -> str:
+        locale = self._response_locale()
         if not user_text:
-            return "I'll handle that routine step real quick."
-        snippet = user_text.strip().splitlines()[0]
-        if len(snippet) > 48:
-            snippet = snippet[:45].rstrip() + "..."
-        return f"Let me answer that quickly: {snippet}"
+            return (
+                lookup_text(locale, "inner_os.runtime_route_prompts.habit_without_snippet")
+                or "ここはひとまず、手短に返します。"
+            )
+        return (
+            lookup_text(locale, "inner_os.runtime_route_prompts.habit_with_snippet")
+            or "ひとまずそこだけ、短く返します。"
+        )
 
     def _build_context_payload(
         self,

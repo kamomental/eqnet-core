@@ -158,6 +158,42 @@ def test_llm_hub_injects_inner_os_policy_prompt(monkeypatch):
             {"act": "acknowledge_overreach", "text": "I may have come in a little too directly."},
             {"act": "visible_anchor", "text": "Let me slow down and stay with what is actually visible first."},
         ],
+        surface_context_packet={
+            "conversation_phase": "thread_reopening",
+            "shared_core": {
+                "anchor": "what is visible first",
+                "already_shared": ["Can you stay with what is visible first?"],
+                "not_yet_shared": ["deeper meaning"],
+            },
+            "response_role": {
+                "primary": "reflect_only",
+                "secondary": "quiet_presence",
+            },
+            "constraints": {
+                "no_generic_clarification": True,
+                "no_advice": True,
+                "max_questions": 0,
+                "keep_thread_visible": True,
+                "prefer_return_point": True,
+                "boundary_style": "soft_hold",
+            },
+            "surface_profile": {
+                "response_length": "short",
+                "cultural_register": "soft_companion",
+                "group_register": "one_to_one",
+                "sentence_temperature": "gentle",
+                "surface_mode": "held",
+            },
+            "source_state": {
+                "recent_dialogue_state": "reopening_thread",
+                "discussion_thread_state": "revisit_issue",
+                "issue_state": "exploring_issue",
+                "turn_delta_kind": "reopen_from_anchor",
+                "green_guardedness": 0.62,
+                "green_reopening_pull": 0.41,
+                "green_affective_charge": 0.58,
+            },
+        },
         surface_profile={
             "opening_delay": "long",
             "response_length": "short",
@@ -169,6 +205,7 @@ def test_llm_hub_injects_inner_os_policy_prompt(monkeypatch):
     )
 
     assert "[inner_os_policy]" in seen["prompt"]
+    assert "Avoid generic customer-support phrasing" in seen["system_prompt"]
     assert '"conversation_contract"' in seen["prompt"]
     assert '"primary_object": "what is visible first"' in seen["prompt"]
     assert '"focus_now": "what is visible first"' in seen["prompt"]
@@ -182,9 +219,75 @@ def test_llm_hub_injects_inner_os_policy_prompt(monkeypatch):
     assert '"action_posture"' in seen["prompt"]
     assert '"actuation_plan"' in seen["prompt"]
     assert '"content_sequence"' in seen["prompt"]
+    assert '"surface_context_packet"' in seen["prompt"]
+    assert '"conversation_phase": "thread_reopening"' in seen["prompt"]
+    assert '"no_generic_clarification": true' in seen["prompt"]
+    assert '"anchor": "what is visible first"' in seen["prompt"]
     assert '"utterance_stance": "measured_check_in"' in seen["prompt"]
     assert "known context" in seen["prompt"]
     assert "Can you stay with what is visible first?" in seen["prompt"]
+    assert "Do not turn the reply into a reflection exercise" in seen["system_prompt"]
+    assert "Avoid expository or report-like wording such as 記述" in seen["system_prompt"]
+    assert "Do not ask the user to explain more, and do not add a question." in seen["system_prompt"]
+
+
+def test_llm_hub_adds_deep_hold_language_guard(monkeypatch):
+    monkeypatch.setenv("EQNET_SHOW_UNCERTAINTY_META", "0")
+    seen = {}
+
+    def fake_chat(system_prompt, prompt, **kwargs):
+        seen["system_prompt"] = system_prompt
+        seen["prompt"] = prompt
+        return "ok"
+
+    monkeypatch.setattr(terrain_llm, "chat_text", fake_chat)
+    hub = LLMHub()
+
+    _ = hub.generate(
+        "本当は、あのとき助けてほしかったって、まだ言えていないんです。",
+        context="known context",
+        controls={},
+        surface_context_packet={
+            "conversation_phase": "deep_disclosure",
+            "shared_core": {
+                "anchor": "",
+                "already_shared": ["助けてほしかった", "まだ言えていない"],
+                "not_yet_shared": [],
+            },
+            "response_role": {
+                "primary": "reflect_only",
+                "secondary": "quiet_presence",
+            },
+            "constraints": {
+                "no_generic_clarification": True,
+                "no_advice": True,
+                "max_questions": 0,
+                "keep_thread_visible": True,
+                "prefer_return_point": False,
+                "boundary_style": "soft_hold",
+            },
+            "surface_profile": {
+                "response_length": "short",
+                "cultural_register": "soft_companion",
+                "group_register": "one_to_one",
+                "sentence_temperature": "gentle",
+                "surface_mode": "held",
+            },
+            "source_state": {
+                "recent_dialogue_state": "deep_disclosure",
+                "discussion_thread_state": "revisit_issue",
+                "issue_state": "exploring_issue",
+                "turn_delta_kind": "green_reflection_hold",
+                "green_guardedness": 0.71,
+                "green_reopening_pull": 0.19,
+                "green_affective_charge": 0.83,
+            },
+        },
+    )
+
+    assert "Do not turn the reply into a reflection exercise" in seen["system_prompt"]
+    assert "記述, 観察してみましょう, 整理してみましょう, 焦点を当てて, 整理していく" in seen["system_prompt"]
+    assert "Do not ask the user to explain more, and do not add a question." in seen["system_prompt"]
 
 
 def test_llm_hub_exposes_model_source(monkeypatch):
@@ -201,3 +304,22 @@ def test_llm_hub_exposes_model_source(monkeypatch):
 
     assert resp.model == "qwen-3.5-instruct"
     assert resp.model_source == "cache"
+
+
+def test_llm_hub_adds_japanese_language_instruction(monkeypatch):
+    monkeypatch.setenv("EQNET_SHOW_UNCERTAINTY_META", "0")
+    monkeypatch.setenv("EQNET_UI_LOCALE", "ja-JP")
+    seen = {}
+
+    def fake_chat(system_prompt, prompt, **kwargs):
+        seen["system_prompt"] = system_prompt
+        seen["prompt"] = prompt
+        return "ok"
+
+    monkeypatch.setattr(terrain_llm, "chat_text", fake_chat)
+    hub = LLMHub()
+
+    _ = hub.generate("test", context="known context", controls={})
+
+    assert "Respond in natural Japanese only." in seen["system_prompt"]
+    assert "Do not switch to English" in seen["system_prompt"]

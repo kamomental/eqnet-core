@@ -151,6 +151,11 @@ def test_surface_bias_applies_expressive_style_voice_texture() -> None:
             "homeostasis_budget_state": {"state": "steady", "score": 0.16},
             "initiative_readiness": {"state": "ready", "score": 0.62},
             "commitment_state": {"state": "settle", "target": "step_forward", "score": 0.48},
+            "identity_arc_kind": "repairing_bond",
+            "identity_arc_phase": "integrating",
+            "identity_arc_summary": "repair is gathering around a relationship thread",
+            "identity_arc_open_tension": "timing_sensitive_reentry",
+            "identity_arc_stability": 0.58,
             "attention_regulation_state": {"state": "selective_hold", "score": 0.52},
             "grice_guard_state": {"state": "advise_openly", "score": 0.12},
             "relational_style_memory_state": {
@@ -202,11 +207,16 @@ def test_surface_bias_applies_expressive_style_voice_texture() -> None:
     assert updated["sentence_temperature"] == "warm"
     assert updated["relational_banter_style"] == "gentle_tease"
     assert updated["relational_lexical_variation_bias"] == 0.36
+    assert updated["identity_arc_kind"] == "repairing_bond"
+    assert updated["identity_arc_phase"] == "integrating"
+    assert updated["identity_arc_open_tension"] == "timing_sensitive_reentry"
     assert updated["expressive_style_history_focus"] == "warm_companion"
     assert updated["banter_style_focus"] == "gentle_tease"
     assert updated["lexical_variation_carry_bias"] == 0.1
-    assert updated["banter_move"] == "gentle_tease"
+    assert updated["banter_move"] == "warm_refrain"
     assert updated["lexical_variation_mode"] == "warm_varied"
     assert updated["group_register"] == "one_to_one"
+    assert "surface_identity_repairing_bond" in updated["cues"]
+    assert "surface_identity_timing_sensitive_reentry" in updated["cues"]
     assert "surface_expressive_light_playful" in updated["cues"]
-    assert "surface_language_banter_gentle_tease" in updated["cues"]
+    assert "surface_language_banter_warm_refrain" in updated["cues"]

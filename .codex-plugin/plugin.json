@@ -1,0 +1,6 @@
+{
+  "name": "eqnet-engineering-workflows",
+  "version": "0.1.0",
+  "description": "Reusable Codex workflows for EQNet codebase understanding, frontend work, API changes, and evaluation loops.",
+  "skills": "./skills/"
+}

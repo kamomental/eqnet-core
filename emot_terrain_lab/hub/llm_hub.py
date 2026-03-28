@@ -114,6 +114,55 @@ class LLMHub:
             return env
         return "ja"
 
+    def _language_system_prompt(self, locale: str) -> str:
+        normalized = (locale or "").strip().lower()
+        if normalized.startswith("ja"):
+            return "Respond in natural Japanese only. Do not switch to English unless the user explicitly asks."
+        return ""
+
+    def _surface_context_language_guard(
+        self,
+        surface_context_packet: Optional[Mapping[str, Any]],
+    ) -> str:
+        if not isinstance(surface_context_packet, Mapping):
+            return ""
+        phase = str(surface_context_packet.get("conversation_phase") or "").strip()
+        response_role = dict(surface_context_packet.get("response_role") or {})
+        constraints = dict(surface_context_packet.get("constraints") or {})
+        primary_role = str(response_role.get("primary") or "").strip()
+        secondary_role = str(response_role.get("secondary") or "").strip()
+        max_questions = int(constraints.get("max_questions") or 0)
+
+        is_reopen = phase in {
+            "thread_reopening",
+            "reopening_thread",
+            "continuing_thread",
+            "issue_pause",
+        } or primary_role in {
+            "reopen_from_anchor",
+            "leave_return_point_from_anchor",
+        }
+        is_deep_hold = primary_role in {
+            "reflect_only",
+            "stay_with_present_need",
+        } or secondary_role == "quiet_presence"
+
+        if not (is_reopen or is_deep_hold):
+            return ""
+
+        guard_lines = [
+            "Keep the reply colloquial and present-focused.",
+            "Do not turn the reply into a reflection exercise, journaling task, observation method, or coping worksheet.",
+            "Avoid expository or report-like wording such as 記述, 観察してみましょう, 整理してみましょう, 焦点を当てて, 整理していく, or 〜してみるのはどうでしょうか.",
+            "Do not broaden into general advice or abstract reassurance.",
+        ]
+        if max_questions <= 0:
+            guard_lines.append("Do not ask the user to explain more, and do not add a question.")
+        else:
+            guard_lines.append("At most one light question, and only if it stays close to what is already shared.")
+        guard_lines.append("Stay with the person's current thread instead of teaching a method.")
+        return " ".join(guard_lines)
+
     def _render_uncertainty_line(self, confidence: float, reasons: Tuple[str, ...]) -> str:
         lex = _uncertainty_lexicon(self._ui_locale())
         ui_cfg = getattr(self._runtime_cfg, "ui", None)
@@ -202,6 +251,7 @@ class LLMHub:
         interaction_judgement_summary: Optional[Mapping[str, Any]] = None,
         interaction_condition_report: Optional[Mapping[str, Any]] = None,
         content_sequence: Optional[Sequence[Mapping[str, Any]]] = None,
+        surface_context_packet: Optional[Mapping[str, Any]] = None,
         surface_profile: Optional[Mapping[str, Any]] = None,
         utterance_stance: Optional[str] = None,
     ) -> HubResponse:
@@ -227,6 +277,9 @@ class LLMHub:
         """
         skill = self.registry.find_by_intent(intent or self.config.default_intent)
         system_prompt = self.config.default_system_prompt
+        language_prompt = self._language_system_prompt(self._ui_locale())
+        if language_prompt:
+            system_prompt = f"{system_prompt} {language_prompt}".strip()
         chosen_llm = None
         if skill:
             chosen_llm = skill.llm
@@ -293,9 +346,20 @@ class LLMHub:
             interaction_judgement_summary=interaction_judgement_summary,
             interaction_condition_report=interaction_condition_report,
             content_sequence=content_sequence,
+            surface_context_packet=surface_context_packet,
             surface_profile=surface_profile,
             utterance_stance=utterance_stance,
         )
+        if policy_prompt:
+            system_prompt = (
+                f"{system_prompt} "
+                "Follow the provided interaction policy and content sequence closely. "
+                "Avoid generic customer-support phrasing, apologies, or broad offers of help "
+                "unless the policy explicitly calls for repair or safety."
+            ).strip()
+        surface_guard = self._surface_context_language_guard(surface_context_packet)
+        if surface_guard:
+            system_prompt = f"{system_prompt} {surface_guard}".strip()
         if context and policy_prompt:
             prompt = (
                 context.strip()
@@ -380,6 +444,7 @@ class LLMHub:
         interaction_judgement_summary: Optional[Mapping[str, Any]] = None,
         interaction_condition_report: Optional[Mapping[str, Any]] = None,
         content_sequence: Optional[Sequence[Mapping[str, Any]]] = None,
+        surface_context_packet: Optional[Mapping[str, Any]] = None,
         surface_profile: Optional[Mapping[str, Any]] = None,
         utterance_stance: Optional[str] = None,
     ) -> str:
@@ -400,6 +465,57 @@ class LLMHub:
             for item in (content_sequence or [])
             if isinstance(item, Mapping) and str(item.get("text") or "").strip()
         ]
+        surface_context_payload = {}
+        if isinstance(surface_context_packet, Mapping):
+            shared_core_payload = dict(surface_context_packet.get("shared_core") or {})
+            response_role_payload = dict(surface_context_packet.get("response_role") or {})
+            constraints_payload = dict(surface_context_packet.get("constraints") or {})
+            packet_surface_payload = dict(surface_context_packet.get("surface_profile") or {})
+            source_state_payload = dict(surface_context_packet.get("source_state") or {})
+            surface_context_payload = {
+                "conversation_phase": str(surface_context_packet.get("conversation_phase") or "").strip(),
+                "shared_core": {
+                    "anchor": str(shared_core_payload.get("anchor") or "").strip(),
+                    "already_shared": [
+                        str(item).strip()
+                        for item in shared_core_payload.get("already_shared") or []
+                        if str(item).strip()
+                    ],
+                    "not_yet_shared": [
+                        str(item).strip()
+                        for item in shared_core_payload.get("not_yet_shared") or []
+                        if str(item).strip()
+                    ],
+                },
+                "response_role": {
+                    "primary": str(response_role_payload.get("primary") or "").strip(),
+                    "secondary": str(response_role_payload.get("secondary") or "").strip(),
+                },
+                "constraints": {
+                    "no_generic_clarification": bool(constraints_payload.get("no_generic_clarification")),
+                    "no_advice": bool(constraints_payload.get("no_advice")),
+                    "max_questions": int(constraints_payload.get("max_questions") or 0),
+                    "keep_thread_visible": bool(constraints_payload.get("keep_thread_visible")),
+                    "prefer_return_point": bool(constraints_payload.get("prefer_return_point")),
+                    "boundary_style": str(constraints_payload.get("boundary_style") or "").strip(),
+                },
+                "surface_profile": {
+                    "response_length": str(packet_surface_payload.get("response_length") or "").strip(),
+                    "cultural_register": str(packet_surface_payload.get("cultural_register") or "").strip(),
+                    "group_register": str(packet_surface_payload.get("group_register") or "").strip(),
+                    "sentence_temperature": str(packet_surface_payload.get("sentence_temperature") or "").strip(),
+                    "surface_mode": str(packet_surface_payload.get("surface_mode") or "").strip(),
+                },
+                "source_state": {
+                    "recent_dialogue_state": str(source_state_payload.get("recent_dialogue_state") or "").strip(),
+                    "discussion_thread_state": str(source_state_payload.get("discussion_thread_state") or "").strip(),
+                    "issue_state": str(source_state_payload.get("issue_state") or "").strip(),
+                    "turn_delta_kind": str(source_state_payload.get("turn_delta_kind") or "").strip(),
+                    "green_guardedness": round(float(source_state_payload.get("green_guardedness") or 0.0), 4),
+                    "green_reopening_pull": round(float(source_state_payload.get("green_reopening_pull") or 0.0), 4),
+                    "green_affective_charge": round(float(source_state_payload.get("green_affective_charge") or 0.0), 4),
+                },
+            }
         profile_payload = {}
         if isinstance(surface_profile, Mapping):
             for key in (
@@ -489,6 +605,8 @@ class LLMHub:
             }
         if sequence_rows:
             guidance["content_sequence"] = sequence_rows
+        if surface_context_payload:
+            guidance["surface_context_packet"] = surface_context_payload
         if profile_payload:
             guidance["surface_profile"] = profile_payload
         stance = str(utterance_stance or "").strip()

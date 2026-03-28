@@ -345,9 +345,45 @@ def test_daily_carry_summary_builder_reads_nightly_fragments() -> None:
                 "top_thread_ids": ["threaded_group:user|friend"],
                 "total_threads": 1,
             },
+            "inner_os_identity_arc_summary": {
+                "arc_kind": "repairing_bond",
+                "phase": "shifting",
+                "summary": "repair is gathering around a relationship thread / phase=shifting / anchor=harbor slope",
+                "memory_anchor": "harbor slope",
+                "stability": 0.58,
+            },
+            "inner_os_relation_arc_summary": {
+                "arc_kind": "repairing_relation",
+                "phase": "shifting",
+                "summary": "repair is gathering around a companion thread",
+                "related_person_id": "user",
+                "group_thread_id": "threaded_group:user|friend",
+                "stability": 0.56,
+            },
+            "inner_os_group_relation_arc_summary": {
+                "arc_kind": "repairing_relation",
+                "phase": "shifting",
+                "summary": "repair is moving through a shared group thread in small steps",
+                "group_thread_id": "threaded_group:user|friend",
+                "topology_focus": "threaded_group",
+                "boundary_mode": "same_group_reentry",
+                "reentry_window_focus": "next_same_group_window",
+                "dominant_person_id": "user",
+                "stability": 0.61,
+            },
+            "inner_os_relation_arc_registry_summary": {
+                "dominant_arc_kind": "repairing_relation",
+                "active_arc_count": 1,
+                "total_arcs": 1,
+            },
             "inner_os_sleep_memory_class_focus": "repair_trace",
             "inner_os_sleep_agenda_focus": "repair",
             "inner_os_sleep_agenda_reason": "repair_window",
+            "inner_os_sleep_agenda_window_focus": "next_same_group_window",
+            "inner_os_sleep_agenda_window_reason": "wait_for_group_thread",
+            "inner_os_sleep_agenda_window_carry_target": "same_group_window",
+            "inner_os_sleep_learning_mode_focus": "repair_probe",
+            "inner_os_sleep_social_experiment_focus": "repair_signal_probe",
             "inner_os_sleep_commitment_target_focus": "repair",
             "inner_os_sleep_commitment_state_focus": "commit",
             "inner_os_sleep_commitment_followup_focus": "reopen_softly",
@@ -360,10 +396,23 @@ def test_daily_carry_summary_builder_reads_nightly_fragments() -> None:
             "inner_os_sleep_homeostasis_budget_focus": "recovering",
             "inner_os_sleep_relational_continuity_focus": "reopening",
             "inner_os_sleep_group_thread_focus": "threaded_group",
+            "inner_os_sleep_autobiographical_thread_mode": "unfinished_thread",
+            "inner_os_sleep_autobiographical_thread_anchor": "harbor promise",
+            "inner_os_sleep_autobiographical_thread_focus": "unfinished promise",
+            "inner_os_sleep_autobiographical_thread_strength": 0.41,
+            "inner_os_sleep_temporal_membrane_focus": "reentry",
+            "inner_os_sleep_temporal_timeline_bias": 0.12,
+            "inner_os_sleep_temporal_reentry_bias": 0.17,
+            "inner_os_sleep_temporal_supersession_bias": 0.04,
+            "inner_os_sleep_temporal_continuity_bias": 0.11,
+            "inner_os_sleep_temporal_relation_reentry_bias": 0.09,
             "inner_os_sleep_expressive_style_focus": "warm_companion",
             "inner_os_sleep_expressive_style_history_focus": "warm_companion",
             "inner_os_sleep_banter_style_focus": "gentle_tease",
             "inner_os_sleep_agenda_bias": 0.26,
+            "inner_os_sleep_agenda_window_bias": 0.17,
+            "inner_os_sleep_learning_mode_carry_bias": 0.15,
+            "inner_os_sleep_social_experiment_carry_bias": 0.13,
             "inner_os_sleep_commitment_carry_bias": 0.31,
             "inner_os_sleep_body_homeostasis_carry_bias": 0.14,
             "inner_os_sleep_homeostasis_budget_bias": 0.09,
@@ -385,24 +434,57 @@ def test_daily_carry_summary_builder_reads_nightly_fragments() -> None:
     assert summary["same_turn_focus"]["partner_registry_dominant_person"] == "user"
     assert summary["same_turn_focus"]["group_thread_dominant_thread"] == "threaded_group:user|friend"
     assert summary["same_turn_focus"]["group_thread_total_threads"] == 1
+    assert summary["same_turn_focus"]["identity_arc_kind"] == "repairing_bond"
+    assert summary["same_turn_focus"]["relation_arc_kind"] == "repairing_relation"
+    assert summary["same_turn_focus"]["group_relation_arc_kind"] == "repairing_relation"
     assert summary["overnight_focus"]["association_focus"] == "repeated_links"
     assert summary["overnight_focus"]["agenda_focus"] == "repair"
+    assert summary["overnight_focus"]["agenda_window_focus"] == "next_same_group_window"
+    assert summary["overnight_focus"]["agenda_window_carry_target"] == "same_group_window"
+    assert summary["overnight_focus"]["learning_mode_focus"] == "repair_probe"
+    assert summary["overnight_focus"]["social_experiment_focus"] == "repair_signal_probe"
+    assert summary["overnight_focus"]["identity_arc_phase"] == "shifting"
+    assert summary["overnight_focus"]["relation_arc_phase"] == "shifting"
+    assert summary["overnight_focus"]["group_relation_boundary_mode"] == "same_group_reentry"
+    assert summary["overnight_focus"]["group_relation_reentry_window_focus"] == "next_same_group_window"
     assert summary["overnight_focus"]["body_homeostasis_focus"] == "recovering"
     assert summary["overnight_focus"]["homeostasis_budget_focus"] == "recovering"
     assert summary["overnight_focus"]["relational_continuity_focus"] == "reopening"
     assert summary["overnight_focus"]["group_thread_focus"] == "threaded_group"
+    assert summary["overnight_focus"]["autobiographical_thread_mode"] == "unfinished_thread"
+    assert summary["overnight_focus"]["autobiographical_thread_anchor"] == "harbor promise"
+    assert summary["overnight_focus"]["autobiographical_thread_strength"] == 0.41
+    assert summary["overnight_focus"]["temporal_membrane_focus"] == "reentry"
+    assert summary["overnight_focus"]["temporal_reentry_bias"] == 0.17
     assert summary["overnight_focus"]["expressive_style_focus"] == "warm_companion"
     assert summary["overnight_focus"]["expressive_style_history_focus"] == "warm_companion"
     assert summary["overnight_focus"]["banter_style_focus"] == "gentle_tease"
+    assert summary["temporal_alignment"]["same_turn_mode"] == ""
+    assert summary["temporal_alignment"]["overnight_focus"] == "reentry"
+    assert summary["temporal_alignment"]["focus_alignment"] is False
+    assert summary["temporal_alignment"]["same_to_overnight_reentry_delta"] == 0.17
+    assert summary["temporal_alignment"]["reentry_carry_visible"] is True
+    assert summary["temporal_alignment"]["reentry_carry_strength"] == 0.17
     assert summary["carry_alignment"]["commitment_carry_visible"] is True
+    assert summary["carry_alignment"]["agenda_window_carry_visible"] is False
+    assert summary["carry_alignment"]["learning_mode_carry_visible"] is False
+    assert summary["carry_alignment"]["social_experiment_carry_visible"] is False
     assert summary["carry_alignment"]["insight_carry_visible"] is True
     assert summary["carry_alignment"]["body_homeostasis_carry_visible"] is True
     assert summary["carry_alignment"]["homeostasis_budget_visible"] is True
     assert summary["carry_alignment"]["relational_continuity_carry_visible"] is True
     assert summary["carry_alignment"]["expressive_style_carry_visible"] is True
     assert summary["carry_alignment"]["expressive_style_history_visible"] is True
+    assert summary["carry_alignment"]["autobiographical_thread_visible"] is True
     assert summary["carry_alignment"]["banter_style_carry_visible"] is True
     assert summary["carry_alignment"]["partner_registry_visible"] is True
     assert summary["carry_alignment"]["group_thread_carry_visible"] is True
     assert summary["carry_alignment"]["group_thread_registry_visible"] is True
+    assert summary["carry_alignment"]["identity_arc_visible"] is True
+    assert summary["carry_alignment"]["relation_arc_visible"] is True
+    assert summary["carry_alignment"]["relation_arc_registry_visible"] is True
+    assert summary["carry_alignment"]["group_relation_arc_visible"] is True
+    assert summary["carry_alignment"]["temporal_membrane_visible"] is True
     assert summary["carry_strengths"]["agenda"] == 0.26
+    assert summary["carry_strengths"]["agenda_window"] == 0.17
+    assert summary["carry_strengths"]["temporal_reentry"] == 0.17

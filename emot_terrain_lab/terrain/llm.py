@@ -10,18 +10,59 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-# Priority 1: user-provided OpenAI-compatible endpoint (self-hosted or cloud)
+# 後方互換: テストや既存コードが module 変数を monkeypatch できるように残す
 CUSTOM_BASE = os.getenv("OPENAI_BASE_URL") or None
 CUSTOM_KEY = os.getenv("OPENAI_API_KEY") or None
 CUSTOM_MODEL = os.getenv("OPENAI_MODEL") or None
-
-# Priority 2: LM Studio local server
 LM_BASE = os.getenv("LMSTUDIO_BASE_URL", "http://localhost:1234/v1")
 LM_KEY = os.getenv("LMSTUDIO_API_KEY", "lm-studio")
 LM_MODEL = os.getenv("LMSTUDIO_MODEL") or None
-
-PREFER = [s.strip() for s in os.getenv("LLM_MODEL_PREFER", os.getenv("LMSTUDIO_MODEL_PREFER", "Qwen,Llama,Phi,Nous,Deepseek")).split(",") if s.strip()]
+PREFER = [
+    s.strip()
+    for s in os.getenv(
+        "LLM_MODEL_PREFER",
+        os.getenv("LMSTUDIO_MODEL_PREFER", "Qwen,Llama,Phi,Nous,Deepseek"),
+    ).split(",")
+    if s.strip()
+]
 LLM_MODEL_CACHE_PATH = os.getenv("LLM_MODEL_CACHE_PATH", "data/state/llm_model_cache.json")
+
+
+def _custom_base() -> Optional[str]:
+    return os.getenv("OPENAI_BASE_URL") or CUSTOM_BASE
+
+
+def _custom_key() -> Optional[str]:
+    return os.getenv("OPENAI_API_KEY") or CUSTOM_KEY
+
+
+def _custom_model() -> Optional[str]:
+    return os.getenv("OPENAI_MODEL") or CUSTOM_MODEL
+
+
+def _lm_base() -> str:
+    return os.getenv("LMSTUDIO_BASE_URL", LM_BASE)
+
+
+def _lm_key() -> str:
+    return os.getenv("LMSTUDIO_API_KEY", LM_KEY)
+
+
+def _lm_model() -> Optional[str]:
+    return os.getenv("LMSTUDIO_MODEL") or LM_MODEL
+
+
+def _preferred_model_markers() -> List[str]:
+    raw = os.getenv(
+        "LLM_MODEL_PREFER",
+        os.getenv("LMSTUDIO_MODEL_PREFER", "Qwen,Llama,Phi,Nous,Deepseek"),
+    )
+    markers = [s.strip() for s in raw.split(",") if s.strip()]
+    return markers or list(PREFER)
+
+
+def _llm_model_cache_path() -> str:
+    return os.getenv("LLM_MODEL_CACHE_PATH", LLM_MODEL_CACHE_PATH)
 
 @dataclass
 class LLMInfo:
@@ -51,7 +92,7 @@ def pick_model(candidates: List[str], cached_selected: Optional[str] = None) -> 
         for model_name in candidates:
             if model_name == normalized_cached:
                 return model_name
-    for pref in PREFER:
+    for pref in _preferred_model_markers():
         for m in candidates:
             if pref.lower() in m.lower():
                 return m
@@ -59,7 +100,7 @@ def pick_model(candidates: List[str], cached_selected: Optional[str] = None) -> 
 
 
 def _cache_path() -> Path:
-    return Path(LLM_MODEL_CACHE_PATH)
+    return Path(_llm_model_cache_path())
 
 
 def _normalize_base(base: str) -> str:
@@ -130,21 +171,27 @@ def get_cached_selected_model(base: str) -> Optional[str]:
 
 def _resolve_endpoint() -> Optional[LLMInfo]:
     candidates = []
-    if CUSTOM_BASE and CUSTOM_KEY:
+    custom_base = _custom_base()
+    custom_key = _custom_key()
+    custom_model = _custom_model()
+    lm_base = _lm_base()
+    lm_key = _lm_key()
+    lm_model = _lm_model()
+    if custom_base and custom_key:
         candidates.append(
             {
-                "base": CUSTOM_BASE,
-                "key": CUSTOM_KEY,
-                "forced_model": CUSTOM_MODEL,
+                "base": custom_base,
+                "key": custom_key,
+                "forced_model": custom_model,
             }
         )
     # Always fall back to LM Studio
-    if LM_BASE and LM_KEY:
+    if lm_base and lm_key:
         candidates.append(
             {
-                "base": LM_BASE,
-                "key": LM_KEY,
-                "forced_model": LM_MODEL,
+                "base": lm_base,
+                "key": lm_key,
+                "forced_model": lm_model,
             }
         )
 

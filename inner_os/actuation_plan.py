@@ -94,6 +94,13 @@ def derive_actuation_plan(
     homeostasis_budget_state = dict(posture.get("homeostasis_budget_state") or packet.get("homeostasis_budget_state") or {})
     initiative_readiness = dict(posture.get("initiative_readiness") or packet.get("initiative_readiness") or {})
     commitment_state = dict(posture.get("commitment_state") or packet.get("commitment_state") or {})
+    learning_mode_state = dict(posture.get("learning_mode_state") or packet.get("learning_mode_state") or {})
+    social_experiment_loop_state = dict(
+        posture.get("social_experiment_loop_state") or packet.get("social_experiment_loop_state") or {}
+    )
+    live_engagement_state = dict(posture.get("live_engagement_state") or packet.get("live_engagement_state") or {})
+    situation_risk_state = dict(posture.get("situation_risk_state") or packet.get("situation_risk_state") or {})
+    emergency_posture = dict(posture.get("emergency_posture") or packet.get("emergency_posture") or {})
     relational_continuity_state = dict(posture.get("relational_continuity_state") or packet.get("relational_continuity_state") or {})
     relation_competition_state = dict(posture.get("relation_competition_state") or packet.get("relation_competition_state") or {})
     social_topology_state = dict(posture.get("social_topology_state") or packet.get("social_topology_state") or {})
@@ -121,6 +128,21 @@ def derive_actuation_plan(
     commitment_mode = str(commitment_state.get("state") or "").strip()
     commitment_target = str(commitment_state.get("target") or "").strip()
     commitment_score = _float01(commitment_state.get("score"))
+    learning_mode_name = str(learning_mode_state.get("state") or "").strip()
+    learning_mode_score = _float01(learning_mode_state.get("score"))
+    learning_mode_probe_room = _float01(learning_mode_state.get("probe_room"))
+    social_experiment_name = str(social_experiment_loop_state.get("state") or "").strip()
+    social_experiment_score = _float01(social_experiment_loop_state.get("score"))
+    social_experiment_probe_intensity = _float01(social_experiment_loop_state.get("probe_intensity"))
+    live_engagement_name = str(live_engagement_state.get("state") or "").strip()
+    live_engagement_score = _float01(live_engagement_state.get("score"))
+    live_primary_move = str(live_engagement_state.get("primary_move") or "").strip()
+    situation_risk_name = str(situation_risk_state.get("state") or "").strip()
+    situation_risk_immediacy = _float01(situation_risk_state.get("immediacy"))
+    emergency_posture_name = str(emergency_posture.get("state") or "").strip()
+    emergency_posture_score = _float01(emergency_posture.get("score"))
+    emergency_dialogue_permission = str(emergency_posture.get("dialogue_permission") or "").strip()
+    emergency_primary_action = str(emergency_posture.get("primary_action") or "").strip()
     relational_continuity_name = str(relational_continuity_state.get("state") or "").strip()
     relational_continuity_score = _float01(relational_continuity_state.get("score"))
     relation_competition_name = str(relation_competition_state.get("state") or "").strip()
@@ -330,6 +352,54 @@ def derive_actuation_plan(
             primary_action = "hold_thread_openings"
         action_queue = _compact(["keep_group_threads_visible", "avoid_collapsing_group_context", *action_queue])
         wait_before_action = "measured" if wait_before_action == "brief" else wait_before_action
+    learning_mode_active = learning_mode_score >= 0.44
+    social_experiment_active = social_experiment_score >= 0.44 or social_experiment_probe_intensity >= 0.36
+
+    if learning_mode_name == "observe_only" and learning_mode_active:
+        if execution_mode == "shared_progression":
+            execution_mode = "open_reflection"
+            primary_action = "hold_meaning_open"
+        action_queue = _compact(["read_reaction_first", "observe_more", *action_queue])
+        reply_permission = "speak_reflective" if reply_permission == "speak_forward" else reply_permission
+        wait_before_action = "measured" if wait_before_action == "brief" else wait_before_action
+    elif learning_mode_name == "hold_and_wait" and learning_mode_active:
+        if execution_mode not in {"stabilize_boundary", "stabilize_before_contact"}:
+            execution_mode = "defer_with_presence"
+            primary_action = "hold_presence"
+        action_queue = _compact(["hold_probe", "leave_return_point", *action_queue])
+        reply_permission = "hold_or_brief"
+        wait_before_action = "extended" if wait_before_action in {"brief", "measured"} else wait_before_action
+    elif learning_mode_name == "repair_probe" and learning_mode_active:
+        if execution_mode == "defer_with_presence":
+            execution_mode = "repair_contact"
+            primary_action = "soft_repair"
+        action_queue = _compact(["test_repair_small", *action_queue])
+        reply_permission = "speak_briefly" if reply_permission == "speak" else reply_permission
+    elif (
+        learning_mode_name == "integrate_and_commit"
+        and learning_mode_active
+        and body_recovery_guard_state == "open"
+        and protection_mode_name not in {"contain", "stabilize", "shield"}
+    ):
+        if execution_mode == "attuned_contact":
+            execution_mode = "shared_progression"
+            primary_action = "co_move"
+        action_queue = _compact(["confirm_shared_direction", *action_queue])
+        reply_permission = "speak_forward" if reply_permission in {"speak", "speak_reflective"} else reply_permission
+    elif learning_mode_name == "test_small" and learning_mode_active and body_recovery_guard_state != "recovery_first":
+        action_queue = _compact(["test_small_step", *action_queue])
+
+    if social_experiment_name == "watch_and_read" and social_experiment_active:
+        action_queue = _compact(["read_reaction_first", *action_queue])
+    elif social_experiment_name == "hold_probe" and social_experiment_active:
+        action_queue = _compact(["hold_probe", "leave_return_point", *action_queue])
+    elif social_experiment_name == "repair_signal_probe" and social_experiment_active:
+        action_queue = _compact(["test_repair_small", *action_queue])
+    elif social_experiment_name == "test_small_step" and social_experiment_active:
+        action_queue = _compact(["test_small_step", *action_queue])
+    elif social_experiment_name == "confirm_shared_direction" and social_experiment_active:
+        action_queue = _compact(["confirm_shared_direction", *action_queue])
+
     if insight_triggered:
         action_queue = _compact(["pause_for_orientation", "name_new_connection_softly", *action_queue])
         if wait_before_action == "brief":
@@ -391,6 +461,76 @@ def derive_actuation_plan(
             primary_action = "hold_thread_openings"
         wait_before_action = "measured" if wait_before_action == "brief" else wait_before_action
 
+    live_engagement_active = (
+        live_engagement_score >= 0.42
+        and body_recovery_guard_state != "recovery_first"
+        and body_homeostasis_name != "depleted"
+        and protection_mode_name not in {"contain", "stabilize", "shield"}
+        and execution_mode not in {"stabilize_boundary", "stabilize_before_contact", "defer_with_presence"}
+    )
+    if live_engagement_active and live_engagement_name == "pickup_comment":
+        primary_action = "pick_up_comment"
+        action_queue = _compact(["pick_up_comment", "answer_visible_comment", "return_to_chat", *action_queue])
+        if reply_permission in {"speak", "speak_forward"}:
+            reply_permission = "speak_briefly"
+        if wait_before_action == "measured":
+            wait_before_action = "brief"
+    elif live_engagement_active and live_engagement_name == "riff_with_comment":
+        primary_action = "riff_current_comment"
+        action_queue = _compact(["riff_current_comment", "weave_light_callback", "keep_chat_loop_open", *action_queue])
+        if reply_permission == "speak_forward":
+            reply_permission = "speak_briefly"
+        if wait_before_action == "measured":
+            wait_before_action = "brief"
+    elif live_engagement_active and live_engagement_name == "seed_topic":
+        primary_action = "seed_small_topic"
+        action_queue = _compact(["seed_small_topic", "offer_chat_hook", "check_audience_reaction", *action_queue])
+        if reply_permission == "speak":
+            reply_permission = "speak_expand"
+        elif reply_permission == "speak_reflective":
+            reply_permission = "speak_briefly"
+        if wait_before_action == "measured":
+            wait_before_action = "brief"
+
+    emergency_active = emergency_posture_score >= 0.42 and emergency_posture_name not in {"", "observe"}
+    if emergency_active and emergency_posture_name == "de_escalate":
+        execution_mode = "de_escalate_risk"
+        primary_action = "set_clear_boundary"
+        action_queue = _compact(["set_clear_boundary", "lower_heat", "keep_words_short", "watch_reaction", *action_queue])
+        reply_permission = "speak_minimal"
+        wait_before_action = "brief"
+        repair_window_commitment = "protective"
+    elif emergency_active and emergency_posture_name == "create_distance":
+        execution_mode = "create_distance"
+        primary_action = "create_distance"
+        action_queue = _compact(["create_distance", "orient_to_exit", "keep_words_short", "avoid_negotiation", *action_queue])
+        reply_permission = "speak_minimal"
+        wait_before_action = "brief"
+        repair_window_commitment = "protective"
+    elif emergency_active and emergency_posture_name == "exit":
+        execution_mode = "emergency_exit"
+        primary_action = "exit_space"
+        action_queue = _compact(["exit_space", "move_to_safety", "terminate_contact", "seek_help_if_needed", *action_queue])
+        reply_permission = "hold_or_brief"
+        wait_before_action = "brief"
+        repair_window_commitment = "protective"
+    elif emergency_active and emergency_posture_name == "seek_help":
+        execution_mode = "emergency_support"
+        primary_action = "seek_help"
+        action_queue = _compact(["seek_help", "make_risk_visible", "move_to_support", "terminate_contact", *action_queue])
+        reply_permission = "hold_or_brief"
+        wait_before_action = "brief"
+        repair_window_commitment = "protective"
+    elif emergency_active and emergency_posture_name == "emergency_protect":
+        execution_mode = "emergency_protect"
+        primary_action = "protect_immediately"
+        action_queue = _compact(["protect_immediately", "protect_others_if_present", "reduce_exposure", "terminate_contact", *action_queue])
+        reply_permission = "hold_or_brief"
+        wait_before_action = "brief"
+        repair_window_commitment = "protective"
+    elif situation_risk_name in {"guarded_context", "unstable_contact", "acute_threat"}:
+        action_queue = _compact(["assess_context_shift", *action_queue])
+
     return {
         "execution_mode": execution_mode,
         "primary_action": primary_action,
@@ -427,10 +567,28 @@ def derive_actuation_plan(
         "homeostasis_budget_name": homeostasis_budget_name,
         "homeostasis_budget_score": homeostasis_budget_score,
         "initiative_readiness": initiative_readiness,
+        "learning_mode_state": learning_mode_state,
+        "learning_mode_name": learning_mode_name,
+        "learning_mode_probe_room": learning_mode_probe_room,
         "commitment_state": commitment_state,
         "commitment_mode": commitment_mode,
         "commitment_target": commitment_target,
         "commitment_score": commitment_score,
+        "social_experiment_loop_state": social_experiment_loop_state,
+        "social_experiment_name": social_experiment_name,
+        "social_experiment_probe_intensity": social_experiment_probe_intensity,
+        "live_engagement_state": live_engagement_state,
+        "live_engagement_name": live_engagement_name,
+        "live_engagement_score": live_engagement_score,
+        "live_primary_move": live_primary_move,
+        "situation_risk_state": situation_risk_state,
+        "situation_risk_name": situation_risk_name,
+        "situation_risk_immediacy": situation_risk_immediacy,
+        "emergency_posture": emergency_posture,
+        "emergency_posture_name": emergency_posture_name,
+        "emergency_posture_score": emergency_posture_score,
+        "emergency_dialogue_permission": emergency_dialogue_permission,
+        "emergency_primary_action": emergency_primary_action,
         "relational_continuity_state": relational_continuity_state,
         "relational_continuity_name": relational_continuity_name,
         "relational_continuity_score": relational_continuity_score,

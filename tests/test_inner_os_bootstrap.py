@@ -56,6 +56,8 @@ def test_inner_os_bootstrap_smoke_flow(tmp_path) -> None:
     assert "interaction_option_candidates" in plan.llm_payload
     assert "contact_field" in plan.llm_payload
     assert "contact_dynamics" in plan.llm_payload
+    assert "contact_reflection_state" in plan.llm_payload
+    assert "green_kernel_composition" in plan.llm_payload
     assert "access_projection" in plan.llm_payload
     assert "access_dynamics" in plan.llm_payload
     assert "affect_blend_state" in plan.llm_payload
@@ -73,6 +75,13 @@ def test_inner_os_bootstrap_smoke_flow(tmp_path) -> None:
     assert "resonance_evaluation" in plan.llm_payload
     assert "content_skeleton" in plan.llm_payload
     assert "content_sequence" in plan.llm_payload
+    assert "interaction_constraints" in plan.llm_payload
+    assert "repetition_guard" in plan.llm_payload
+    assert "recent_dialogue_state" in plan.llm_payload
+    assert "discussion_thread_state" in plan.llm_payload
+    assert "issue_state" in plan.llm_payload
+    assert "turn_delta" in plan.llm_payload
+    assert "surface_context_packet" in plan.llm_payload
     assert plan.interaction_policy["dialogue_act"] in {"report", "check_in"}
     assert plan.interaction_policy["dialogue_order"]
     assert plan.interaction_policy["scene_family"]
@@ -81,6 +90,8 @@ def test_inner_os_bootstrap_smoke_flow(tmp_path) -> None:
     assert "actionable_slice" in plan.llm_payload["conscious_workspace"]
     assert plan.llm_payload["contact_field"]["points"]
     assert plan.llm_payload["contact_dynamics"]["stabilized_points"]
+    assert plan.llm_payload["contact_reflection_state"]["reflection_style"] in {"reflect_then_question", "reflect_only", "boundary_only"}
+    assert "field" in plan.llm_payload["green_kernel_composition"]
     assert plan.llm_payload["access_projection"]["regions"]
     assert plan.llm_payload["access_dynamics"]["stabilized_regions"]
     assert plan.llm_payload["resonance_evaluation"]["estimated_other_person_state"]["detail_room_level"] in {"low", "medium", "high"}
@@ -104,9 +115,25 @@ def test_inner_os_bootstrap_smoke_flow(tmp_path) -> None:
     assert plan.llm_payload["interaction_audit_bundle"]["key_metrics"]["question_budget"] >= 0
     assert plan.llm_payload["interaction_audit_report"]["report_lines"]
     assert all("act" in step and "text" in step for step in plan.llm_payload["content_sequence"])
+    assert "keep_thread_visible" in plan.llm_payload["interaction_constraints"] or "prefer_return_point" in plan.llm_payload["interaction_constraints"]
+    assert "recent_text_count" in plan.llm_payload["repetition_guard"]
+    assert "preferred_act" in plan.llm_payload["turn_delta"]
+    assert "conversation_phase" in plan.llm_payload["surface_context_packet"]
+    assert "shared_core" in plan.llm_payload["surface_context_packet"]
+    assert "response_role" in plan.llm_payload["surface_context_packet"]
+    assert "constraints" in plan.llm_payload["surface_context_packet"]
     assert plan.llm_payload["interaction_policy"]["focus_now"]
     assert "response_action_now" in plan.llm_payload["interaction_policy"]
     assert plan.llm_payload["interaction_policy"]["wanted_effect_on_other"]
+    assert "learning_mode_state" in plan.llm_payload["interaction_policy"]
+    assert "social_experiment_loop_state" in plan.llm_payload["interaction_policy"]
+    assert "persona_memory_selection" in plan.llm_payload["interaction_policy"]
+    assert "persona_memory_fragments" in plan.llm_payload["interaction_policy"]
+    assert "recent_dialogue_state" in plan.llm_payload["interaction_policy"]
+    assert "discussion_thread_state" in plan.llm_payload["interaction_policy"]
+    assert "issue_state" in plan.llm_payload["interaction_policy"]
+    assert "contact_reflection_state" in plan.llm_payload["interaction_policy"]
+    assert "green_kernel_composition" in plan.llm_payload["interaction_policy"]
     assert "reportability_scores" in plan.llm_payload["foreground"]
     assert "memory_candidates" in plan.llm_payload["foreground"]
     assert plan.llm_payload["memory_context"]["semantic_hints"]

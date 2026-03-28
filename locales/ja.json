@@ -58,5 +58,201 @@
     "stability_shifting": "状態はやや揺れています",
     "stability_change_point": "状態は変化点に近い可能性があります",
     "sat_high": "想起スコアの飽和率が高めです。"
+  },
+  "inner_os": {
+    "content_policy_cues": {
+      "opening_request": {
+        "contains_any": [
+          "切り出",
+          "どう言",
+          "どう伝",
+          "なんて言",
+          "言い出",
+          "言い方",
+          "話し始め",
+          "最初の一言",
+          "声をかけ",
+          "どう始め"
+        ]
+      },
+      "deep_disclosure": {
+        "unsaid": {
+          "contains_any": [
+            "まだ言えていない",
+            "言えていない",
+            "言えないまま",
+            "言えずにいる",
+            "人に言えていない"
+          ]
+        },
+        "help_request": {
+          "contains_any": [
+            "助けてほしかった",
+            "助けてほしい",
+            "助けて欲しかった",
+            "助けて欲しい"
+          ]
+        },
+        "fear_of_view": {
+          "contains_any": [
+            "見方が変わりそう",
+            "どう見られる",
+            "見られそうで怖い",
+            "怖いんです",
+            "こわいんです"
+          ]
+        },
+        "self_blame": {
+          "contains_any": [
+            "自分を責めてしまう",
+            "自分を責める",
+            "責めてしまいます",
+            "責めてしまう"
+          ]
+        }
+      }
+    },
+    "content_policy_segments": {
+      "acknowledge_overreach": "さっきは少し踏み込みすぎました。",
+      "visible_anchor": "いま見えているところだけに絞って、一緒に見ていきます。",
+      "careful_reopen": "残りの部分は、開きやすくなるまで無理に持たなくて大丈夫です。",
+      "respect_boundary": "いまは、無理にうまく話そうとしなくて大丈夫です。",
+      "respect_boundary_soft": "いまは、急いでまとめなくて大丈夫です。",
+      "quiet_presence": "話せるところからで大丈夫です。いま全部きれいに言わなくても大丈夫です。",
+      "quiet_presence_alternatives": [
+        "話せるところからでいいよ。いま全部きれいに言わなくていいよ。",
+        "うん、話せるところからで大丈夫だよ。急がなくていいよ。"
+      ],
+      "leave_unfinished_closed": "まだ言葉になっていないところは、そのままで大丈夫です。また話せそうなときに、そこからで大丈夫です。",
+      "keep_shared_thread_visible": "いまここにある流れを、切らさずに持っておきたいです。",
+      "protect_talking_room": "いまは、話せる分だけで大丈夫です。",
+      "leave_return_point": "必要になったら、またここから話せます。いまは無理に先へ進めなくて大丈夫です。",
+      "stay_with_present_need": "いまは、そのままでいいよ。",
+      "stay_with_present_need_alternatives": [
+        "ここは急がなくていいよ。",
+        "そのまま、ここに置いておいていいよ。"
+      ],
+      "gentle_extension": "急がなくて大丈夫です。必要なら、ここで大事なところへ少しだけ近づけます。",
+      "clarify_gate": "この先に進む前に、ひとつだけ小さく確かめさせてください。",
+      "clarify_followup": "そこからなら、もう少し落ち着いて一緒に見ていけます。",
+      "small_extension": "そこから、必要なぶんだけ少し先へ進めます。",
+      "offer_small_opening_line": "切り出すなら、「ちょっと聞いてほしいことがあって」と置くくらいで十分です。",
+      "offer_small_opening_frame": "最初は、「ちょっと聞いてほしいことがあるんだけど、まだうまく整理できないんだよね」と置くくらいでも大丈夫です。",
+      "reflect_hidden_need": "助けてほしかったのに、それをまだ言えないままなんですね。",
+      "gentle_question_hidden_need": "そのひと言を飲み込んだところが、いまも残ってますか。",
+      "gentle_question_hidden_need_alternatives": [
+        "そのひと言を飲み込んだところ、いまも残ってる？",
+        "そのひと言を飲み込んだところが、まだ引っかかってる？"
+      ],
+      "gentle_question_hidden_need_continuing": "よければ、そのひと言を飲み込んだあたりからでも。",
+      "gentle_question_hidden_need_continuing_alternatives": [
+        "よければ、そのひと言を飲み込んだあたりからでもいいよ。",
+        "よければ、そのあたりから少しだけでも。"
+      ],
+      "reflect_unspoken_weight": "まだ言えていないことが、そのまま中に残っているんですね。",
+      "gentle_question_weight": "無理に広げなくていいですが、どこがいちばん引っかかるかだけでも聞けますか。",
+      "gentle_question_weight_alternatives": [
+        "無理に広げなくていいよ。どこがいちばん引っかかる？",
+        "どこがいちばん引っかかるかだけでも聞いていい？"
+      ],
+      "gentle_question_weight_continuing": "もし触れられそうなら、いま残っているところをひとつだけでも。",
+      "gentle_question_weight_continuing_alternatives": [
+        "よければ、いま残ってるところをひとつだけでも。",
+        "よければ、まだ残ってるところを少しだけでも。"
+      ],
+      "reflect_fear_of_being_seen": "言ったあとにどう見られるか、その怖さがまだ強いんですね。",
+      "gentle_question_fear": "その怖さ、どこでいちばん強くなりますか。",
+      "gentle_question_fear_alternatives": [
+        "その怖さ、どこでいちばん強くなる？",
+        "その怖さが強くなるのって、どんな場面？"
+      ],
+      "gentle_question_fear_continuing": "よければ、その怖さが強くなる場面だけでも。",
+      "gentle_question_fear_continuing_alternatives": [
+        "よければ、その怖さが強くなる場面だけでもいいよ。",
+        "よければ、その怖さが出てくる場面だけでも。"
+      ],
+      "reflect_self_blame": "そのことが、いまも自分を責める形で残っているんですね。",
+      "gentle_question_self_blame": "いまも自分のせいにしてしまう感じが残ってますか。",
+      "gentle_question_self_blame_alternatives": [
+        "いまも、自分のせいにしてしまう感じが残ってる？",
+        "まだ自分にばかり返ってくる感じがある？"
+      ],
+      "gentle_question_self_blame_continuing": "よければ、いまも自分に返ってくる感じがあるかだけでも。",
+      "gentle_question_self_blame_continuing_alternatives": [
+        "よければ、いまも自分に返ってくる感じがあるかだけでもいいよ。",
+        "よければ、その感じがまだあるかだけでも。"
+      ],
+      "acknowledge_without_probe": "いまは、無理にほどかず、そのまま一緒に見ていけます。",
+      "emergency_deescalate_boundary": "いったんここで止めます。少し下がって、短くやり取りしましょう。",
+      "emergency_create_distance": "いまは話を続けず、少し距離を取ります。",
+      "emergency_exit_now": "いまは話し合いより、その場を離れて安全を優先してください。",
+      "emergency_seek_help_now": "いまは説明より、安全確保と助けを呼ぶことを優先してください。",
+      "emergency_protect_now": "いまは言葉より身を守ることを優先してください。距離を取って助けを呼びましょう。"
+    },
+    "content_policy_history_signatures": {
+      "offer_small_opening_line": [
+        "切り出すなら",
+        "一緒に見てほしい",
+        "少し聞いてほしい"
+      ],
+      "offer_small_opening_frame": [
+        "最初は",
+        "まだうまく整理できない"
+      ],
+      "respect_boundary": [
+        "無理に押し進めなくて大丈夫",
+        "急いでまとめなくて大丈夫"
+      ]
+    },
+    "content_policy_templates": {
+      "reopen_from_anchor": "「{anchor}」のところなら、いま話せる分だけで大丈夫です。",
+      "reopen_from_anchor_alt": "前に出ていた「{anchor}」のところを、いま話せるぶんだけ拾う感じで大丈夫です。",
+      "leave_return_point_from_anchor": "「{anchor}」の話は、いま無理に広げなくても大丈夫です。また話せそうなときに、そこから続けられます。",
+      "leave_return_point_from_anchor_alt": "「{anchor}」の話は、いまはそこだけ覚えておければ十分です。また話せそうなときに、そこから続けられます。"
+    },
+    "content_policy_compact": {
+      "deep_reflection_presence": "いまは、そこに触れただけでもいいです。",
+      "deep_reflection_presence_alternatives": [
+        "いまは、そのひと言までで止めておいても大丈夫です。",
+        "ここでは、そこに触れられただけでも十分です。"
+      ],
+      "deep_reflection_stay": "いまは、そのままでいいよ。",
+      "deep_reflection_stay_alternatives": [
+        "ここは急がなくていいよ。",
+        "そのまま、ここに置いておいていいよ。"
+      ],
+      "continuity_opening": "うん、話せるところからで大丈夫です。急がなくていいです。",
+      "continuity_opening_alternatives": [
+        "うん、少しずつで大丈夫です。いま話せるところからで。",
+        "大丈夫です。まずは話せるぶんだけで。"
+      ],
+      "opening_presence": "そこで無理に広げなくて大丈夫です。話せるところからでいいです。",
+      "opening_return": "続きは、話せそうなときで大丈夫です。",
+      "thread_presence": "残りは、また話せそうなときに。",
+      "thread_presence_alternatives": [
+        "続きは、また話せそうなときに。",
+        "その先は、また触れられそうなときでかまいません。"
+      ]
+    },
+    "thread_reopen_compact": {
+      "from_anchor": "{anchor}\u306e\u3053\u3068\u306a\u3089\u3001\u3044\u307e\u8a71\u305b\u308b\u3068\u3053\u308d\u304b\u3089\u3067\u3044\u3044\u3088\u3002",
+      "return": "\u7d9a\u304d\u306f\u3001\u307e\u305f\u8a71\u305b\u305d\u3046\u306a\u3068\u304d\u306b\u3002",
+      "return_alternatives": [
+        "\u305d\u306e\u5148\u306f\u3001\u307e\u305f\u8a71\u305b\u305d\u3046\u306a\u3068\u304d\u306b\u3002",
+        "\u6b8b\u308a\u306f\u3001\u307e\u305f\u8a71\u305b\u305d\u3046\u306a\u3068\u304d\u3067\u5927\u4e08\u592b\u3067\u3059\u3002"
+      ]
+    },
+    "surface_profile_cues": {
+      "skip_soft_pause_prefixes": [
+        "最初は、",
+        "切り出すなら、",
+        "前に出ていた",
+        "前に触れていた",
+        "助けてほしかったのに、",
+        "まだ言えていないことが、",
+        "言ったあとにどう見られるか、",
+        "そのことが、いまも"
+      ]
+    }
   }
 }

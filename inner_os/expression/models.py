@@ -19,4 +19,6 @@ class ResponsePlan:
     action_posture: dict[str, object] = field(default_factory=dict)
     actuation_plan: dict[str, object] = field(default_factory=dict)
     surface_profile: dict[str, object] = field(default_factory=dict)
+    boundary_transform: dict[str, object] = field(default_factory=dict)
+    residual_reflection: dict[str, object] = field(default_factory=dict)
     llm_payload: dict[str, object] = field(default_factory=dict)

@@ -18,6 +18,7 @@ INNER_OS_POST_TURN_RESULT_SCHEMA = "inner_os_post_turn_result/v1"
 INNER_OS_DISTILLATION_RECORD_SCHEMA = "inner_os_distillation_record/v1"
 INNER_OS_TRANSFER_PACKAGE_SCHEMA = "inner_os_transfer_package/v1"
 INNER_OS_DASHBOARD_SNAPSHOT_SCHEMA = "inner_os_dashboard_snapshot/v1"
+INNER_OS_MEMORY_EVIDENCE_BUNDLE_SCHEMA = "inner_os_memory_evidence_bundle/v1"
 
 
 def memory_record_contract() -> Dict[str, Any]:
@@ -42,6 +43,12 @@ def recall_payload_contract() -> Dict[str, Any]:
             "community_profile_pressure",
             "terrain_observed_roughness",
             "terrain_transition_roughness",
+            "temporal_timeline_coherence",
+            "temporal_reentry_pull",
+            "temporal_supersession_pressure",
+            "temporal_continuity_pressure",
+            "temporal_relation_reentry_pull",
+            "temporal_membrane_mode",
         ],
     }
 
@@ -101,5 +108,24 @@ def dashboard_snapshot_contract() -> Dict[str, Any]:
             "metrics",
             "continuity_summary",
             "transfer_summary",
+        ],
+    }
+
+
+def memory_evidence_bundle_contract() -> Dict[str, Any]:
+    return {
+        "schema": INNER_OS_MEMORY_EVIDENCE_BUNDLE_SCHEMA,
+        "required_fields": [
+            "cue_text",
+            "facts_current",
+            "facts_superseded",
+            "timeline_events",
+            "temporal_constraints",
+            "reentry_contexts",
+        ],
+        "optional_fields": [
+            "focus",
+            "source_refs",
+            "ambiguity_notes",
         ],
     }

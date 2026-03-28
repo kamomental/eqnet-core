@@ -2429,6 +2429,118 @@ def test_agenda_carry_bias_weakly_lifts_same_turn_readiness() -> None:
     assert "overnight_agenda_carry" in packet_with["initiative_readiness"]["dominant_inputs"]
 
 
+def test_temporal_membrane_bias_weakly_lifts_reentry_oriented_policy_readout() -> None:
+    base_kwargs = {
+        "dialogue_act": "check_in",
+        "current_focus": "person:user",
+        "current_risks": [],
+        "reportable_facts": ["shared opening"],
+        "relation_bias_strength": 0.48,
+        "related_person_ids": ["user"],
+        "partner_address_hint": "companion",
+        "partner_timing_hint": "open",
+        "partner_stance_hint": "familiar",
+        "partner_social_interpretation": "future_open",
+        "orchestration": {
+            "orchestration_mode": "attune",
+            "dominant_driver": "shared_attention",
+            "contact_readiness": 0.54,
+            "coherence_score": 0.5,
+            "human_presence_signal": 0.58,
+        },
+        "surface_profile": {
+            "opening_pace_windowed": "measured",
+            "return_gaze_expectation": "soft_return",
+        },
+        "live_regulation": SimpleNamespace(
+            distance_expectation="holding_space",
+            repair_window_open=False,
+            strained_pause=0.08,
+            future_loop_pull=0.24,
+            fantasy_loop_pull=0.0,
+        ),
+        "conscious_workspace": {
+            "workspace_mode": "foreground",
+            "workspace_stability": 0.64,
+            "reportable_slice": ["shared opening"],
+            "reportability_gate": {"gate_mode": "open"},
+        },
+        "qualia_planner_view": {
+            "trust": 0.76,
+            "degraded": False,
+            "dominant_axis": "shared_attention",
+            "dominant_value": 0.12,
+            "body_load": 0.04,
+            "protection_bias": 0.08,
+            "felt_energy": 0.16,
+        },
+        "terrain_readout": {
+            "value": 0.14,
+            "grad": [0.02, 0.0, 0.0, 0.0],
+            "curvature": [0.02, 0.0, 0.0, 0.0],
+            "approach_bias": 0.34,
+            "avoid_bias": 0.16,
+            "protect_bias": 0.12,
+            "active_patch_index": 1,
+            "active_patch_label": "open_step",
+        },
+        "protection_mode": {
+            "mode": "monitor",
+            "strength": 0.24,
+            "reasons": ["stable_contact"],
+        },
+    }
+    packet_without = derive_interaction_policy_packet(
+        **base_kwargs,
+        self_state={
+            "stress": 0.16,
+            "recovery_need": 0.14,
+            "recent_strain": 0.12,
+            "safety_bias": 0.08,
+            "continuity_score": 0.42,
+            "trust_memory": 0.46,
+            "familiarity": 0.42,
+            "attachment": 0.38,
+        },
+    )
+    packet_with = derive_interaction_policy_packet(
+        **base_kwargs,
+        self_state={
+            "stress": 0.16,
+            "recovery_need": 0.14,
+            "recent_strain": 0.12,
+            "safety_bias": 0.08,
+            "continuity_score": 0.42,
+            "trust_memory": 0.46,
+            "familiarity": 0.42,
+            "attachment": 0.38,
+            "temporal_timeline_coherence": 0.44,
+            "temporal_reentry_pull": 0.58,
+            "temporal_continuity_pressure": 0.4,
+            "temporal_relation_reentry_pull": 0.48,
+            "temporal_membrane_mode": "reentry",
+        },
+    )
+
+    assert (
+        packet_with["initiative_readiness"]["scores"]["ready"]
+        > packet_without["initiative_readiness"]["scores"]["ready"]
+    )
+    assert (
+        packet_with["relational_continuity_state"]["scores"]["reopening"]
+        > packet_without["relational_continuity_state"]["scores"]["reopening"]
+    )
+    assert (
+        packet_with["agenda_window_state"]["scores"]["opportunistic_reentry"]
+        > packet_without["agenda_window_state"]["scores"]["opportunistic_reentry"]
+    )
+    assert (
+        packet_with["commitment_state"]["target_scores"]["repair"]
+        > packet_without["commitment_state"]["target_scores"]["repair"]
+    )
+    assert "temporal_reentry_pull" in packet_with["initiative_readiness"]["dominant_inputs"]
+
+
 def test_expressive_style_overnight_carry_bias_weakly_lifts_same_turn_style() -> None:
     base_kwargs = {
         "dialogue_act": "check_in",

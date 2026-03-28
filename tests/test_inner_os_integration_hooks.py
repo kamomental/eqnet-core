@@ -81,6 +81,13 @@ def test_integration_hooks_pre_and_recall_flow(tmp_path: Path) -> None:
     assert recall.ignition_hints["memory_orchestration"]["consolidation_priority"] >= 0.0
     assert recall.ignition_hints["working_memory"]["current_focus"]
     assert recall.retrieval_summary["inner_os_memory"]
+    assert recall.memory_evidence_bundle["schema"] == "inner_os_memory_evidence_bundle/v1"
+    assert recall.memory_evidence_bundle["facts_current"]
+    assert recall.memory_evidence_bundle["timeline_events"]
+    assert recall.memory_evidence_bundle["source_refs"]
+    assert recall.ignition_hints["qualia_membrane_temporal"]["timeline_coherence"] >= 0.0
+    assert recall.recall_payload["temporal_membrane_mode"] in {"cohere", "reentry", "supersede", "ambient"}
+    assert recall.recall_payload["temporal_reentry_pull"] >= 0.0
 
 
 def test_pre_turn_update_absorbs_working_memory_seed_from_local_context(tmp_path: Path) -> None:

@@ -52,17 +52,33 @@ def build_inner_os_working_memory_snapshot(
     focus_counts = Counter(str(item.get("current_focus") or "ambient") for item in records)
     anchor_counts = Counter(str(item.get("focus_anchor") or "").strip() for item in records if str(item.get("focus_anchor") or "").strip())
     loop_counts = Counter()
+    autobiographical_mode_counts = Counter()
+    autobiographical_anchor_counts = Counter()
+    autobiographical_focus_counts = Counter()
     pressures = []
     pending_values = []
     carryover_values = []
     unresolved_values = []
+    autobiographical_strengths = []
     for item in records:
         for loop in item.get("open_loops") or []:
             loop_counts[str(loop)] += 1
+        autobiographical_mode = str(item.get("autobiographical_thread_mode") or "").strip()
+        autobiographical_anchor = str(item.get("autobiographical_thread_anchor") or "").strip()
+        autobiographical_focus = str(item.get("autobiographical_thread_focus") or "").strip()
+        if autobiographical_mode:
+            autobiographical_mode_counts[autobiographical_mode] += 1
+        if autobiographical_anchor:
+            autobiographical_anchor_counts[autobiographical_anchor] += 1
+        if autobiographical_focus:
+            autobiographical_focus_counts[autobiographical_focus] += 1
         pressures.append(_safe_float(item.get("memory_pressure"), 0.0))
         pending_values.append(_safe_float(item.get("pending_meaning"), 0.0))
         carryover_values.append(_safe_float(item.get("carryover_load"), 0.0))
         unresolved_values.append(_safe_float(item.get("unresolved_count"), 0.0))
+        autobiographical_strengths.append(
+            _safe_float(item.get("autobiographical_thread_strength"), 0.0)
+        )
 
     dominant_focus = _counter_top(focus_counts, default="ambient")
     dominant_anchor = _counter_top(anchor_counts, default=str(latest.get("focus_anchor") or "").strip())
@@ -72,8 +88,21 @@ def build_inner_os_working_memory_snapshot(
     mean_pending_meaning = _mean(pending_values)
     mean_carryover_load = _mean(carryover_values)
     mean_unresolved = _mean(unresolved_values)
+    mean_autobiographical_thread_strength = _mean(autobiographical_strengths)
     focus_repetition = _clamp01((focus_counts.get(dominant_focus, 0) / max(trace_count, 1)) if trace_count else 0.0)
     anchor_repetition = _clamp01((anchor_counts.get(dominant_anchor, 0) / max(trace_count, 1)) if dominant_anchor and trace_count else 0.0)
+    dominant_autobiographical_thread_mode = _counter_top(
+        autobiographical_mode_counts,
+        default=str(latest.get("autobiographical_thread_mode") or "").strip(),
+    )
+    dominant_autobiographical_thread_anchor = _counter_top(
+        autobiographical_anchor_counts,
+        default=str(latest.get("autobiographical_thread_anchor") or "").strip(),
+    )
+    dominant_autobiographical_thread_focus = _counter_top(
+        autobiographical_focus_counts,
+        default=str(latest.get("autobiographical_thread_focus") or "").strip(),
+    )
     promotion_readiness = _clamp01(
         mean_memory_pressure * 0.26
         + peak_memory_pressure * 0.18
@@ -82,6 +111,7 @@ def build_inner_os_working_memory_snapshot(
         + _clamp01(mean_unresolved / 3.0) * 0.1
         + focus_repetition * 0.05
         + anchor_repetition * 0.03
+        + mean_autobiographical_thread_strength * 0.08
     )
     autobiographical_pressure = _clamp01(
         mean_pending_meaning * 0.3
@@ -89,6 +119,7 @@ def build_inner_os_working_memory_snapshot(
         + focus_repetition * 0.14
         + anchor_repetition * 0.14
         + _clamp01(mean_unresolved / 3.0) * 0.1
+        + mean_autobiographical_thread_strength * 0.1
     )
 
     return {
@@ -106,6 +137,10 @@ def build_inner_os_working_memory_snapshot(
             "peak_memory_pressure": round(peak_memory_pressure, 4),
             "promotion_readiness": round(promotion_readiness, 4),
             "autobiographical_pressure": round(autobiographical_pressure, 4),
+            "autobiographical_thread_mode": dominant_autobiographical_thread_mode,
+            "autobiographical_thread_anchor": dominant_autobiographical_thread_anchor,
+            "autobiographical_thread_focus": dominant_autobiographical_thread_focus,
+            "autobiographical_thread_strength": round(mean_autobiographical_thread_strength, 4),
             "dominant_open_loops": [item for item, _ in loop_counts.most_common(3)],
             "culture_id": latest.get("culture_id"),
             "community_id": latest.get("community_id"),
@@ -123,6 +158,7 @@ def build_inner_os_working_memory_snapshot(
             "focus_counts": dict(focus_counts),
             "anchor_counts": dict(anchor_counts),
             "open_loop_counts": dict(loop_counts),
+            "autobiographical_mode_counts": dict(autobiographical_mode_counts),
         },
     }
 

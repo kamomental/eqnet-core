@@ -53,6 +53,21 @@ def test_distillation_record_builder_redacts_text_by_default() -> None:
             "workspace_decision": {"workspace_mode": "meaning", "winner_margin": 0.41},
             "surface_policy_level": "careful",
             "surface_policy_intent": "repair",
+            "boundary_transform": {
+                "gate_mode": "narrow",
+                "authority_scope": "user_guarded",
+                "transformation_mode": "soften",
+                "softened_acts": ["offer_small_opening_line"],
+                "withheld_acts": ["clarify_question"],
+                "deferred_topics": ["unfinished part"],
+                "residual_pressure": 0.48,
+            },
+            "residual_reflection": {
+                "mode": "withheld",
+                "focus": "unfinished part",
+                "reason_tokens": ["withheld_candidate", "deferred_topic"],
+                "strength": 0.62,
+            },
             "route": "watch",
             "talk_mode": "watch",
         },
@@ -72,8 +87,12 @@ def test_distillation_record_builder_redacts_text_by_default() -> None:
     assert record["decision_snapshot"]["expressive_style_state"]["state"] == "warm_companion"
     assert record["decision_snapshot"]["lightness_budget_state"]["state"] == "warm_only"
     assert record["decision_snapshot"]["relational_continuity_state"]["state"] == "reopening"
+    assert record["decision_snapshot"]["boundary_transform"]["gate_mode"] == "narrow"
+    assert record["decision_snapshot"]["residual_reflection"]["mode"] == "withheld"
     assert record["carry_snapshot"]["expressive_style_history"]["focus"] == "warm_companion"
     assert record["carry_snapshot"]["expressive_style_history"]["banter_style_focus"] == "gentle_tease"
+    assert record["output_fingerprint"]["boundary_transform_mode"] == "soften"
+    assert record["output_fingerprint"]["residual_reflection_mode"] == "withheld"
 
 
 def test_distillation_record_contract_exposes_required_fields() -> None:

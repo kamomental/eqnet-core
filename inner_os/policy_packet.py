@@ -7,10 +7,17 @@ from .agenda_window_state import derive_agenda_window_state
 from .commitment_state import derive_commitment_state
 from .cultural_conversation_state import derive_cultural_conversation_state
 from .expressive_style_state import derive_expressive_style_state
+from .emergency_posture import derive_emergency_posture
+from .learning_mode_state import derive_learning_mode_state
 from .lightness_budget_state import derive_lightness_budget_state
+from .live_engagement_state import derive_live_engagement_state
+from .persona_memory_fragment import build_persona_memory_fragments
+from .persona_memory_selector import derive_persona_memory_selection
 from .relation_competition import derive_relation_competition_state
 from .relational_style_memory import derive_relational_style_memory_state
+from .social_experiment_loop import derive_social_experiment_loop_state
 from .social_topology_state import coerce_social_topology_label, derive_social_topology_state
+from .situation_risk_state import derive_situation_risk_state
 from .temperament_estimate import derive_temperament_estimate
 
 
@@ -84,6 +91,15 @@ def derive_interaction_policy_packet(
     protection_mode_payload = dict(protection_mode or {})
     insight_event_payload = dict(insight_event or {})
     self_state_payload = dict(self_state or {})
+    identity_arc_kind = str(self_state_payload.get("identity_arc_kind") or "").strip()
+    identity_arc_phase = str(self_state_payload.get("identity_arc_phase") or "").strip()
+    identity_arc_summary = str(self_state_payload.get("identity_arc_summary") or "").strip()
+    identity_arc_open_tension = str(self_state_payload.get("identity_arc_open_tension") or "").strip()
+    identity_arc_stability = _clamp01(float(self_state_payload.get("identity_arc_stability", 0.0) or 0.0))
+    discussion_thread_registry_snapshot = {
+        key: value
+        for key, value in dict(self_state_payload.get("discussion_thread_registry_snapshot") or {}).items()
+    }
     temperament_estimate = derive_temperament_estimate(self_state_payload).to_dict()
     relation_competition_state = derive_relation_competition_state(
         self_state=self_state_payload,
@@ -474,6 +490,14 @@ def derive_interaction_policy_packet(
         "carry_bias": round(_clamp01(float(self_state_payload.get("agenda_bias", 0.0) or 0.0)), 4),
         "reason": str(self_state_payload.get("agenda_reason") or "").strip(),
     }
+    learning_mode_carry = {
+        "focus": str(self_state_payload.get("learning_mode_focus") or "").strip(),
+        "carry_bias": round(_clamp01(float(self_state_payload.get("learning_mode_carry_bias", 0.0) or 0.0)), 4),
+    }
+    social_experiment_carry = {
+        "focus": str(self_state_payload.get("social_experiment_focus") or "").strip(),
+        "carry_bias": round(_clamp01(float(self_state_payload.get("social_experiment_carry_bias", 0.0) or 0.0)), 4),
+    }
     temperament_carry = {
         "focus": str(self_state_payload.get("temperament_focus") or "").strip(),
         "forward_bias": round(_clamp01(float(self_state_payload.get("temperament_forward_bias", 0.0) or 0.0)), 4),
@@ -632,6 +656,61 @@ def derive_interaction_policy_packet(
         protection_mode=protection_mode_payload,
         attention_regulation_state=attention_regulation_state,
     )
+    learning_mode_state = derive_learning_mode_state(
+        self_state=self_state_payload,
+        body_recovery_guard=body_recovery_guard,
+        body_homeostasis_state=body_homeostasis_state,
+        homeostasis_budget_state=homeostasis_budget_state,
+        protection_mode=protection_mode_payload,
+        initiative_readiness=initiative_readiness,
+        agenda_state=agenda_state,
+        agenda_window_state=agenda_window_state,
+        commitment_state=commitment_state,
+        attention_regulation_state=attention_regulation_state,
+        grice_guard_state=grice_guard_state,
+        relational_continuity_state=relational_continuity_state,
+        social_topology_state=social_topology_state,
+        insight_event=insight_event_payload,
+        identity_arc_kind=identity_arc_kind,
+        identity_arc_phase=identity_arc_phase,
+    ).to_dict()
+    social_experiment_loop_state = derive_social_experiment_loop_state(
+        learning_mode_state=learning_mode_state,
+        commitment_state=commitment_state,
+        agenda_state=agenda_state,
+        agenda_window_state=agenda_window_state,
+        body_recovery_guard=body_recovery_guard,
+        protection_mode=protection_mode_payload,
+        grice_guard_state=grice_guard_state,
+        relational_continuity_state=relational_continuity_state,
+        social_topology_state=social_topology_state,
+        self_state=self_state_payload,
+        identity_arc_kind=identity_arc_kind,
+    ).to_dict()
+    persona_memory_fragment_models = build_persona_memory_fragments(
+        self_state=self_state_payload,
+        relation_bias_strength=relation_bias_strength,
+        related_person_ids=related_person_ids,
+        social_topology_state=social_topology_state,
+        relational_style_memory_state=relational_style_memory_state,
+        cultural_conversation_state=cultural_conversation_state,
+        protection_mode=protection_mode_payload,
+        grice_guard_state=grice_guard_state,
+    )
+    persona_memory_fragments = [
+        fragment.to_dict()
+        for fragment in persona_memory_fragment_models
+    ]
+    persona_memory_selection = derive_persona_memory_selection(
+        fragments=persona_memory_fragment_models,
+        current_focus=current_focus,
+        reportable_facts=reportable_facts,
+        current_risks=current_risks,
+        relation_bias_strength=relation_bias_strength,
+        agenda_window_state=agenda_window_state,
+        social_topology_state=social_topology_state,
+        grice_guard_state=grice_guard_state,
+    ).to_dict()
     expressive_style_state = derive_expressive_style_state(
         self_state=self_state_payload,
         temperament_estimate=temperament_estimate,
@@ -663,6 +742,30 @@ def derive_interaction_policy_packet(
         expressive_style_state=expressive_style_state,
         relational_style_memory_state=relational_style_memory_state,
         cultural_conversation_state=cultural_conversation_state,
+    ).to_dict()
+    live_engagement_state = derive_live_engagement_state(
+        self_state=self_state_payload,
+        initiative_readiness=initiative_readiness,
+        initiative_followup_bias=initiative_followup_bias,
+        relational_style_memory_state=relational_style_memory_state,
+        lightness_budget_state=lightness_budget_state,
+        social_topology_state=social_topology_state,
+        body_recovery_guard=body_recovery_guard,
+        body_homeostasis_state=body_homeostasis_state,
+        homeostasis_budget_state=homeostasis_budget_state,
+    ).to_dict()
+    situation_risk_state = derive_situation_risk_state(
+        current_risks=current_risks,
+        scene_state=scene,
+        self_state=self_state_payload,
+    ).to_dict()
+    emergency_posture = derive_emergency_posture(
+        situation_risk_state=situation_risk_state,
+        constraint_field=constraint,
+        protection_mode=protection_mode_payload,
+        body_recovery_guard=body_recovery_guard,
+        body_homeostasis_state=body_homeostasis_state,
+        homeostasis_budget_state=homeostasis_budget_state,
     ).to_dict()
     effective_question_budget = min(
         question_budget,
@@ -736,6 +839,18 @@ def derive_interaction_policy_packet(
         "temperament_recovery_bias": temperament_carry["recovery_bias"],
         "commitment_state": str(commitment_state.get("state") or "waver"),
         "commitment_target": str(commitment_state.get("target") or "hold"),
+        "learning_mode_state": str(learning_mode_state.get("state") or "observe_only"),
+        "learning_mode_probe_room": round(float(learning_mode_state.get("probe_room", 0.0) or 0.0), 4),
+        "learning_mode_focus": learning_mode_carry["focus"],
+        "learning_mode_carry_bias": learning_mode_carry["carry_bias"],
+        "social_experiment_state": str(social_experiment_loop_state.get("state") or "watch_and_read"),
+        "social_experiment_probe_intensity": round(float(social_experiment_loop_state.get("probe_intensity", 0.0) or 0.0), 4),
+        "social_experiment_focus": social_experiment_carry["focus"],
+        "social_experiment_carry_bias": social_experiment_carry["carry_bias"],
+        "identity_arc_kind": identity_arc_kind,
+        "identity_arc_phase": identity_arc_phase,
+        "identity_arc_open_tension": identity_arc_open_tension,
+        "identity_arc_stability": round(identity_arc_stability, 4),
     }
     reaction_vs_overnight_bias = {
         "same_turn": {
@@ -768,6 +883,21 @@ def derive_interaction_policy_packet(
             "commitment_target": str(commitment_state.get("target") or "hold"),
             "commitment_winner_margin": round(float(commitment_state.get("winner_margin", 0.0) or 0.0), 4),
             "commitment_accepted_cost": round(float(commitment_state.get("accepted_cost", 0.0) or 0.0), 4),
+            "learning_mode_state": str(learning_mode_state.get("state") or "observe_only"),
+            "learning_mode_probe_room": round(float(learning_mode_state.get("probe_room", 0.0) or 0.0), 4),
+            "learning_mode_winner_margin": round(float(learning_mode_state.get("winner_margin", 0.0) or 0.0), 4),
+            "learning_mode_focus": learning_mode_carry["focus"],
+            "learning_mode_carry_bias": learning_mode_carry["carry_bias"],
+            "social_experiment_state": str(social_experiment_loop_state.get("state") or "watch_and_read"),
+            "social_experiment_probe_intensity": round(float(social_experiment_loop_state.get("probe_intensity", 0.0) or 0.0), 4),
+            "social_experiment_winner_margin": round(float(social_experiment_loop_state.get("winner_margin", 0.0) or 0.0), 4),
+            "social_experiment_focus": social_experiment_carry["focus"],
+            "social_experiment_carry_bias": social_experiment_carry["carry_bias"],
+            "identity_arc_kind": identity_arc_kind,
+            "identity_arc_phase": identity_arc_phase,
+            "identity_arc_summary": identity_arc_summary,
+            "identity_arc_open_tension": identity_arc_open_tension,
+            "identity_arc_stability": round(identity_arc_stability, 4),
             "relational_continuity_state": str(relational_continuity_state.get("state") or "distant"),
             "relational_continuity_winner_margin": round(float(relational_continuity_state.get("winner_margin", 0.0) or 0.0), 4),
             "relation_competition_state": str(relation_competition_state.get("state") or "ambient"),
@@ -793,6 +923,18 @@ def derive_interaction_policy_packet(
             "lightness_budget_state": str(lightness_budget_state.get("state") or "grounded_only"),
             "lightness_budget_banter_room": round(float(lightness_budget_state.get("banter_room") or 0.0), 4),
             "lightness_budget_suppression": round(float(lightness_budget_state.get("suppression") or 0.0), 4),
+            "live_engagement_state": str(live_engagement_state.get("state") or "hold"),
+            "live_engagement_score": round(float(live_engagement_state.get("score", 0.0) or 0.0), 4),
+            "live_engagement_winner_margin": round(float(live_engagement_state.get("winner_margin", 0.0) or 0.0), 4),
+            "live_primary_move": str(live_engagement_state.get("primary_move") or "hold_presence"),
+            "situation_risk_state": str(situation_risk_state.get("state") or "ordinary_context"),
+            "situation_risk_immediacy": round(float(situation_risk_state.get("immediacy", 0.0) or 0.0), 4),
+            "situation_risk_intent_clarity": round(float(situation_risk_state.get("intent_clarity", 0.0) or 0.0), 4),
+            "situation_risk_escape_room": round(float(situation_risk_state.get("escape_room", 0.0) or 0.0), 4),
+            "situation_risk_relation_break": round(float(situation_risk_state.get("relation_break", 0.0) or 0.0), 4),
+            "emergency_posture": str(emergency_posture.get("state") or "observe"),
+            "emergency_dialogue_permission": str(emergency_posture.get("dialogue_permission") or "allow_short"),
+            "emergency_primary_action": str(emergency_posture.get("primary_action") or "observe_context_shift"),
         },
         "overnight": {
             "association_reweighting_focus": association_reweighting_focus,
@@ -812,6 +954,10 @@ def derive_interaction_policy_packet(
             "agenda_window_focus": str(self_state_payload.get("agenda_window_focus") or ""),
             "agenda_window_bias": round(float(self_state_payload.get("agenda_window_bias", 0.0) or 0.0), 4),
             "agenda_window_reason": str(self_state_payload.get("agenda_window_reason") or ""),
+            "learning_mode_focus": learning_mode_carry["focus"],
+            "learning_mode_carry_bias": learning_mode_carry["carry_bias"],
+            "social_experiment_focus": social_experiment_carry["focus"],
+            "social_experiment_carry_bias": social_experiment_carry["carry_bias"],
             "commitment_carry_bias": commitment_carry["carry_bias"],
             "commitment_target_focus": commitment_carry["target_focus"],
             "commitment_followup_focus": commitment_carry["followup_focus"],
@@ -832,6 +978,10 @@ def derive_interaction_policy_packet(
             "temperament_guard_bias": temperament_carry["guard_bias"],
             "temperament_bond_bias": temperament_carry["bond_bias"],
             "temperament_recovery_bias": temperament_carry["recovery_bias"],
+            "identity_arc_kind": identity_arc_kind,
+            "identity_arc_phase": identity_arc_phase,
+            "identity_arc_open_tension": identity_arc_open_tension,
+            "identity_arc_stability": round(identity_arc_stability, 4),
         },
     }
 
@@ -955,21 +1105,36 @@ def derive_interaction_policy_packet(
         "initiative_followup_bias": initiative_followup_bias,
         "initiative_readiness": initiative_readiness,
         "agenda_carry": agenda_carry,
+        "learning_mode_carry": learning_mode_carry,
+        "social_experiment_carry": social_experiment_carry,
         "agenda_state": agenda_state,
         "agenda_window_state": agenda_window_state,
         "commitment_carry": commitment_carry,
         "commitment_state": commitment_state,
+        "learning_mode_state": learning_mode_state,
+        "social_experiment_loop_state": social_experiment_loop_state,
+        "identity_arc_kind": identity_arc_kind,
+        "identity_arc_phase": identity_arc_phase,
+        "identity_arc_summary": identity_arc_summary,
+        "identity_arc_open_tension": identity_arc_open_tension,
+        "identity_arc_stability": round(identity_arc_stability, 4),
+        "persona_memory_fragments": persona_memory_fragments,
+        "persona_memory_selection": persona_memory_selection,
         "attention_regulation_state": attention_regulation_state,
         "grice_guard_state": grice_guard_state,
         "relational_style_memory_state": relational_style_memory_state,
         "cultural_conversation_state": cultural_conversation_state,
         "expressive_style_state": expressive_style_state,
         "lightness_budget_state": lightness_budget_state,
+        "live_engagement_state": live_engagement_state,
+        "situation_risk_state": situation_risk_state,
+        "emergency_posture": emergency_posture,
         "expressive_style_history_focus": expressive_style_history_carry["focus"],
         "expressive_style_history_bias": expressive_style_history_carry["carry_bias"],
         "banter_style_focus": banter_style_carry["focus"],
         "lexical_variation_carry_bias": banter_style_carry["carry_bias"],
         "relational_continuity_state": relational_continuity_state,
+        "discussion_thread_registry_snapshot": discussion_thread_registry_snapshot,
         "relation_competition_state": relation_competition_state,
         "active_relation_table": active_relation_table,
         "social_topology": social_topology,
@@ -2132,6 +2297,13 @@ def _derive_initiative_readiness(
     bond_drive = _clamp01(float(temperament.get("bond_drive", 0.0) or 0.0))
     recovery_discipline = _clamp01(float(temperament.get("recovery_discipline", 0.0) or 0.0))
     protect_floor = _clamp01(float(temperament.get("protect_floor", 0.0) or 0.0))
+    temporal_membrane = _extract_temporal_membrane_bias(self_state)
+    timeline_coherence = _clamp01(float(temporal_membrane.get("timeline_coherence", 0.0) or 0.0))
+    reentry_pull = _clamp01(float(temporal_membrane.get("reentry_pull", 0.0) or 0.0))
+    supersession_pressure = _clamp01(float(temporal_membrane.get("supersession_pressure", 0.0) or 0.0))
+    continuity_pressure = _clamp01(float(temporal_membrane.get("continuity_pressure", 0.0) or 0.0))
+    relation_reentry_pull = _clamp01(float(temporal_membrane.get("relation_reentry_pull", 0.0) or 0.0))
+    temporal_mode = str(temporal_membrane.get("mode") or "ambient").strip() or "ambient"
 
     hold_score = _clamp01(
         0.28 * guard_score
@@ -2173,6 +2345,32 @@ def _derive_initiative_readiness(
         - 0.12 * recovery_discipline * max(recovery_need, stress)
         - 0.08 * protect_floor
     )
+    hold_score = _clamp01(
+        hold_score
+        + supersession_pressure * 0.12
+        - timeline_coherence * 0.03
+        - reentry_pull * 0.02
+    )
+    tentative_score = _clamp01(
+        tentative_score
+        + reentry_pull * 0.08
+        + continuity_pressure * 0.06
+        + relation_reentry_pull * 0.05
+        - supersession_pressure * 0.05
+    )
+    ready_score = _clamp01(
+        ready_score
+        + reentry_pull * 0.1
+        + timeline_coherence * 0.06
+        + continuity_pressure * 0.04
+        + relation_reentry_pull * 0.05
+        - supersession_pressure * 0.1
+    )
+    if temporal_mode == "supersede":
+        hold_score = _clamp01(hold_score + 0.04)
+        ready_score = _clamp01(ready_score - 0.04)
+    elif temporal_mode in {"reentry", "cohere"}:
+        tentative_score = _clamp01(tentative_score + 0.03)
     if followup_state == "offer_next_step":
         ready_score = _clamp01(ready_score + followup_bias * 0.18)
         tentative_score = _clamp01(tentative_score + followup_bias * 0.08)
@@ -2226,6 +2424,9 @@ def _derive_initiative_readiness(
             "recovery_need" if recovery_need >= 0.22 else "",
             "stress" if stress >= 0.18 else "",
             "terrain_protect_bias" if terrain_protect_bias >= 0.22 and state == "hold" else "",
+            "temporal_reentry_pull" if reentry_pull >= 0.2 and state in {"tentative", "ready"} else "",
+            "temporal_supersession_pressure" if supersession_pressure >= 0.2 and state == "hold" else "",
+            "temporal_timeline_coherence" if timeline_coherence >= 0.22 and state == "ready" else "",
         ]
     )
     return {
@@ -2296,6 +2497,13 @@ def _derive_relational_continuity_state(
     topology_visibility = _clamp01(float(social_topology.get("visibility_pressure", 0.0) or 0.0))
     topology_threading = _clamp01(float(social_topology.get("threading_pressure", 0.0) or 0.0))
     topology_hierarchy = _clamp01(float(social_topology.get("hierarchy_pressure", 0.0) or 0.0))
+    temporal_membrane = _extract_temporal_membrane_bias(self_state)
+    timeline_coherence = _clamp01(float(temporal_membrane.get("timeline_coherence", 0.0) or 0.0))
+    reentry_pull = _clamp01(float(temporal_membrane.get("reentry_pull", 0.0) or 0.0))
+    supersession_pressure = _clamp01(float(temporal_membrane.get("supersession_pressure", 0.0) or 0.0))
+    continuity_pressure = _clamp01(float(temporal_membrane.get("continuity_pressure", 0.0) or 0.0))
+    relation_reentry_pull = _clamp01(float(temporal_membrane.get("relation_reentry_pull", 0.0) or 0.0))
+    temporal_mode = str(temporal_membrane.get("mode") or "ambient").strip() or "ambient"
 
     other_person_state = dict(resonance.get("estimated_other_person_state") or {})
     detail_room = _room_level_score(other_person_state.get("detail_room_level"))
@@ -2397,6 +2605,36 @@ def _derive_relational_continuity_state(
             - 0.1 * (1.0 if body_homeostasis_name in {"recovering", "depleted"} else 0.0) * body_homeostasis_score
         ),
     }
+    scores["distant"] = _clamp01(
+        scores["distant"]
+        + supersession_pressure * 0.12
+        - continuity_pressure * 0.04
+        - reentry_pull * 0.02
+    )
+    scores["holding_thread"] = _clamp01(
+        scores["holding_thread"]
+        + continuity_pressure * 0.12
+        + timeline_coherence * 0.06
+    )
+    scores["reopening"] = _clamp01(
+        scores["reopening"]
+        + reentry_pull * 0.14
+        + relation_reentry_pull * 0.12
+        + continuity_pressure * 0.04
+        - supersession_pressure * 0.08
+    )
+    scores["co_regulating"] = _clamp01(
+        scores["co_regulating"]
+        + timeline_coherence * 0.08
+        + continuity_pressure * 0.1
+        + relation_reentry_pull * 0.08
+        - supersession_pressure * 0.08
+    )
+    if temporal_mode == "supersede":
+        scores["distant"] = _clamp01(scores["distant"] + 0.04)
+        scores["co_regulating"] = _clamp01(scores["co_regulating"] - 0.04)
+    elif temporal_mode == "reentry":
+        scores["reopening"] = _clamp01(scores["reopening"] + 0.04)
     if carry_focus in scores and carry_bias > 0.0:
         carry_scale = 0.16
         if carry_focus == "holding_thread":
@@ -2459,6 +2697,9 @@ def _derive_relational_continuity_state(
             "body_homeostasis" if body_homeostasis_name in {"strained", "recovering", "depleted"} else "",
             "protective_mode" if protective_hold >= 1.0 and protection_mode_strength >= 0.42 else "",
             "overnight_relational_continuity" if carry_focus in scores and carry_bias >= 0.08 else "",
+            "temporal_reentry_pull" if reentry_pull >= 0.22 and state in {"reopening", "co_regulating"} else "",
+            "temporal_supersession_pressure" if supersession_pressure >= 0.22 and state == "distant" else "",
+            "temporal_timeline_coherence" if timeline_coherence >= 0.22 and state in {"holding_thread", "co_regulating"} else "",
         ]
     )
     return {
@@ -2467,6 +2708,34 @@ def _derive_relational_continuity_state(
         "scores": {key: round(value, 4) for key, value in scores.items()},
         "winner_margin": round(winner_margin, 4),
         "dominant_inputs": dominant_inputs,
+    }
+
+
+def _extract_temporal_membrane_bias(self_state: Mapping[str, Any]) -> dict[str, object]:
+    payload = dict(self_state or {})
+    timeline_coherence = _clamp01(float(payload.get("temporal_timeline_coherence", 0.0) or 0.0))
+    reentry_pull = _clamp01(float(payload.get("temporal_reentry_pull", 0.0) or 0.0))
+    supersession_pressure = _clamp01(float(payload.get("temporal_supersession_pressure", 0.0) or 0.0))
+    continuity_pressure = _clamp01(float(payload.get("temporal_continuity_pressure", 0.0) or 0.0))
+    relation_reentry_pull = _clamp01(float(payload.get("temporal_relation_reentry_pull", 0.0) or 0.0))
+    if timeline_coherence <= 0.0:
+        timeline_coherence = _clamp01(float(payload.get("temporal_timeline_bias", 0.0) or 0.0))
+    if reentry_pull <= 0.0:
+        reentry_pull = _clamp01(float(payload.get("temporal_reentry_bias", 0.0) or 0.0))
+    if supersession_pressure <= 0.0:
+        supersession_pressure = _clamp01(float(payload.get("temporal_supersession_bias", 0.0) or 0.0))
+    if continuity_pressure <= 0.0:
+        continuity_pressure = _clamp01(float(payload.get("temporal_continuity_bias", 0.0) or 0.0))
+    if relation_reentry_pull <= 0.0:
+        relation_reentry_pull = _clamp01(float(payload.get("temporal_relation_reentry_bias", 0.0) or 0.0))
+    mode = str(payload.get("temporal_membrane_mode") or payload.get("temporal_membrane_focus") or "ambient").strip() or "ambient"
+    return {
+        "timeline_coherence": timeline_coherence,
+        "reentry_pull": reentry_pull,
+        "supersession_pressure": supersession_pressure,
+        "continuity_pressure": continuity_pressure,
+        "relation_reentry_pull": relation_reentry_pull,
+        "mode": mode,
     }
 
 

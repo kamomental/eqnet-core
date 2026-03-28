@@ -146,6 +146,103 @@ def test_nightly_json_matches_schema(tmp_path) -> None:
             "summary": "fragile harbor promise",
             "strength": 0.63,
         },
+        "inner_os_identity_arc_summary": {
+            "summary_version": "v1",
+            "arc_kind": "repairing_bond",
+            "phase": "shifting",
+            "summary": "repair is gathering around a relationship thread / phase=shifting / anchor=harbor slope",
+            "dominant_driver": "theme:meaning",
+            "supporting_drivers": ["theme:meaning", "memory:bond_protection", "commitment:repair"],
+            "open_tension": "timing_sensitive_reentry",
+            "stability": 0.58,
+            "memory_anchor": "harbor slope",
+            "related_person_id": "user",
+            "group_thread_focus": "threaded_group:user|friend",
+            "long_term_theme_kind": "meaning",
+            "long_term_theme_focus": "meaning",
+            "learning_mode_focus": "repair_probe",
+            "social_experiment_focus": "repair_signal_probe",
+        },
+        "inner_os_identity_arc_registry_summary": {
+            "dominant_arc_id": "repairing_bond::user::meaning::harbor_slope",
+            "dominant_arc_kind": "repairing_bond",
+            "dominant_arc_phase": "shifting",
+            "dominant_arc_summary": "repair is gathering around a relationship thread / phase=shifting / anchor=harbor slope",
+            "active_arc_count": 1,
+            "total_arcs": 1,
+            "top_arc_ids": ["repairing_bond::user::meaning::harbor_slope"],
+            "status_counts": {"active": 1},
+            "top_arcs": [
+                {
+                    "arc_id": "repairing_bond::user::meaning::harbor_slope",
+                    "arc_kind": "repairing_bond",
+                    "phase": "shifting",
+                    "status": "active",
+                    "summary": "repair is gathering around a relationship thread / phase=shifting / anchor=harbor slope",
+                    "learning_mode_focus": "repair_probe",
+                    "social_experiment_focus": "repair_signal_probe"
+                }
+            ]
+        },
+        "inner_os_relation_arc_summary": {
+            "summary_version": "v1",
+            "arc_kind": "repairing_relation",
+            "phase": "shifting",
+            "summary": "repair is gathering around a companion thread",
+            "dominant_driver": "person:user",
+            "supporting_drivers": ["person:user", "learning:repair_probe"],
+            "open_tension": "timing_sensitive_reentry",
+            "stability": 0.56,
+            "related_person_id": "user",
+            "group_thread_id": "threaded_group:user|friend",
+            "social_role": "companion",
+            "community_id": "harbor_collective",
+            "culture_id": "JP_basic",
+            "topology_focus": "threaded_group",
+            "learning_mode_focus": "repair_probe",
+            "social_experiment_focus": "repair_signal_probe",
+        },
+        "inner_os_group_relation_arc_summary": {
+            "summary_version": "v1",
+            "arc_kind": "repairing_relation",
+            "phase": "shifting",
+            "summary": "repair is moving through a shared group thread in small steps",
+            "group_thread_id": "threaded_group:user|friend",
+            "topology_focus": "threaded_group",
+            "boundary_mode": "same_group_reentry",
+            "reentry_window_focus": "next_same_group_window",
+            "dominant_person_id": "user",
+            "social_role": "companion",
+            "community_id": "harbor_collective",
+            "culture_id": "JP_basic",
+            "learning_mode_focus": "repair_probe",
+            "social_experiment_focus": "repair_signal_probe",
+            "open_tension": "timing_sensitive_reentry",
+            "stability": 0.61,
+        },
+        "inner_os_relation_arc_registry_summary": {
+            "dominant_arc_id": "repairing_relation::user::companion",
+            "dominant_arc_kind": "repairing_relation",
+            "dominant_arc_phase": "shifting",
+            "dominant_arc_summary": "repair is gathering around a companion thread",
+            "dominant_person_id": "user",
+            "dominant_group_thread_id": "threaded_group:user|friend",
+            "active_arc_count": 1,
+            "total_arcs": 1,
+            "top_arc_ids": ["repairing_relation::user::companion"],
+            "status_counts": {"active": 1},
+            "top_arcs": [
+                {
+                    "arc_id": "repairing_relation::user::companion",
+                    "arc_kind": "repairing_relation",
+                    "phase": "shifting",
+                    "status": "active",
+                    "summary": "repair is gathering around a companion thread",
+                    "learning_mode_focus": "repair_probe",
+                    "social_experiment_focus": "repair_signal_probe"
+                }
+            ]
+        },
         "inner_os_memory_class_summary": {
             "dominant_class": "bond_protection",
             "dominant_reason": "bond_protection_pressure",
@@ -242,6 +339,24 @@ def test_nightly_json_matches_schema(tmp_path) -> None:
                 }
             },
         },
+        "inner_os_discussion_thread_registry_summary": {
+            "dominant_thread_id": "repair_anchor",
+            "dominant_anchor": "repair anchor",
+            "dominant_issue_state": "pausing_issue",
+            "top_thread_ids": ["repair_anchor"],
+            "total_threads": 1,
+            "thread_scores": {"repair_anchor": 0.71},
+            "uncertainty": 0.18,
+            "threads": {
+                "repair_anchor": {
+                    "thread_id": "repair_anchor",
+                    "anchor": "repair anchor",
+                    "last_issue_state": "pausing_issue",
+                    "count": 2,
+                    "confidence": 0.48,
+                }
+            },
+        },
         "inner_os_daily_carry_summary": {
             "summary_version": "v1",
             "same_turn_focus": {
@@ -249,6 +364,7 @@ def test_nightly_json_matches_schema(tmp_path) -> None:
                 "commitment_target": "repair",
                 "commitment_state": "commit",
                 "insight_class": "reframed_relation",
+                "identity_arc_kind": "repairing_bond",
                 "group_thread_dominant_thread": "threaded_group:user|friend",
                 "group_thread_total_threads": 1,
             },
@@ -261,6 +377,9 @@ def test_nightly_json_matches_schema(tmp_path) -> None:
                 "body_homeostasis_focus": "recovering",
                 "relational_continuity_focus": "reopening",
                 "group_thread_focus": "threaded_group",
+                "identity_arc_kind": "repairing_bond",
+                "identity_arc_phase": "shifting",
+                "identity_arc_summary": "repair is gathering around a relationship thread / phase=shifting / anchor=harbor slope",
                 "expressive_style_focus": "warm_companion",
             },
             "carry_strengths": {
@@ -284,13 +403,38 @@ def test_nightly_json_matches_schema(tmp_path) -> None:
                 "relational_continuity_carry_visible": True,
                 "group_thread_carry_visible": True,
                 "group_thread_registry_visible": True,
+                "identity_arc_visible": True,
             },
+            "temporal_alignment": {
+                "same_turn_mode": "reentry",
+                "overnight_focus": "reentry",
+                "focus_alignment": True,
+                "same_to_overnight_reentry_delta": -0.39,
+                "reentry_carry_visible": True,
+                "reentry_carry_strength": 0.17,
+            },
+        },
+        "inner_os_temporal_alignment": {
+            "same_turn_mode": "reentry",
+            "overnight_focus": "reentry",
+            "focus_alignment": True,
+            "same_to_overnight_reentry_delta": -0.39,
+            "reentry_carry_visible": True,
+            "reentry_carry_strength": 0.17,
         },
         "inner_os_sleep_memory_class_focus": "bond_protection",
         "inner_os_sleep_terrain_reweighting_bias": 0.44,
         "inner_os_sleep_agenda_focus": "repair",
         "inner_os_sleep_agenda_bias": 0.33,
         "inner_os_sleep_agenda_reason": "repair_trace",
+        "inner_os_sleep_agenda_window_focus": "next_private_window",
+        "inner_os_sleep_agenda_window_bias": 0.19,
+        "inner_os_sleep_agenda_window_reason": "wait_for_private_window",
+        "inner_os_sleep_agenda_window_carry_target": "private_window",
+        "inner_os_sleep_learning_mode_focus": "repair_probe",
+        "inner_os_sleep_learning_mode_carry_bias": 0.15,
+        "inner_os_sleep_social_experiment_focus": "repair_signal_probe",
+        "inner_os_sleep_social_experiment_carry_bias": 0.13,
         "inner_os_sleep_commitment_target_focus": "repair",
         "inner_os_sleep_commitment_state_focus": "commit",
         "inner_os_sleep_commitment_carry_bias": 0.37,
@@ -305,6 +449,16 @@ def test_nightly_json_matches_schema(tmp_path) -> None:
         "inner_os_sleep_relational_continuity_carry_bias": 0.11,
         "inner_os_sleep_group_thread_focus": "threaded_group",
         "inner_os_sleep_group_thread_carry_bias": 0.1,
+        "inner_os_sleep_autobiographical_thread_mode": "unfinished_thread",
+        "inner_os_sleep_autobiographical_thread_anchor": "harbor promise",
+        "inner_os_sleep_autobiographical_thread_focus": "unfinished promise",
+        "inner_os_sleep_autobiographical_thread_strength": 0.41,
+        "inner_os_sleep_temporal_membrane_focus": "reentry",
+        "inner_os_sleep_temporal_timeline_bias": 0.12,
+        "inner_os_sleep_temporal_reentry_bias": 0.17,
+        "inner_os_sleep_temporal_supersession_bias": 0.04,
+        "inner_os_sleep_temporal_continuity_bias": 0.11,
+        "inner_os_sleep_temporal_relation_reentry_bias": 0.09,
         "inner_os_sleep_expressive_style_focus": "warm_companion",
         "inner_os_sleep_expressive_style_carry_bias": 0.1,
         "inner_os_sleep_expressive_style_history_focus": "warm_companion",
@@ -362,6 +516,8 @@ def test_nightly_json_matches_schema(tmp_path) -> None:
     assert payload.get("inner_os_working_memory_replay_bias", {}).get("anchor") == "harbor slope"
     assert payload.get("inner_os_working_memory_replay_bias", {}).get("matched_events") == 2
     assert payload.get("inner_os_long_term_theme_summary", {}).get("summary") == "fragile harbor promise"
+    assert payload.get("inner_os_identity_arc_summary", {}).get("arc_kind") == "repairing_bond"
+    assert payload.get("inner_os_identity_arc_registry_summary", {}).get("dominant_arc_kind") == "repairing_bond"
     assert payload.get("inner_os_memory_class_summary", {}).get("dominant_class") == "bond_protection"
     assert payload.get("inner_os_agenda_summary", {}).get("dominant_agenda") == "repair"
     assert payload.get("inner_os_commitment_summary", {}).get("dominant_target") == "repair"
@@ -372,11 +528,22 @@ def test_nightly_json_matches_schema(tmp_path) -> None:
     assert payload.get("inner_os_daily_carry_summary", {}).get("same_turn_focus", {}).get("memory_class") == "bond_protection"
     assert payload.get("inner_os_daily_carry_summary", {}).get("overnight_focus", {}).get("commitment_target_focus") == "repair"
     assert payload.get("inner_os_daily_carry_summary", {}).get("overnight_focus", {}).get("group_thread_focus") == "threaded_group"
+    assert payload.get("inner_os_daily_carry_summary", {}).get("temporal_alignment", {}).get("focus_alignment") is True
+    assert payload.get("inner_os_temporal_alignment", {}).get("same_turn_mode") == "reentry"
+    assert payload.get("inner_os_temporal_alignment", {}).get("reentry_carry_strength") == 0.17
     assert payload.get("inner_os_sleep_memory_class_focus") == "bond_protection"
     assert payload.get("inner_os_sleep_terrain_reweighting_bias") == 0.44
     assert payload.get("inner_os_sleep_agenda_focus") == "repair"
     assert payload.get("inner_os_sleep_agenda_bias") == 0.33
     assert payload.get("inner_os_sleep_agenda_reason") == "repair_trace"
+    assert payload.get("inner_os_sleep_agenda_window_focus") == "next_private_window"
+    assert payload.get("inner_os_sleep_agenda_window_bias") == 0.19
+    assert payload.get("inner_os_sleep_agenda_window_reason") == "wait_for_private_window"
+    assert payload.get("inner_os_sleep_agenda_window_carry_target") == "private_window"
+    assert payload.get("inner_os_sleep_learning_mode_focus") == "repair_probe"
+    assert payload.get("inner_os_sleep_learning_mode_carry_bias") == 0.15
+    assert payload.get("inner_os_sleep_social_experiment_focus") == "repair_signal_probe"
+    assert payload.get("inner_os_sleep_social_experiment_carry_bias") == 0.13
     assert payload.get("inner_os_sleep_commitment_target_focus") == "repair"
     assert payload.get("inner_os_sleep_commitment_state_focus") == "commit"
     assert payload.get("inner_os_sleep_commitment_carry_bias") == 0.37
@@ -391,6 +558,16 @@ def test_nightly_json_matches_schema(tmp_path) -> None:
     assert payload.get("inner_os_sleep_relational_continuity_carry_bias") == 0.11
     assert payload.get("inner_os_sleep_group_thread_focus") == "threaded_group"
     assert payload.get("inner_os_sleep_group_thread_carry_bias") == 0.1
+    assert payload.get("inner_os_sleep_autobiographical_thread_mode") == "unfinished_thread"
+    assert payload.get("inner_os_sleep_autobiographical_thread_anchor") == "harbor promise"
+    assert payload.get("inner_os_sleep_autobiographical_thread_focus") == "unfinished promise"
+    assert payload.get("inner_os_sleep_autobiographical_thread_strength") == 0.41
+    assert payload.get("inner_os_sleep_temporal_membrane_focus") == "reentry"
+    assert payload.get("inner_os_sleep_temporal_timeline_bias") == 0.12
+    assert payload.get("inner_os_sleep_temporal_reentry_bias") == 0.17
+    assert payload.get("inner_os_sleep_temporal_supersession_bias") == 0.04
+    assert payload.get("inner_os_sleep_temporal_continuity_bias") == 0.11
+    assert payload.get("inner_os_sleep_temporal_relation_reentry_bias") == 0.09
     assert payload.get("inner_os_sleep_expressive_style_focus") == "warm_companion"
     assert payload.get("inner_os_sleep_expressive_style_carry_bias") == 0.1
     assert payload.get("inner_os_sleep_expressive_style_history_focus") == "warm_companion"

@@ -23,6 +23,9 @@ def test_surface_language_profile_prefers_compact_wit_in_safe_one_to_one() -> No
         cultural_state_name="casual_shared",
         cultural_joke_ratio_ceiling=0.62,
         lexical_variation_carry_bias=0.12,
+        identity_arc_kind="",
+        identity_arc_phase="",
+        identity_arc_open_tension="",
     )
 
     assert profile.banter_move == "compact_wit"
@@ -49,11 +52,43 @@ def test_surface_language_profile_prefers_thread_soften_in_group() -> None:
         cultural_state_name="group_attuned",
         cultural_joke_ratio_ceiling=0.26,
         lexical_variation_carry_bias=0.08,
+        identity_arc_kind="",
+        identity_arc_phase="",
+        identity_arc_open_tension="",
     )
 
     assert profile.banter_move == "thread_soften"
     assert profile.lexical_variation_mode == "group_attuned"
     assert profile.group_register == "threaded_group"
+
+
+def test_surface_language_profile_prefers_warm_refrain_for_repairing_bond() -> None:
+    profile = derive_surface_language_profile(
+        recovery_state="open",
+        protection_mode_name="repair",
+        grice_state="acknowledge_then_extend",
+        expressive_style_name="warm_companion",
+        expressive_style_history_focus="quiet_repair",
+        relational_continuity_name="reopening",
+        relational_banter_style="compact_wit",
+        relational_lexical_variation_bias=0.4,
+        relational_banter_room=0.42,
+        lightness_budget_name="warm_only",
+        lightness_banter_room=0.38,
+        lightness_playful_ceiling=0.44,
+        lightness_suppression=0.16,
+        social_topology_name="one_to_one",
+        cultural_state_name="casual_shared",
+        cultural_joke_ratio_ceiling=0.42,
+        lexical_variation_carry_bias=0.12,
+        identity_arc_kind="repairing_bond",
+        identity_arc_phase="integrating",
+        identity_arc_open_tension="timing_sensitive_reentry",
+    )
+
+    assert profile.banter_move == "warm_refrain"
+    assert profile.lexical_variation_mode == "warm_varied"
+    assert "identity_repair_warm_refrain" in profile.dominant_inputs
 
 
 def test_shape_surface_language_text_applies_compact_and_group_moves() -> None:

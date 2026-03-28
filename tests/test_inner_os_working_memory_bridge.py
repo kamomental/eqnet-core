@@ -33,6 +33,10 @@ def test_build_inner_os_working_memory_snapshot_summarizes_recent_traces(tmp_pat
             "culture_id": "coastal",
             "community_id": "harbor_collective",
             "social_role": "companion",
+            "autobiographical_thread_mode": "unfinished_thread",
+            "autobiographical_thread_anchor": "harbor slope",
+            "autobiographical_thread_focus": "unfinished promise",
+            "autobiographical_thread_strength": 0.44,
         },
         {
             "kind": "working_memory_trace",
@@ -53,6 +57,10 @@ def test_build_inner_os_working_memory_snapshot_summarizes_recent_traces(tmp_pat
             "long_term_theme_strength": 0.63,
             "long_term_theme_kind": "meaning",
             "long_term_theme_summary": "fragile harbor promise",
+            "autobiographical_thread_mode": "unfinished_thread",
+            "autobiographical_thread_anchor": "harbor slope",
+            "autobiographical_thread_focus": "unfinished promise",
+            "autobiographical_thread_strength": 0.58,
         },
     ]
     memory_path.write_text(
@@ -73,6 +81,9 @@ def test_build_inner_os_working_memory_snapshot_summarizes_recent_traces(tmp_pat
     assert snapshot["focus_anchor"] == "harbor slope"
     assert snapshot["source_trace_count"] == 2
     assert snapshot["promotion_readiness"] > 0.0
+    assert snapshot["autobiographical_thread_mode"] == "unfinished_thread"
+    assert snapshot["autobiographical_thread_anchor"] == "harbor slope"
+    assert snapshot["autobiographical_thread_strength"] > 0.4
     assert "deferred_meaning" in snapshot["dominant_open_loops"]
     assert snapshot["long_term_theme_focus"] == "meaning"
     assert snapshot["long_term_theme_summary"] == "fragile harbor promise"

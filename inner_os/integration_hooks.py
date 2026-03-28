@@ -59,9 +59,11 @@ from .conversation_contract import build_conversation_contract
 from .conversational_objects import derive_conversational_objects
 from .contact_field import derive_contact_field
 from .contact_dynamics import advance_contact_dynamics
+from .contact_reflection_state import derive_contact_reflection_state
 from .constraint_field import derive_constraint_field
 from .dot_seed import derive_dot_seeds
 from .group_thread_registry import update_group_thread_registry_snapshot as advance_group_thread_registry_snapshot
+from .green_kernel_contracts import build_green_kernel_composition
 from .interaction_effects import derive_interaction_effects
 from .interaction_audit_bundle import build_interaction_audit_bundle
 from .interaction_audit_casebook import (
@@ -74,9 +76,13 @@ from .interaction_condition_report import build_interaction_condition_report
 from .interaction_inspection_report import build_interaction_inspection_report
 from .interaction_judgement_summary import derive_interaction_judgement_summary
 from .interaction_judgement_view import derive_interaction_judgement_view
+from .issue_state import derive_issue_state
 from .policy_packet import derive_interaction_policy_packet
+from .discussion_thread_state import derive_discussion_thread_state
 from .object_operations import derive_object_operations
+from .qualia_membrane_operator import derive_qualia_membrane_temporal_bias
 from .qualia_kernel_adapter import RuntimeQualiaKernelAdapter
+from .recent_dialogue_state import derive_recent_dialogue_state
 from .resonance_evaluator import (
     evaluate_interaction_resonance,
     rerank_interaction_option_candidates,
@@ -100,6 +106,7 @@ from .terrain_plasticity import (
     derive_terrain_plasticity_update,
 )
 from .temperament_estimate import advance_temperament_traces, derive_temperament_estimate
+from .temporal_memory_orchestration import build_temporal_memory_evidence_bundle
 from .expression.hint_bridge import (
     build_expression_hints_from_gate_result,
     build_qualia_planner_view_hint,
@@ -353,6 +360,11 @@ class HookState:
     conscious_residue_anchor: str = ""
     conscious_residue_summary: str = ""
     conscious_residue_strength: float = 0.0
+    autobiographical_thread_mode: str = "none"
+    autobiographical_thread_anchor: str = ""
+    autobiographical_thread_focus: str = ""
+    autobiographical_thread_strength: float = 0.0
+    autobiographical_thread_reasons: list[str] = field(default_factory=list)
     interaction_alignment_score: float = 0.0
     shared_attention_delta: float = 0.0
     distance_mismatch: float = 0.0
@@ -381,12 +393,14 @@ class MemoryRecallResult:
     recall_payload: Dict[str, Any] = field(default_factory=dict)
     retrieval_summary: Dict[str, Any] = field(default_factory=dict)
     ignition_hints: Dict[str, Any] = field(default_factory=dict)
+    memory_evidence_bundle: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "recall_payload": dict(self.recall_payload),
             "retrieval_summary": dict(self.retrieval_summary),
             "ignition_hints": dict(self.ignition_hints),
+            "memory_evidence_bundle": dict(self.memory_evidence_bundle),
         }
 
 
@@ -1370,6 +1384,29 @@ class IntegrationHooks:
             }
         )
 
+        memory_evidence_bundle = build_temporal_memory_evidence_bundle(
+            cue_text=cue_text,
+            current_state=current_state,
+            world_snapshot=world_snapshot,
+            recall_payload=recall_payload,
+            retrieval_summary=retrieval,
+        )
+        qualia_membrane_temporal = derive_qualia_membrane_temporal_bias(
+            memory_evidence_bundle=memory_evidence_bundle,
+            current_state=current_state,
+            world_snapshot=world_snapshot,
+        )
+        recall_payload.update(
+            {
+                "temporal_timeline_coherence": qualia_membrane_temporal.timeline_coherence,
+                "temporal_reentry_pull": qualia_membrane_temporal.reentry_pull,
+                "temporal_supersession_pressure": qualia_membrane_temporal.supersession_pressure,
+                "temporal_continuity_pressure": qualia_membrane_temporal.continuity_pressure,
+                "temporal_relation_reentry_pull": qualia_membrane_temporal.relation_reentry_pull,
+                "temporal_membrane_mode": qualia_membrane_temporal.dominant_mode,
+            }
+        )
+
         return MemoryRecallResult(
             recall_payload=recall_payload,
             retrieval_summary=retrieval,
@@ -1400,7 +1437,9 @@ class IntegrationHooks:
                 "context_shift_trace": context_shift_trace,
                 "working_memory": working_memory.to_dict(),
                 "relation_seed_summary": relation_seed_summary,
+                "qualia_membrane_temporal": qualia_membrane_temporal.to_dict(),
             },
+            memory_evidence_bundle=memory_evidence_bundle,
         )
 
     def response_gate(
@@ -1845,6 +1884,14 @@ class IntegrationHooks:
             recovery_need=recovery_need,
             safety_bias=safety_bias,
             relation_bias_strength=relation_bias_strength,
+            temporal_membrane_bias={
+                "timeline_coherence": _float_from(current_state, "temporal_timeline_coherence", default=0.0),
+                "reentry_pull": _float_from(current_state, "temporal_reentry_pull", default=0.0),
+                "supersession_pressure": _float_from(current_state, "temporal_supersession_pressure", default=0.0),
+                "continuity_pressure": _float_from(current_state, "temporal_continuity_pressure", default=0.0),
+                "relation_reentry_pull": _float_from(current_state, "temporal_relation_reentry_pull", default=0.0),
+                "dominant_mode": str(current_state.get("temporal_membrane_mode") or "").strip(),
+            },
         )
         constraint_field = derive_constraint_field(
             scene_state=scene_state,
@@ -1931,6 +1978,13 @@ class IntegrationHooks:
             qualia_state=qualia_state,
             terrain_readout=terrain_readout.to_dict(),
             insight_event=insight_event.to_dict(),
+        )
+        contact_reflection_state = derive_contact_reflection_state(
+            contact_field=contact_field.to_dict(),
+            contact_dynamics=contact_dynamics.to_dict(),
+            access_projection=access_projection.to_dict(),
+            constraint_field=constraint_field.to_dict(),
+            current_risks=["danger"] if safety_bias > 0.32 else [],
         )
         access_dynamics = advance_access_dynamics(
             access_projection=access_projection.to_dict(),
@@ -2097,6 +2151,7 @@ class IntegrationHooks:
         expression_hints["contact_field"] = contact_field.to_dict()
         expression_hints["contact_dynamics"] = contact_dynamics.to_dict()
         expression_hints["contact_dynamics_mode"] = contact_dynamics.dynamics_mode
+        expression_hints["contact_reflection_state"] = contact_reflection_state.to_dict()
         expression_hints["qualia_state"] = qualia_state
         expression_hints["qualia_axis_labels"] = list(qualia_kernel.axis_labels)
         expression_hints["qualia_estimator_health"] = qualia_kernel.health.to_dict()
@@ -2218,6 +2273,47 @@ class IntegrationHooks:
             insight_terrain_shape_target=_text_or_none(current_state.get("insight_terrain_shape_target")) or "",
             self_state=current_state,
         )
+        recent_dialogue_state = derive_recent_dialogue_state(
+            str(current_state.get("surface_user_text") or draft.get("text") or "").strip(),
+            current_state.get("recent_dialogue_history"),
+            interaction_policy=interaction_policy_packet,
+        ).to_dict()
+        interaction_policy_packet["recent_dialogue_state"] = recent_dialogue_state
+        discussion_thread_state = derive_discussion_thread_state(
+            str(current_state.get("surface_user_text") or draft.get("text") or "").strip(),
+            current_state.get("recent_dialogue_history"),
+            recent_dialogue_state=recent_dialogue_state,
+            interaction_policy=interaction_policy_packet,
+        ).to_dict()
+        interaction_policy_packet["discussion_thread_state"] = discussion_thread_state
+        issue_state = derive_issue_state(
+            str(current_state.get("surface_user_text") or draft.get("text") or "").strip(),
+            current_state.get("recent_dialogue_history"),
+            discussion_thread_state=discussion_thread_state,
+            recent_dialogue_state=recent_dialogue_state,
+            interaction_policy=interaction_policy_packet,
+        ).to_dict()
+        interaction_policy_packet["issue_state"] = issue_state
+        interaction_policy_packet["contact_reflection_state"] = contact_reflection_state.to_dict()
+        green_kernel_composition = build_green_kernel_composition(
+            temporal_membrane_bias=expression_hints.get("qualia_membrane_temporal"),
+            memory_evidence_bundle=expression_hints.get("temporal_memory_evidence_bundle"),
+            affect_blend_state=affect_blend_state.to_dict(),
+            recent_dialogue_state=recent_dialogue_state,
+            discussion_thread_state=discussion_thread_state,
+            issue_state=issue_state,
+            contact_reflection_state=contact_reflection_state.to_dict(),
+            boundary_transform={},
+            residual_reflection={},
+            autobiographical_thread={
+                "mode": str(interaction_policy_packet.get("autobiographical_thread_mode") or ""),
+                "anchor": str(interaction_policy_packet.get("autobiographical_thread_anchor") or ""),
+                "focus": str(interaction_policy_packet.get("autobiographical_thread_focus") or ""),
+                "strength": interaction_policy_packet.get("autobiographical_thread_strength") or 0.0,
+                "reasons": list(interaction_policy_packet.get("autobiographical_thread_reasons") or []),
+            },
+        ).to_dict()
+        interaction_policy_packet["green_kernel_composition"] = green_kernel_composition
         conversation_contract = build_conversation_contract(
             conversational_objects=conversational_objects.to_dict(),
             object_operations=object_operations.to_dict(),
@@ -2231,6 +2327,11 @@ class IntegrationHooks:
         actuation_plan = derive_actuation_plan(interaction_policy_packet, action_posture)
         expression_hints["conversation_contract"] = conversation_contract
         expression_hints["interaction_policy_packet"] = interaction_policy_packet
+        expression_hints["recent_dialogue_state"] = recent_dialogue_state
+        expression_hints["discussion_thread_state"] = discussion_thread_state
+        expression_hints["issue_state"] = issue_state
+        expression_hints["interaction_policy_contact_reflection_state"] = contact_reflection_state.to_dict()
+        expression_hints["green_kernel_composition"] = green_kernel_composition
         expression_hints["interaction_policy_strategy"] = interaction_policy_packet["response_strategy"]
         expression_hints["interaction_policy_opening_move"] = interaction_policy_packet["opening_move"]
         expression_hints["interaction_policy_followup_move"] = interaction_policy_packet["followup_move"]
@@ -2248,6 +2349,13 @@ class IntegrationHooks:
         expression_hints["interaction_policy_agenda_state"] = interaction_policy_packet["agenda_state"]
         expression_hints["interaction_policy_agenda_window_state"] = interaction_policy_packet["agenda_window_state"]
         expression_hints["interaction_policy_commitment_state"] = interaction_policy_packet["commitment_state"]
+        expression_hints["interaction_policy_learning_mode_state"] = interaction_policy_packet["learning_mode_state"]
+        expression_hints["interaction_policy_social_experiment_loop_state"] = interaction_policy_packet["social_experiment_loop_state"]
+        expression_hints["interaction_policy_identity_arc_kind"] = interaction_policy_packet["identity_arc_kind"]
+        expression_hints["interaction_policy_identity_arc_phase"] = interaction_policy_packet["identity_arc_phase"]
+        expression_hints["interaction_policy_identity_arc_summary"] = interaction_policy_packet["identity_arc_summary"]
+        expression_hints["interaction_policy_identity_arc_open_tension"] = interaction_policy_packet["identity_arc_open_tension"]
+        expression_hints["interaction_policy_identity_arc_stability"] = interaction_policy_packet["identity_arc_stability"]
         expression_hints["interaction_policy_relational_style_memory_state"] = interaction_policy_packet["relational_style_memory_state"]
         expression_hints["interaction_policy_cultural_conversation_state"] = interaction_policy_packet["cultural_conversation_state"]
         expression_hints["interaction_policy_expressive_style_state"] = interaction_policy_packet["expressive_style_state"]
@@ -2270,6 +2378,11 @@ class IntegrationHooks:
         expression_hints["surface_cultural_joke_ratio_ceiling"] = round(float((interaction_policy_packet.get("cultural_conversation_state") or {}).get("joke_ratio_ceiling") or 0.0), 4)
         expression_hints["surface_lightness_budget_state"] = str((interaction_policy_packet.get("lightness_budget_state") or {}).get("state") or "grounded_only")
         expression_hints["surface_lightness_banter_room"] = round(float((interaction_policy_packet.get("lightness_budget_state") or {}).get("banter_room") or 0.0), 4)
+        expression_hints["surface_learning_mode_state"] = str((interaction_policy_packet.get("learning_mode_state") or {}).get("state") or "observe_only")
+        expression_hints["surface_social_experiment_state"] = str((interaction_policy_packet.get("social_experiment_loop_state") or {}).get("state") or "watch_and_read")
+        expression_hints["surface_identity_arc_kind"] = str(interaction_policy_packet.get("identity_arc_kind") or "")
+        expression_hints["surface_identity_arc_phase"] = str(interaction_policy_packet.get("identity_arc_phase") or "")
+        expression_hints["surface_identity_arc_open_tension"] = str(interaction_policy_packet.get("identity_arc_open_tension") or "")
         expression_hints["action_posture"] = action_posture
         expression_hints["action_posture_mode"] = action_posture["engagement_mode"]
         expression_hints["action_posture_goal"] = action_posture["outcome_goal"]
@@ -2686,6 +2799,11 @@ class IntegrationHooks:
             conscious_residue_anchor=settled_working_memory.conscious_residue_anchor,
             conscious_residue_summary=settled_working_memory.conscious_residue_summary,
             conscious_residue_strength=settled_working_memory.conscious_residue_strength,
+            autobiographical_thread_mode=settled_working_memory.autobiographical_thread_mode,
+            autobiographical_thread_anchor=settled_working_memory.autobiographical_thread_anchor,
+            autobiographical_thread_focus=settled_working_memory.autobiographical_thread_focus,
+            autobiographical_thread_strength=settled_working_memory.autobiographical_thread_strength,
+            autobiographical_thread_reasons=list(settled_working_memory.autobiographical_thread_reasons),
             long_term_theme_focus=settled_working_memory.long_term_theme_focus,
             long_term_theme_anchor=settled_working_memory.long_term_theme_anchor,
             long_term_theme_kind=settled_working_memory.long_term_theme_kind,
@@ -3039,6 +3157,21 @@ class IntegrationHooks:
             or counterpart_person_id
             or ""
         ).strip()
+        recent_dialogue_state = dict(
+            interaction_policy_packet.get("recent_dialogue_state")
+            or current_state.get("recent_dialogue_state")
+            or {}
+        )
+        discussion_thread_state = dict(
+            interaction_policy_packet.get("discussion_thread_state")
+            or current_state.get("discussion_thread_state")
+            or {}
+        )
+        issue_state = dict(
+            interaction_policy_packet.get("issue_state")
+            or current_state.get("issue_state")
+            or {}
+        )
         if group_thread_focus:
             appends.append(
                 {
@@ -3065,6 +3198,38 @@ class IntegrationHooks:
                     "culture_id": world_snapshot.get("culture_id"),
                     "community_id": world_snapshot.get("community_id"),
                     "social_role": world_snapshot.get("social_role"),
+                }
+            )
+        discussion_anchor = str(
+            issue_state.get("issue_anchor")
+            or discussion_thread_state.get("topic_anchor")
+            or recent_dialogue_state.get("recent_anchor")
+            or ""
+        ).strip()
+        discussion_state_name = str(discussion_thread_state.get("state") or "").strip()
+        issue_state_name = str(issue_state.get("state") or "").strip()
+        if discussion_anchor or discussion_state_name or issue_state_name:
+            appends.append(
+                {
+                    "kind": "discussion_thread_trace",
+                    "source": "post_turn",
+                    "summary": f"{discussion_anchor or 'ambient'}:{issue_state_name or discussion_state_name or 'ambient'}",
+                    "text": reply_text or str(user_input.get("text") or "").strip(),
+                    "memory_anchor": discussion_anchor or _text_or_none(current_state.get("memory_anchor")),
+                    "recent_dialogue_state": str(recent_dialogue_state.get("state") or "").strip(),
+                    "recent_dialogue_overlap": round(float(recent_dialogue_state.get("overlap_score") or 0.0), 4),
+                    "recent_dialogue_reopen_pressure": round(float(recent_dialogue_state.get("reopen_pressure") or 0.0), 4),
+                    "recent_dialogue_thread_carry": round(float(recent_dialogue_state.get("thread_carry") or 0.0), 4),
+                    "discussion_thread_state": discussion_state_name,
+                    "discussion_thread_anchor": str(discussion_thread_state.get("topic_anchor") or "").strip(),
+                    "discussion_unresolved_pressure": round(float(discussion_thread_state.get("unresolved_pressure") or 0.0), 4),
+                    "discussion_revisit_readiness": round(float(discussion_thread_state.get("revisit_readiness") or 0.0), 4),
+                    "discussion_thread_visibility": round(float(discussion_thread_state.get("thread_visibility") or 0.0), 4),
+                    "issue_state": issue_state_name,
+                    "issue_anchor": str(issue_state.get("issue_anchor") or "").strip(),
+                    "issue_question_pressure": round(float(issue_state.get("question_pressure") or 0.0), 4),
+                    "issue_pause_readiness": round(float(issue_state.get("pause_readiness") or 0.0), 4),
+                    "issue_resolution_readiness": round(float(issue_state.get("resolution_readiness") or 0.0), 4),
                 }
             )
         for append in appends:

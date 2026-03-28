@@ -334,13 +334,14 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <canvas id="rSpark" width="360" height="80"></canvas>
   </section>
 
-  <section class="card inner-os-card">
-    <h2>Inner OS Continuity</h2>
-    <div class="inner-os-block">
-      <strong>Same Turn</strong>
-      <div class="inner-os-kv">
+    <section class="card inner-os-card">
+      <h2>Inner OS Continuity</h2>
+      <div class="inner-os-block">
+        <strong>Same Turn</strong>
+        <div class="inner-os-kv">
         <div><span>mode</span><span id="iosMode">--</span></div>
         <div><span>commitment</span><span id="iosCommitment">--</span></div>
+        <div><span>temporal</span><span id="iosTemporalSame">--</span></div>
         <div><span>body</span><span id="iosBody">--</span></div>
         <div><span>relation</span><span id="iosRelation">--</span></div>
         <div><span>topology</span><span id="iosTopology">--</span></div>
@@ -350,6 +351,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <strong>Overnight</strong>
       <div class="inner-os-kv">
         <div><span>carry</span><span id="iosCarry">--</span></div>
+        <div><span>temporal</span><span id="iosTemporalOvernight">--</span></div>
         <div><span>homeostasis</span><span id="iosHomeostasis">--</span></div>
         <div><span>relation focus</span><span id="iosRelationFocus">--</span></div>
         <div><span>temperament</span><span id="iosTemperament">--</span></div>
@@ -361,12 +363,38 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="inner-os-kv">
         <div><span>model</span><span id="iosModel">--</span></div>
         <div><span>migration</span><span id="iosMigration">--</span></div>
+        <div><span>temporal</span><span id="iosTemporalTransfer">--</span></div>
         <div><span>semantic seed</span><span id="iosSeed">--</span></div>
-        <div><span>commitment carry</span><span id="iosCommitmentCarry">--</span></div>
-        <div><span>target</span><span id="iosTargetModel">--</span></div>
+          <div><span>commitment carry</span><span id="iosCommitmentCarry">--</span></div>
+          <div><span>target</span><span id="iosTargetModel">--</span></div>
+        </div>
       </div>
-    </div>
-  </section>
+      <div class="inner-os-block">
+        <strong>Temporal Alignment</strong>
+      <div class="inner-os-kv">
+        <div><span>focus</span><span id="iosTemporalAlignment">--</span></div>
+        <div><span>delta</span><span id="iosTemporalDelta">--</span></div>
+      </div>
+      </div>
+      <div class="inner-os-block">
+        <strong>Boundary Residual</strong>
+        <div class="inner-os-kv">
+          <div><span>mode</span><span id="iosBoundaryMode">--</span></div>
+          <div><span>residual</span><span id="iosResidualMode">--</span></div>
+          <div><span>counts</span><span id="iosBoundaryCounts">--</span></div>
+          <div><span>strength</span><span id="iosResidualStrength">--</span></div>
+        </div>
+      </div>
+      <div class="inner-os-block">
+        <strong>Contact Reflection</strong>
+        <div class="inner-os-kv">
+          <div><span>state</span><span id="iosContactState">--</span></div>
+          <div><span>style</span><span id="iosContactStyle">--</span></div>
+          <div><span>shares</span><span id="iosContactShares">--</span></div>
+          <div><span>visible</span><span id="iosContactVisible">--</span></div>
+        </div>
+      </div>
+    </section>
 
   <footer>
     Hotkeys: F9 繧ｻ繝・す繝ｧ繝ｳ / F10 髻ｳ莉句・荳譎ょ●豁｢ / F11 繝ｭ繧ｰ繝槭・繧ｫ繝ｼ 繝ｻ Ctrl+R 縺ｧ config reload
@@ -706,19 +734,36 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     }}
 
     async function refreshInnerOSSnapshot() {{
-      try {{
-        const response = await fetch(INNER_OS_API, {{ cache: "no-store" }});
-        const payload = await response.json();
-        const sameTurn = payload.same_turn || {{}};
-        const overnight = payload.overnight || {{}};
-        const transfer = payload.transfer || {{}};
-        const model = payload.model || {{}};
+        try {{
+          const response = await fetch(INNER_OS_API, {{ cache: "no-store" }});
+          const payload = await response.json();
+          const sameTurn = payload.same_turn || {{}};
+          const overnight = payload.overnight || {{}};
+          const transfer = payload.transfer || {{}};
+          const temporalAlignment = payload.temporal_alignment || {{}};
+          const boundaryAlignment = payload.boundary_alignment || {{}};
+          const contactAlignment = payload.contact_alignment || {{}};
+          const model = payload.model || {{}};
+          const sameTemporalParts = [
+            sameTurn.temporal_membrane_mode,
+            sameTurn.temporal_reentry_pull ? `reentry:${{formatNumber(sameTurn.temporal_reentry_pull)}}` : "",
+          ].filter(Boolean);
+        const overnightTemporalParts = [
+          overnight.temporal_membrane_focus,
+          overnight.temporal_reentry_bias ? `reentry:${{formatNumber(overnight.temporal_reentry_bias)}}` : "",
+        ].filter(Boolean);
+        const transferTemporalParts = [
+          transfer.temporal_membrane_focus,
+          transfer.temporal_reentry_bias ? `reentry:${{formatNumber(transfer.temporal_reentry_bias)}}` : "",
+        ].filter(Boolean);
         setInnerOSText("iosMode", sameTurn.protection_mode);
         setInnerOSText("iosCommitment", sameTurn.commitment_target);
+        setInnerOSText("iosTemporalSame", sameTemporalParts.join(" / "));
         setInnerOSText("iosBody", sameTurn.body_homeostasis_state || sameTurn.homeostasis_budget_state);
         setInnerOSText("iosRelation", sameTurn.relational_continuity_state || sameTurn.relation_competition_state);
         setInnerOSText("iosTopology", sameTurn.social_topology_state);
         setInnerOSText("iosCarry", payload.dominant_carry_channel);
+        setInnerOSText("iosTemporalOvernight", overnightTemporalParts.join(" / "));
         setInnerOSText("iosHomeostasis", overnight.homeostasis_budget_focus || overnight.body_homeostasis_focus);
         setInnerOSText("iosRelationFocus", overnight.relational_continuity_focus);
         setInnerOSText("iosTemperament", overnight.temperament_focus);
@@ -729,13 +774,56 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           "iosMigration",
           transfer.migration_active ? (transfer.from_legacy ? "legacy->v1" : "active") : "none",
         );
-        setInnerOSText("iosSeed", transfer.semantic_seed_visible ? "visible" : "none");
-        setInnerOSText("iosCommitmentCarry", transfer.commitment_carry_visible ? "visible" : "none");
-        setInnerOSText("iosTargetModel", transfer.target_model_requested);
-      }} catch (err) {{
-        console.error("Failed to load inner os snapshot", err);
+          setInnerOSText("iosTemporalTransfer", transferTemporalParts.join(" / "));
+          setInnerOSText("iosSeed", transfer.semantic_seed_visible ? "visible" : "none");
+          setInnerOSText("iosCommitmentCarry", transfer.commitment_carry_visible ? "visible" : "none");
+          setInnerOSText("iosTargetModel", transfer.target_model_requested);
+          const alignmentParts = [
+            temporalAlignment.focus_alignment ? "aligned" : "shifted",
+            temporalAlignment.reentry_carry_visible ? `carry:${{formatNumber(temporalAlignment.reentry_carry_strength)}}` : "",
+          ].filter(Boolean);
+          const deltaParts = [
+            `s->o:${{formatNumber(temporalAlignment.same_to_overnight_reentry_delta)}}`,
+            `o->t:${{formatNumber(temporalAlignment.overnight_to_transfer_reentry_delta)}}`,
+          ];
+          setInnerOSText("iosTemporalAlignment", alignmentParts.join(" / "));
+          setInnerOSText("iosTemporalDelta", deltaParts.join(" / "));
+          const boundaryModeParts = [
+            boundaryAlignment.gate_mode,
+            boundaryAlignment.transform_mode,
+          ].filter(Boolean);
+          const residualModeParts = [
+            boundaryAlignment.residual_mode,
+            boundaryAlignment.residual_focus ? `focus:${{boundaryAlignment.residual_focus}}` : "",
+          ].filter(Boolean);
+          const boundaryCountParts = [
+            `soft:${{boundaryAlignment.softened_count ?? 0}}`,
+            `withheld:${{boundaryAlignment.withheld_count ?? 0}}`,
+            `deferred:${{boundaryAlignment.deferred_count ?? 0}}`,
+          ];
+          const residualStrengthParts = [
+            boundaryAlignment.unsaid_pressure_visible ? "visible" : "quiet",
+            `p:${{formatNumber(boundaryAlignment.residual_pressure)}}`,
+            `s:${{formatNumber(boundaryAlignment.residual_strength)}}`,
+          ];
+          setInnerOSText("iosBoundaryMode", boundaryModeParts.join(" / "));
+          setInnerOSText("iosResidualMode", residualModeParts.join(" / "));
+          setInnerOSText("iosBoundaryCounts", boundaryCountParts.join(" / "));
+          setInnerOSText("iosResidualStrength", residualStrengthParts.join(" / "));
+          const contactShareParts = [
+            `t:${{formatNumber(contactAlignment.transmit_share)}}`,
+            `r:${{formatNumber(contactAlignment.reflect_share)}}`,
+            `a:${{formatNumber(contactAlignment.absorb_share)}}`,
+            `b:${{formatNumber(contactAlignment.block_share)}}`,
+          ];
+          setInnerOSText("iosContactState", contactAlignment.state);
+          setInnerOSText("iosContactStyle", contactAlignment.style);
+          setInnerOSText("iosContactShares", contactShareParts.join(" / "));
+          setInnerOSText("iosContactVisible", contactAlignment.reflection_visible ? "visible" : "quiet");
+        }} catch (err) {{
+          console.error("Failed to load inner os snapshot", err);
+        }}
       }}
-    }}
 
     function connectStream(path, handler) {{
       let socket;

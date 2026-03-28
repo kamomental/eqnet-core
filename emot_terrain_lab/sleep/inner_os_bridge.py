@@ -234,6 +234,14 @@ def _derive_current_state(
         agenda_summary,
         "dominant_reason",
     )
+    agenda_window_focus = _text_from(nightly_summary, "inner_os_sleep_agenda_window_focus")
+    agenda_window_bias = _float_from(nightly_summary, "inner_os_sleep_agenda_window_bias", 0.0)
+    agenda_window_reason = _text_from(nightly_summary, "inner_os_sleep_agenda_window_reason")
+    agenda_window_carry_target = _text_from(nightly_summary, "inner_os_sleep_agenda_window_carry_target")
+    learning_mode_focus = _text_from(nightly_summary, "inner_os_sleep_learning_mode_focus")
+    learning_mode_carry_bias = _float_from(nightly_summary, "inner_os_sleep_learning_mode_carry_bias", 0.0)
+    social_experiment_focus = _text_from(nightly_summary, "inner_os_sleep_social_experiment_focus")
+    social_experiment_carry_bias = _float_from(nightly_summary, "inner_os_sleep_social_experiment_carry_bias", 0.0)
     commitment_target_focus = _text_from(nightly_summary, "inner_os_sleep_commitment_target_focus") or _text_from(
         commitment_summary,
         "dominant_target",
@@ -320,8 +328,19 @@ def _derive_current_state(
     relational_continuity_focus = _text_from(nightly_summary, "inner_os_sleep_relational_continuity_focus")
     relational_continuity_carry_bias = _float_from(nightly_summary, "inner_os_sleep_relational_continuity_carry_bias", 0.0)
     group_thread_registry = (nightly_summary or {}).get("inner_os_group_thread_registry_summary") or {}
+    discussion_thread_registry = (nightly_summary or {}).get("inner_os_discussion_thread_registry_summary") or {}
+    autobiographical_thread_mode = _text_from(nightly_summary, "inner_os_sleep_autobiographical_thread_mode")
+    autobiographical_thread_anchor = _text_from(nightly_summary, "inner_os_sleep_autobiographical_thread_anchor")
+    autobiographical_thread_focus = _text_from(nightly_summary, "inner_os_sleep_autobiographical_thread_focus")
+    autobiographical_thread_strength = _float_from(nightly_summary, "inner_os_sleep_autobiographical_thread_strength", 0.0)
     group_thread_focus = _text_from(nightly_summary, "inner_os_sleep_group_thread_focus")
     group_thread_carry_bias = _float_from(nightly_summary, "inner_os_sleep_group_thread_carry_bias", 0.0)
+    temporal_membrane_focus = _text_from(nightly_summary, "inner_os_sleep_temporal_membrane_focus")
+    temporal_timeline_bias = _float_from(nightly_summary, "inner_os_sleep_temporal_timeline_bias", 0.0)
+    temporal_reentry_bias = _float_from(nightly_summary, "inner_os_sleep_temporal_reentry_bias", 0.0)
+    temporal_supersession_bias = _float_from(nightly_summary, "inner_os_sleep_temporal_supersession_bias", 0.0)
+    temporal_continuity_bias = _float_from(nightly_summary, "inner_os_sleep_temporal_continuity_bias", 0.0)
+    temporal_relation_reentry_bias = _float_from(nightly_summary, "inner_os_sleep_temporal_relation_reentry_bias", 0.0)
     expressive_style_focus = _text_from(nightly_summary, "inner_os_sleep_expressive_style_focus")
     expressive_style_carry_bias = _float_from(nightly_summary, "inner_os_sleep_expressive_style_carry_bias", 0.0)
     expressive_style_history_focus = _text_from(nightly_summary, "inner_os_sleep_expressive_style_history_focus")
@@ -355,6 +374,14 @@ def _derive_current_state(
         "agenda_focus": agenda_focus,
         "agenda_bias": agenda_bias,
         "agenda_reason": agenda_reason,
+        "agenda_window_focus": agenda_window_focus,
+        "agenda_window_bias": agenda_window_bias,
+        "agenda_window_reason": agenda_window_reason,
+        "agenda_window_carry_target": agenda_window_carry_target,
+        "learning_mode_focus": learning_mode_focus,
+        "learning_mode_carry_bias": learning_mode_carry_bias,
+        "social_experiment_focus": social_experiment_focus,
+        "social_experiment_carry_bias": social_experiment_carry_bias,
         "commitment_target_focus": commitment_target_focus,
         "commitment_state_focus": commitment_state_focus,
         "commitment_target_counts": commitment_target_counts,
@@ -387,8 +414,19 @@ def _derive_current_state(
         "relational_continuity_focus": relational_continuity_focus,
         "relational_continuity_carry_bias": relational_continuity_carry_bias,
         "group_thread_registry_snapshot": dict(group_thread_registry) if isinstance(group_thread_registry, Mapping) else {},
+        "discussion_thread_registry_snapshot": dict(discussion_thread_registry) if isinstance(discussion_thread_registry, Mapping) else {},
+        "autobiographical_thread_mode": autobiographical_thread_mode,
+        "autobiographical_thread_anchor": autobiographical_thread_anchor,
+        "autobiographical_thread_focus": autobiographical_thread_focus,
+        "autobiographical_thread_strength": autobiographical_thread_strength,
         "group_thread_focus": group_thread_focus,
         "group_thread_carry_bias": group_thread_carry_bias,
+        "temporal_membrane_focus": temporal_membrane_focus,
+        "temporal_timeline_bias": temporal_timeline_bias,
+        "temporal_reentry_bias": temporal_reentry_bias,
+        "temporal_supersession_bias": temporal_supersession_bias,
+        "temporal_continuity_bias": temporal_continuity_bias,
+        "temporal_relation_reentry_bias": temporal_relation_reentry_bias,
         "expressive_style_focus": expressive_style_focus,
         "expressive_style_carry_bias": expressive_style_carry_bias,
         "expressive_style_history_focus": expressive_style_history_focus,

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from .daily_carry_summary import DailyCarrySummaryBuilder
+from .discussion_thread_registry import summarize_discussion_thread_registry_snapshot
 from .schemas import INNER_OS_TRANSFER_PACKAGE_SCHEMA
 from .temperament_estimate import derive_temperament_estimate
 
@@ -75,6 +76,16 @@ def _prefixed_gate_value(
 ) -> Any:
     gate = dict(last_gate_context or {})
     return gate.get(f"inner_os_{suffix}", default)
+
+
+def _discussion_registry_summary(value: Any) -> dict[str, Any]:
+    raw_snapshot = _mapping(value)
+    if not raw_snapshot:
+        return {}
+    summary = _mapping(summarize_discussion_thread_registry_snapshot(raw_snapshot))
+    if summary.get("dominant_thread_id"):
+        return summary
+    return raw_snapshot
 
 
 @dataclass(frozen=True)
@@ -174,6 +185,23 @@ class InnerOSTransferPackageBuilder:
                     inner_os_meta.get("agenda_window_state"),
                     ("state", "reason", "score", "winner_margin", "deferral_budget", "carry_target", "opportunistic_ok", "dominant_inputs"),
                 ),
+                "learning_mode_state": _compact_mapping(
+                    inner_os_meta.get("learning_mode_state"),
+                    ("state", "score", "winner_margin", "probe_room", "update_bias", "dominant_inputs"),
+                ),
+                "social_experiment_loop_state": _compact_mapping(
+                    inner_os_meta.get("social_experiment_loop_state"),
+                    (
+                        "state",
+                        "score",
+                        "winner_margin",
+                        "hypothesis",
+                        "expected_signal",
+                        "stop_rule",
+                        "probe_intensity",
+                        "dominant_inputs",
+                    ),
+                ),
                 "commitment_state": _compact_mapping(
                     inner_os_meta.get("commitment_state"),
                     ("state", "target", "accepted_cost", "winner_margin", "dominant_inputs"),
@@ -226,6 +254,115 @@ class InnerOSTransferPackageBuilder:
                     "carry_bias": round(_float(self._state_value(current_payload, gate_payload, inner_os_meta, "agenda_window_bias")), 4),
                     "reason": _text(self._state_value(current_payload, gate_payload, inner_os_meta, "agenda_window_reason")),
                 },
+                "learning_mode_carry": {
+                    "focus": _text(self._state_value(current_payload, gate_payload, inner_os_meta, "learning_mode_focus")),
+                    "carry_bias": round(_float(self._state_value(current_payload, gate_payload, inner_os_meta, "learning_mode_carry_bias")), 4),
+                },
+                "social_experiment_carry": {
+                    "focus": _text(self._state_value(current_payload, gate_payload, inner_os_meta, "social_experiment_focus")),
+                    "carry_bias": round(_float(self._state_value(current_payload, gate_payload, inner_os_meta, "social_experiment_carry_bias")), 4),
+                },
+                "temporal_membrane": {
+                    "focus": _text(
+                        self._state_value(
+                            current_payload,
+                            gate_payload,
+                            inner_os_meta,
+                            "temporal_membrane_focus",
+                            default=self._state_value(
+                                current_payload,
+                                gate_payload,
+                                inner_os_meta,
+                                "temporal_membrane_mode",
+                            ),
+                        )
+                    ),
+                    "timeline_bias": round(
+                        _float(
+                            self._state_value(
+                                current_payload,
+                                gate_payload,
+                                inner_os_meta,
+                                "temporal_timeline_bias",
+                                default=self._state_value(
+                                    current_payload,
+                                    gate_payload,
+                                    inner_os_meta,
+                                    "temporal_timeline_coherence",
+                                ),
+                            )
+                        ),
+                        4,
+                    ),
+                    "reentry_bias": round(
+                        _float(
+                            self._state_value(
+                                current_payload,
+                                gate_payload,
+                                inner_os_meta,
+                                "temporal_reentry_bias",
+                                default=self._state_value(
+                                    current_payload,
+                                    gate_payload,
+                                    inner_os_meta,
+                                    "temporal_reentry_pull",
+                                ),
+                            )
+                        ),
+                        4,
+                    ),
+                    "supersession_bias": round(
+                        _float(
+                            self._state_value(
+                                current_payload,
+                                gate_payload,
+                                inner_os_meta,
+                                "temporal_supersession_bias",
+                                default=self._state_value(
+                                    current_payload,
+                                    gate_payload,
+                                    inner_os_meta,
+                                    "temporal_supersession_pressure",
+                                ),
+                            )
+                        ),
+                        4,
+                    ),
+                    "continuity_bias": round(
+                        _float(
+                            self._state_value(
+                                current_payload,
+                                gate_payload,
+                                inner_os_meta,
+                                "temporal_continuity_bias",
+                                default=self._state_value(
+                                    current_payload,
+                                    gate_payload,
+                                    inner_os_meta,
+                                    "temporal_continuity_pressure",
+                                ),
+                            )
+                        ),
+                        4,
+                    ),
+                    "relation_reentry_bias": round(
+                        _float(
+                            self._state_value(
+                                current_payload,
+                                gate_payload,
+                                inner_os_meta,
+                                "temporal_relation_reentry_bias",
+                                default=self._state_value(
+                                    current_payload,
+                                    gate_payload,
+                                    inner_os_meta,
+                                    "temporal_relation_reentry_pull",
+                                ),
+                            )
+                        ),
+                        4,
+                    ),
+                },
                 "style_history": {
                     "expressive_style_focus": _text(self._state_value(current_payload, gate_payload, inner_os_meta, "expressive_style_focus")),
                     "expressive_style_carry_bias": round(_float(self._state_value(current_payload, gate_payload, inner_os_meta, "expressive_style_carry_bias")), 4),
@@ -234,6 +371,91 @@ class InnerOSTransferPackageBuilder:
                     "banter_style_focus": _text(self._state_value(current_payload, gate_payload, inner_os_meta, "banter_style_focus")),
                     "lexical_variation_carry_bias": round(_float(self._state_value(current_payload, gate_payload, inner_os_meta, "lexical_variation_carry_bias")), 4),
                 },
+                "identity_arc": _compact_mapping(
+                    inner_os_meta.get("identity_arc"),
+                    (
+                        "arc_kind",
+                        "phase",
+                        "summary",
+                        "dominant_driver",
+                        "supporting_drivers",
+                        "open_tension",
+                        "stability",
+                        "memory_anchor",
+                        "related_person_id",
+                        "group_thread_focus",
+                        "long_term_theme_kind",
+                        "long_term_theme_focus",
+                        "learning_mode_focus",
+                        "social_experiment_focus",
+                    ),
+                ),
+                "identity_arc_registry_summary": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "identity_arc_registry_summary",
+                        default={},
+                    )
+                ),
+                "relation_arc": _compact_mapping(
+                    {
+                        "arc_kind": _text(inner_os_meta.get("relation_arc_kind")),
+                        "phase": _text(inner_os_meta.get("relation_arc_phase")),
+                        "summary": _text(inner_os_meta.get("relation_arc_summary")),
+                        "open_tension": _text(inner_os_meta.get("relation_arc_open_tension")),
+                        "stability": round(_float(inner_os_meta.get("relation_arc_stability")), 4),
+                        "related_person_id": _text(inner_os_meta.get("related_person_id")),
+                        "group_thread_id": _text(inner_os_meta.get("group_thread_focus")),
+                        "learning_mode_focus": _text(inner_os_meta.get("learning_mode_focus")),
+                        "social_experiment_focus": _text(inner_os_meta.get("social_experiment_focus")),
+                    },
+                    (
+                        "arc_kind",
+                        "phase",
+                        "summary",
+                        "open_tension",
+                        "stability",
+                        "related_person_id",
+                        "group_thread_id",
+                        "learning_mode_focus",
+                        "social_experiment_focus",
+                    ),
+                ),
+                "relation_arc_registry_summary": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "relation_arc_registry_summary",
+                        default={},
+                    )
+                ),
+                "group_relation_arc": _compact_mapping(
+                    {
+                        "arc_kind": _text(inner_os_meta.get("group_relation_arc_kind")),
+                        "phase": _text(inner_os_meta.get("group_relation_arc_phase")),
+                        "summary": _text(inner_os_meta.get("group_relation_arc_summary")),
+                        "boundary_mode": _text(inner_os_meta.get("group_relation_arc_boundary_mode")),
+                        "reentry_window_focus": _text(inner_os_meta.get("group_relation_arc_reentry_window_focus")),
+                        "group_thread_id": _text(inner_os_meta.get("group_relation_arc_group_thread_id")),
+                        "topology_focus": _text(inner_os_meta.get("group_relation_arc_topology_focus")),
+                        "dominant_person_id": _text(inner_os_meta.get("group_relation_arc_dominant_person_id")),
+                        "stability": round(_float(inner_os_meta.get("group_relation_arc_stability")), 4),
+                    },
+                    (
+                        "arc_kind",
+                        "phase",
+                        "summary",
+                        "boundary_mode",
+                        "reentry_window_focus",
+                        "group_thread_id",
+                        "topology_focus",
+                        "dominant_person_id",
+                        "stability",
+                    ),
+                ),
                 "commitment_carry": {
                     "target_focus": _text(self._state_value(current_payload, gate_payload, inner_os_meta, "commitment_target_focus")),
                     "state_focus": _text(self._state_value(current_payload, gate_payload, inner_os_meta, "commitment_state_focus", default="waver")) or "waver",
@@ -272,6 +494,52 @@ class InnerOSTransferPackageBuilder:
                         default={},
                     )
                 ),
+                "discussion_thread_registry_summary": _discussion_registry_summary(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "discussion_thread_registry_snapshot",
+                        default={},
+                    )
+                ),
+                "autobiographical_thread": {
+                    "mode": _text(
+                        self._state_value(
+                            current_payload,
+                            gate_payload,
+                            inner_os_meta,
+                            "autobiographical_thread_mode",
+                        )
+                    ),
+                    "anchor": _text(
+                        self._state_value(
+                            current_payload,
+                            gate_payload,
+                            inner_os_meta,
+                            "autobiographical_thread_anchor",
+                        )
+                    ),
+                    "focus": _text(
+                        self._state_value(
+                            current_payload,
+                            gate_payload,
+                            inner_os_meta,
+                            "autobiographical_thread_focus",
+                        )
+                    ),
+                    "strength": round(
+                        _float(
+                            self._state_value(
+                                current_payload,
+                                gate_payload,
+                                inner_os_meta,
+                                "autobiographical_thread_strength",
+                            )
+                        ),
+                        4,
+                    ),
+                },
                 "monument_carry": {
                     "memory_anchor": _text(inner_os_meta.get("memory_anchor")),
                     "semantic_seed_focus": _text(inner_os_meta.get("semantic_seed_focus")),
@@ -335,6 +603,11 @@ class InnerOSTransferPackageBuilder:
     def to_runtime_seed(self, payload: Mapping[str, Any] | InnerOSTransferPackage) -> dict[str, Any]:
         package = payload.to_dict() if isinstance(payload, InnerOSTransferPackage) else dict(payload or {})
         seed = dict(package.get("runtime_seed") or package.get("state_seed") or {})
+        legacy_identity_arc = dict(package.get("identity_arc_summary") or {})
+        legacy_identity_arc_registry = dict(package.get("identity_arc_registry_summary") or {})
+        legacy_relation_arc = dict(package.get("relation_arc_summary") or {})
+        legacy_relation_arc_registry = dict(package.get("relation_arc_registry_summary") or {})
+        legacy_group_relation_arc = dict(package.get("group_relation_arc_summary") or {})
 
         def _seed_value(key: str, *legacy_keys: str, default: Any = None) -> Any:
             if key in seed and seed.get(key) is not None:
@@ -368,6 +641,37 @@ class InnerOSTransferPackageBuilder:
             "agenda_window_focus": _text(_seed_value("agenda_window_focus", "agenda_window_focus")),
             "agenda_window_bias": _float(_seed_value("agenda_window_bias", "agenda_window_bias")),
             "agenda_window_reason": _text(_seed_value("agenda_window_reason", "agenda_window_reason")),
+            "learning_mode_focus": _text(_seed_value("learning_mode_focus", "learning_mode_focus")),
+            "learning_mode_carry_bias": _float(_seed_value("learning_mode_carry_bias", "learning_mode_carry_bias")),
+            "social_experiment_focus": _text(_seed_value("social_experiment_focus", "social_experiment_focus")),
+            "social_experiment_carry_bias": _float(_seed_value("social_experiment_carry_bias", "social_experiment_carry_bias")),
+            "temporal_membrane_focus": _text(_seed_value("temporal_membrane_focus", "temporal_membrane_focus", "temporal_membrane_mode")),
+            "temporal_timeline_bias": _float(_seed_value("temporal_timeline_bias", "temporal_timeline_bias", "temporal_timeline_coherence")),
+            "temporal_reentry_bias": _float(_seed_value("temporal_reentry_bias", "temporal_reentry_bias", "temporal_reentry_pull")),
+            "temporal_supersession_bias": _float(_seed_value("temporal_supersession_bias", "temporal_supersession_bias", "temporal_supersession_pressure")),
+            "temporal_continuity_bias": _float(_seed_value("temporal_continuity_bias", "temporal_continuity_bias", "temporal_continuity_pressure")),
+            "temporal_relation_reentry_bias": _float(_seed_value("temporal_relation_reentry_bias", "temporal_relation_reentry_bias", "temporal_relation_reentry_pull")),
+            "identity_arc_kind": _text(_seed_value("identity_arc_kind", "identity_arc_kind", default=legacy_identity_arc.get("arc_kind"))),
+            "identity_arc_phase": _text(_seed_value("identity_arc_phase", "identity_arc_phase", default=legacy_identity_arc.get("phase"))),
+            "identity_arc_summary": _text(_seed_value("identity_arc_summary", "identity_arc_summary", default=legacy_identity_arc.get("summary"))),
+            "identity_arc_open_tension": _text(_seed_value("identity_arc_open_tension", "identity_arc_open_tension", default=legacy_identity_arc.get("open_tension"))),
+            "identity_arc_stability": _float(_seed_value("identity_arc_stability", "identity_arc_stability", default=legacy_identity_arc.get("stability"))),
+            "identity_arc_registry_summary": dict(_seed_value("identity_arc_registry_summary", "identity_arc_registry_summary", default=legacy_identity_arc_registry) or {}),
+            "relation_arc_kind": _text(_seed_value("relation_arc_kind", "relation_arc_kind", default=legacy_relation_arc.get("arc_kind"))),
+            "relation_arc_phase": _text(_seed_value("relation_arc_phase", "relation_arc_phase", default=legacy_relation_arc.get("phase"))),
+            "relation_arc_summary": _text(_seed_value("relation_arc_summary", "relation_arc_summary", default=legacy_relation_arc.get("summary"))),
+            "relation_arc_open_tension": _text(_seed_value("relation_arc_open_tension", "relation_arc_open_tension", default=legacy_relation_arc.get("open_tension"))),
+            "relation_arc_stability": _float(_seed_value("relation_arc_stability", "relation_arc_stability", default=legacy_relation_arc.get("stability"))),
+            "relation_arc_registry_summary": dict(_seed_value("relation_arc_registry_summary", "relation_arc_registry_summary", default=legacy_relation_arc_registry) or {}),
+            "group_relation_arc_kind": _text(_seed_value("group_relation_arc_kind", "group_relation_arc_kind", default=legacy_group_relation_arc.get("arc_kind"))),
+            "group_relation_arc_phase": _text(_seed_value("group_relation_arc_phase", "group_relation_arc_phase", default=legacy_group_relation_arc.get("phase"))),
+            "group_relation_arc_summary": _text(_seed_value("group_relation_arc_summary", "group_relation_arc_summary", default=legacy_group_relation_arc.get("summary"))),
+            "group_relation_arc_boundary_mode": _text(_seed_value("group_relation_arc_boundary_mode", "group_relation_arc_boundary_mode", default=legacy_group_relation_arc.get("boundary_mode"))),
+            "group_relation_arc_reentry_window_focus": _text(_seed_value("group_relation_arc_reentry_window_focus", "group_relation_arc_reentry_window_focus", default=legacy_group_relation_arc.get("reentry_window_focus"))),
+            "group_relation_arc_group_thread_id": _text(_seed_value("group_relation_arc_group_thread_id", "group_relation_arc_group_thread_id", default=legacy_group_relation_arc.get("group_thread_id"))),
+            "group_relation_arc_topology_focus": _text(_seed_value("group_relation_arc_topology_focus", "group_relation_arc_topology_focus", default=legacy_group_relation_arc.get("topology_focus"))),
+            "group_relation_arc_dominant_person_id": _text(_seed_value("group_relation_arc_dominant_person_id", "group_relation_arc_dominant_person_id", default=legacy_group_relation_arc.get("dominant_person_id"))),
+            "group_relation_arc_stability": _float(_seed_value("group_relation_arc_stability", "group_relation_arc_stability", default=legacy_group_relation_arc.get("stability"))),
             "commitment_target_focus": _text(_seed_value("commitment_target_focus", "commitment_target_focus")),
             "commitment_state_focus": _text(_seed_value("commitment_state_focus", "commitment_state_focus", default="waver")) or "waver",
             "commitment_carry_bias": _float(_seed_value("commitment_carry_bias", "commitment_carry_bias")),
@@ -383,6 +687,22 @@ class InnerOSTransferPackageBuilder:
             "relational_continuity_focus": _text(_seed_value("relational_continuity_focus", "relational_continuity_focus")),
             "relational_continuity_carry_bias": _float(_seed_value("relational_continuity_carry_bias", "relational_continuity_carry_bias")),
             "group_thread_registry_snapshot": dict(_seed_value("group_thread_registry_snapshot", "group_thread_registry_snapshot", default={}) or {}),
+            "discussion_thread_registry_snapshot": dict(
+                _seed_value(
+                    "discussion_thread_registry_snapshot",
+                    "discussion_thread_registry_snapshot",
+                    default=_seed_value(
+                        "discussion_thread_registry_summary",
+                        "discussion_thread_registry_summary",
+                        default={},
+                    ),
+                )
+                or {}
+            ),
+            "autobiographical_thread_mode": _text(_seed_value("autobiographical_thread_mode", "autobiographical_thread_mode")),
+            "autobiographical_thread_anchor": _text(_seed_value("autobiographical_thread_anchor", "autobiographical_thread_anchor")),
+            "autobiographical_thread_focus": _text(_seed_value("autobiographical_thread_focus", "autobiographical_thread_focus")),
+            "autobiographical_thread_strength": _float(_seed_value("autobiographical_thread_strength", "autobiographical_thread_strength")),
             "group_thread_focus": _text(_seed_value("group_thread_focus", "group_thread_focus")),
             "group_thread_carry_bias": _float(_seed_value("group_thread_carry_bias", "group_thread_carry_bias")),
             "expressive_style_focus": _text(_seed_value("expressive_style_focus", "expressive_style_focus")),
@@ -410,8 +730,35 @@ class InnerOSTransferPackageBuilder:
         legacy_seed = dict(package.get("working_memory_seed") or {})
         monument = _merge_mapping(legacy_seed, carry.get("monument_carry"))
         relationship = _merge_mapping(legacy_seed, carry.get("relationship_summary"))
+        identity_arc = _mapping(dict(carry.get("identity_arc") or {}) or dict(package.get("identity_arc_summary") or {}))
+        relation_arc = _mapping(dict(carry.get("relation_arc") or {}) or dict(package.get("relation_arc_summary") or {}))
+        group_relation_arc = _mapping(dict(carry.get("group_relation_arc") or {}) or dict(package.get("group_relation_arc_summary") or {}))
+        identity_arc_registry_summary = _mapping(
+            dict(carry.get("identity_arc_registry_summary") or {})
+            or dict(runtime_seed.get("identity_arc_registry_summary") or {})
+            or dict(package.get("identity_arc_registry_summary") or {})
+        )
+        relation_arc_registry_summary = _mapping(
+            dict(carry.get("relation_arc_registry_summary") or {})
+            or dict(runtime_seed.get("relation_arc_registry_summary") or {})
+            or dict(package.get("relation_arc_registry_summary") or {})
+        )
         relationship_registry = dict(carry.get("relationship_registry_summary") or {})
         group_thread_registry = dict(carry.get("group_thread_registry_summary") or runtime_seed.get("group_thread_registry_snapshot") or {})
+        discussion_thread_registry = dict(
+            carry.get("discussion_thread_registry_summary")
+            or runtime_seed.get("discussion_thread_registry_snapshot")
+            or {}
+        )
+        autobiographical_thread = _mapping(
+            dict(carry.get("autobiographical_thread") or {})
+            or {
+                "mode": runtime_seed.get("autobiographical_thread_mode"),
+                "anchor": runtime_seed.get("autobiographical_thread_anchor"),
+                "focus": runtime_seed.get("autobiographical_thread_focus"),
+                "strength": runtime_seed.get("autobiographical_thread_strength"),
+            }
+        )
         related_person_ids = [
             str(item).strip()
             for item in list(relationship_registry.get("top_person_ids") or [])
@@ -442,6 +789,34 @@ class InnerOSTransferPackageBuilder:
                 group_thread_registry.get("dominant_thread_id")
                 or runtime_seed.get("group_thread_id")
             ),
+            "discussion_thread_id": _text(discussion_thread_registry.get("dominant_thread_id")),
+            "discussion_anchor": _text(discussion_thread_registry.get("dominant_anchor")),
+            "discussion_issue_state": _text(discussion_thread_registry.get("dominant_issue_state")),
+            "autobiographical_thread_mode": _text(autobiographical_thread.get("mode")),
+            "autobiographical_thread_anchor": _text(autobiographical_thread.get("anchor")),
+            "autobiographical_thread_focus": _text(autobiographical_thread.get("focus")),
+            "autobiographical_thread_strength": _float(autobiographical_thread.get("strength")),
+            "identity_arc_kind": _text(identity_arc.get("arc_kind")),
+            "identity_arc_phase": _text(identity_arc.get("phase")),
+            "identity_arc_summary": _text(identity_arc.get("summary")),
+            "identity_arc_open_tension": _text(identity_arc.get("open_tension")),
+            "identity_arc_stability": _float(identity_arc.get("stability")),
+            "identity_arc_registry_summary": identity_arc_registry_summary,
+            "relation_arc_kind": _text(relation_arc.get("arc_kind")),
+            "relation_arc_phase": _text(relation_arc.get("phase")),
+            "relation_arc_summary": _text(relation_arc.get("summary")),
+            "relation_arc_open_tension": _text(relation_arc.get("open_tension")),
+            "relation_arc_stability": _float(relation_arc.get("stability")),
+            "relation_arc_registry_summary": relation_arc_registry_summary,
+            "group_relation_arc_kind": _text(group_relation_arc.get("arc_kind")),
+            "group_relation_arc_phase": _text(group_relation_arc.get("phase")),
+            "group_relation_arc_summary": _text(group_relation_arc.get("summary")),
+            "group_relation_arc_boundary_mode": _text(group_relation_arc.get("boundary_mode")),
+            "group_relation_arc_reentry_window_focus": _text(group_relation_arc.get("reentry_window_focus")),
+            "group_relation_arc_group_thread_id": _text(group_relation_arc.get("group_thread_id")),
+            "group_relation_arc_topology_focus": _text(group_relation_arc.get("topology_focus")),
+            "group_relation_arc_dominant_person_id": _text(group_relation_arc.get("dominant_person_id")),
+            "group_relation_arc_stability": _float(group_relation_arc.get("stability")),
         }
 
     def normalize(self, payload: Mapping[str, Any] | InnerOSTransferPackage) -> dict[str, Any]:
@@ -473,6 +848,7 @@ class InnerOSTransferPackageBuilder:
         if not daily_carry_summary:
             daily_carry_summary = self._daily_carry_summary_dict({})
 
+        runtime_seed = self.to_runtime_seed(package)
         monument_carry = self.to_working_memory_seed(package)
         relationship_registry_summary = _mapping(
             dict(carry.get("relationship_registry_summary") or {})
@@ -484,7 +860,85 @@ class InnerOSTransferPackageBuilder:
             or dict(package.get("group_thread_registry_snapshot") or {})
             or dict(package.get("group_thread_registry") or {})
         )
+        discussion_thread_registry_summary = _mapping(
+            dict(carry.get("discussion_thread_registry_summary") or {})
+            or dict(package.get("discussion_thread_registry_snapshot") or {})
+            or dict(package.get("discussion_thread_registry_summary") or {})
+        )
+        if discussion_thread_registry_summary and not discussion_thread_registry_summary.get("dominant_thread_id"):
+            discussion_thread_registry_summary = _mapping(
+                summarize_discussion_thread_registry_snapshot(discussion_thread_registry_summary)
+            )
         style_history = dict(carry.get("style_history") or {})
+        temporal_membrane = _mapping(
+            dict(carry.get("temporal_membrane") or {})
+            or {
+                "focus": _text(
+                    package.get("temporal_membrane_focus")
+                    or package.get("temporal_membrane_mode")
+                    or runtime_seed.get("temporal_membrane_focus")
+                ),
+                "timeline_bias": _float(
+                    package.get("temporal_timeline_bias")
+                    or package.get("temporal_timeline_coherence")
+                    or runtime_seed.get("temporal_timeline_bias")
+                ),
+                "reentry_bias": _float(
+                    package.get("temporal_reentry_bias")
+                    or package.get("temporal_reentry_pull")
+                    or runtime_seed.get("temporal_reentry_bias")
+                ),
+                "supersession_bias": _float(
+                    package.get("temporal_supersession_bias")
+                    or package.get("temporal_supersession_pressure")
+                    or runtime_seed.get("temporal_supersession_bias")
+                ),
+                "continuity_bias": _float(
+                    package.get("temporal_continuity_bias")
+                    or package.get("temporal_continuity_pressure")
+                    or runtime_seed.get("temporal_continuity_bias")
+                ),
+                "relation_reentry_bias": _float(
+                    package.get("temporal_relation_reentry_bias")
+                    or package.get("temporal_relation_reentry_pull")
+                    or runtime_seed.get("temporal_relation_reentry_bias")
+                ),
+            }
+        )
+        autobiographical_thread = _mapping(
+            dict(carry.get("autobiographical_thread") or {})
+            or {
+                "mode": _text(
+                    package.get("autobiographical_thread_mode")
+                    or runtime_seed.get("autobiographical_thread_mode")
+                ),
+                "anchor": _text(
+                    package.get("autobiographical_thread_anchor")
+                    or runtime_seed.get("autobiographical_thread_anchor")
+                ),
+                "focus": _text(
+                    package.get("autobiographical_thread_focus")
+                    or runtime_seed.get("autobiographical_thread_focus")
+                ),
+                "strength": _float(
+                    package.get("autobiographical_thread_strength")
+                    or runtime_seed.get("autobiographical_thread_strength")
+                ),
+            }
+        )
+        identity_arc = dict(carry.get("identity_arc") or package.get("identity_arc_summary") or {})
+        identity_arc_registry_summary = dict(
+            carry.get("identity_arc_registry_summary")
+            or package.get("identity_arc_registry_summary")
+            or {}
+        )
+        relation_arc = dict(carry.get("relation_arc") or package.get("relation_arc_summary") or {})
+        group_relation_arc = dict(carry.get("group_relation_arc") or package.get("group_relation_arc_summary") or {})
+        relation_arc_registry_summary = dict(
+            carry.get("relation_arc_registry_summary")
+            or package.get("relation_arc_registry_summary")
+            or {}
+        )
         relationship_summary = {
             "related_person_id": _text(monument_carry.get("related_person_id")),
             "attachment": round(_float(monument_carry.get("attachment")), 4),
@@ -512,7 +966,6 @@ class InnerOSTransferPackageBuilder:
             "monument_salience": round(_float(package.get("monument_salience") or carry.get("monument_salience")), 4),
             "monument_kind": _text(package.get("monument_kind") or carry.get("monument_kind")),
         }
-        runtime_seed = self.to_runtime_seed(package)
 
         existing_migration = dict(package.get("migration") or {})
         migration_applied = bool(existing_migration.get("applied")) or (
@@ -541,12 +994,20 @@ class InnerOSTransferPackageBuilder:
                     "reaction_vs_overnight_bias": dict(carry.get("reaction_vs_overnight_bias") or {}),
                     "initiative_followup_bias": dict(carry.get("initiative_followup_bias") or {}),
                     "agenda_carry": dict(carry.get("agenda_carry") or {}),
+                    "temporal_membrane": temporal_membrane,
                     "style_history": style_history,
+                    "identity_arc": identity_arc,
+                    "identity_arc_registry_summary": identity_arc_registry_summary,
+                    "relation_arc": relation_arc,
+                    "relation_arc_registry_summary": relation_arc_registry_summary,
+                    "group_relation_arc": group_relation_arc,
                     "commitment_carry": dict(carry.get("commitment_carry") or {}),
                     "temperament_estimate": dict(carry.get("temperament_estimate") or {}),
                     "relationship_summary": relationship_summary,
                     "relationship_registry_summary": relationship_registry_summary,
                     "group_thread_registry_summary": group_thread_registry_summary,
+                    "discussion_thread_registry_summary": discussion_thread_registry_summary,
+                    "autobiographical_thread": autobiographical_thread,
                     "monument_carry": monument_summary,
                 },
                 "continuity": {
@@ -599,6 +1060,27 @@ class InnerOSTransferPackageBuilder:
             "agenda_window_focus",
             "agenda_window_bias",
             "agenda_window_reason",
+            "identity_arc_kind",
+            "identity_arc_phase",
+            "identity_arc_summary",
+            "identity_arc_open_tension",
+            "identity_arc_stability",
+            "identity_arc_registry_summary",
+            "relation_arc_kind",
+            "relation_arc_phase",
+            "relation_arc_summary",
+            "relation_arc_open_tension",
+            "relation_arc_stability",
+            "relation_arc_registry_summary",
+            "group_relation_arc_kind",
+            "group_relation_arc_phase",
+            "group_relation_arc_summary",
+            "group_relation_arc_boundary_mode",
+            "group_relation_arc_reentry_window_focus",
+            "group_relation_arc_group_thread_id",
+            "group_relation_arc_topology_focus",
+            "group_relation_arc_dominant_person_id",
+            "group_relation_arc_stability",
             "commitment_target_focus",
             "commitment_state_focus",
             "commitment_carry_bias",
@@ -614,6 +1096,11 @@ class InnerOSTransferPackageBuilder:
             "relational_continuity_focus",
             "relational_continuity_carry_bias",
             "group_thread_registry_snapshot",
+            "discussion_thread_registry_snapshot",
+            "autobiographical_thread_mode",
+            "autobiographical_thread_anchor",
+            "autobiographical_thread_focus",
+            "autobiographical_thread_strength",
             "group_thread_focus",
             "group_thread_carry_bias",
             "expressive_style_focus",
@@ -680,6 +1167,130 @@ class InnerOSTransferPackageBuilder:
             "agenda_window_focus": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "agenda_window_focus")),
             "agenda_window_bias": round(_float(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "agenda_window_bias")), 4),
             "agenda_window_reason": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "agenda_window_reason")),
+            "learning_mode_focus": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "learning_mode_focus")),
+            "learning_mode_carry_bias": round(_float(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "learning_mode_carry_bias")), 4),
+            "social_experiment_focus": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "social_experiment_focus")),
+            "social_experiment_carry_bias": round(_float(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "social_experiment_carry_bias")), 4),
+            "temporal_membrane_focus": _text(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "temporal_membrane_focus",
+                    default=self._state_value(
+                        current_state,
+                        last_gate_context,
+                        persona_meta_inner_os,
+                        "temporal_membrane_mode",
+                    ),
+                )
+            ),
+            "temporal_timeline_bias": round(
+                _float(
+                    self._state_value(
+                        current_state,
+                        last_gate_context,
+                        persona_meta_inner_os,
+                        "temporal_timeline_bias",
+                        default=self._state_value(
+                            current_state,
+                            last_gate_context,
+                            persona_meta_inner_os,
+                            "temporal_timeline_coherence",
+                        ),
+                    )
+                ),
+                4,
+            ),
+            "temporal_reentry_bias": round(
+                _float(
+                    self._state_value(
+                        current_state,
+                        last_gate_context,
+                        persona_meta_inner_os,
+                        "temporal_reentry_bias",
+                        default=self._state_value(
+                            current_state,
+                            last_gate_context,
+                            persona_meta_inner_os,
+                            "temporal_reentry_pull",
+                        ),
+                    )
+                ),
+                4,
+            ),
+            "temporal_supersession_bias": round(
+                _float(
+                    self._state_value(
+                        current_state,
+                        last_gate_context,
+                        persona_meta_inner_os,
+                        "temporal_supersession_bias",
+                        default=self._state_value(
+                            current_state,
+                            last_gate_context,
+                            persona_meta_inner_os,
+                            "temporal_supersession_pressure",
+                        ),
+                    )
+                ),
+                4,
+            ),
+            "temporal_continuity_bias": round(
+                _float(
+                    self._state_value(
+                        current_state,
+                        last_gate_context,
+                        persona_meta_inner_os,
+                        "temporal_continuity_bias",
+                        default=self._state_value(
+                            current_state,
+                            last_gate_context,
+                            persona_meta_inner_os,
+                            "temporal_continuity_pressure",
+                        ),
+                    )
+                ),
+                4,
+            ),
+            "temporal_relation_reentry_bias": round(
+                _float(
+                    self._state_value(
+                        current_state,
+                        last_gate_context,
+                        persona_meta_inner_os,
+                        "temporal_relation_reentry_bias",
+                        default=self._state_value(
+                            current_state,
+                            last_gate_context,
+                            persona_meta_inner_os,
+                            "temporal_relation_reentry_pull",
+                        ),
+                    )
+                ),
+                4,
+            ),
+            "identity_arc_kind": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "identity_arc_kind")),
+            "identity_arc_phase": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "identity_arc_phase")),
+            "identity_arc_summary": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "identity_arc_summary")),
+            "identity_arc_open_tension": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "identity_arc_open_tension")),
+            "identity_arc_stability": round(_float(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "identity_arc_stability")), 4),
+            "identity_arc_registry_summary": _mapping(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "identity_arc_registry_summary", default={})),
+            "relation_arc_kind": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "relation_arc_kind")),
+            "relation_arc_phase": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "relation_arc_phase")),
+            "relation_arc_summary": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "relation_arc_summary")),
+            "relation_arc_open_tension": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "relation_arc_open_tension")),
+            "relation_arc_stability": round(_float(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "relation_arc_stability")), 4),
+            "relation_arc_registry_summary": _mapping(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "relation_arc_registry_summary", default={})),
+            "group_relation_arc_kind": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "group_relation_arc_kind")),
+            "group_relation_arc_phase": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "group_relation_arc_phase")),
+            "group_relation_arc_summary": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "group_relation_arc_summary")),
+            "group_relation_arc_boundary_mode": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "group_relation_arc_boundary_mode")),
+            "group_relation_arc_reentry_window_focus": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "group_relation_arc_reentry_window_focus")),
+            "group_relation_arc_group_thread_id": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "group_relation_arc_group_thread_id")),
+            "group_relation_arc_topology_focus": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "group_relation_arc_topology_focus")),
+            "group_relation_arc_dominant_person_id": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "group_relation_arc_dominant_person_id")),
+            "group_relation_arc_stability": round(_float(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "group_relation_arc_stability")), 4),
             "commitment_target_focus": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "commitment_target_focus")),
             "commitment_state_focus": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "commitment_state_focus", default="waver")) or "waver",
             "commitment_carry_bias": round(_float(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "commitment_carry_bias")), 4),
@@ -695,6 +1306,11 @@ class InnerOSTransferPackageBuilder:
             "relational_continuity_focus": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "relational_continuity_focus")),
             "relational_continuity_carry_bias": round(_float(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "relational_continuity_carry_bias")), 4),
             "group_thread_registry_snapshot": _mapping(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "group_thread_registry_snapshot", default={})),
+            "discussion_thread_registry_snapshot": _mapping(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "discussion_thread_registry_snapshot", default={})),
+            "autobiographical_thread_mode": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "autobiographical_thread_mode")),
+            "autobiographical_thread_anchor": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "autobiographical_thread_anchor")),
+            "autobiographical_thread_focus": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "autobiographical_thread_focus")),
+            "autobiographical_thread_strength": round(_float(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "autobiographical_thread_strength")), 4),
             "group_thread_focus": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "group_thread_focus")),
             "group_thread_carry_bias": round(_float(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "group_thread_carry_bias")), 4),
             "expressive_style_focus": _text(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "expressive_style_focus")),

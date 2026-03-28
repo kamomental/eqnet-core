@@ -197,6 +197,116 @@
         "strength": { "type": "number" }
       }
     },
+    "inner_os_identity_arc_summary": {
+      "type": "object",
+      "properties": {
+        "summary_version": { "type": "string" },
+        "arc_kind": { "type": "string" },
+        "phase": { "type": "string" },
+        "summary": { "type": "string" },
+        "dominant_driver": { "type": "string" },
+        "supporting_drivers": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "open_tension": { "type": "string" },
+        "stability": { "type": "number" },
+        "memory_anchor": { "type": "string" },
+        "related_person_id": { "type": "string" },
+        "group_thread_focus": { "type": "string" },
+        "long_term_theme_kind": { "type": "string" },
+        "long_term_theme_focus": { "type": "string" },
+        "learning_mode_focus": { "type": "string" },
+        "social_experiment_focus": { "type": "string" }
+      }
+    },
+    "inner_os_identity_arc_registry_summary": {
+      "type": "object",
+      "properties": {
+        "dominant_arc_id": { "type": "string" },
+        "dominant_arc_kind": { "type": "string" },
+        "dominant_arc_phase": { "type": "string" },
+        "dominant_arc_summary": { "type": "string" },
+        "active_arc_count": { "type": "integer" },
+        "total_arcs": { "type": "integer" },
+        "top_arc_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "status_counts": { "type": "object" },
+        "top_arcs": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      }
+    },
+    "inner_os_relation_arc_summary": {
+      "type": "object",
+      "properties": {
+        "summary_version": { "type": "string" },
+        "arc_kind": { "type": "string" },
+        "phase": { "type": "string" },
+        "summary": { "type": "string" },
+        "dominant_driver": { "type": "string" },
+        "supporting_drivers": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "open_tension": { "type": "string" },
+        "stability": { "type": "number" },
+        "related_person_id": { "type": "string" },
+        "group_thread_id": { "type": "string" },
+        "social_role": { "type": "string" },
+        "community_id": { "type": "string" },
+        "culture_id": { "type": "string" },
+        "topology_focus": { "type": "string" },
+        "learning_mode_focus": { "type": "string" },
+        "social_experiment_focus": { "type": "string" }
+      }
+    },
+    "inner_os_group_relation_arc_summary": {
+      "type": "object",
+      "properties": {
+        "summary_version": { "type": "string" },
+        "arc_kind": { "type": "string" },
+        "phase": { "type": "string" },
+        "summary": { "type": "string" },
+        "group_thread_id": { "type": "string" },
+        "topology_focus": { "type": "string" },
+        "boundary_mode": { "type": "string" },
+        "reentry_window_focus": { "type": "string" },
+        "dominant_person_id": { "type": "string" },
+        "social_role": { "type": "string" },
+        "community_id": { "type": "string" },
+        "culture_id": { "type": "string" },
+        "learning_mode_focus": { "type": "string" },
+        "social_experiment_focus": { "type": "string" },
+        "open_tension": { "type": "string" },
+        "stability": { "type": "number" }
+      }
+    },
+    "inner_os_relation_arc_registry_summary": {
+      "type": "object",
+      "properties": {
+        "dominant_arc_id": { "type": "string" },
+        "dominant_arc_kind": { "type": "string" },
+        "dominant_arc_phase": { "type": "string" },
+        "dominant_arc_summary": { "type": "string" },
+        "dominant_person_id": { "type": "string" },
+        "dominant_group_thread_id": { "type": "string" },
+        "active_arc_count": { "type": "integer" },
+        "total_arcs": { "type": "integer" },
+        "top_arc_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "status_counts": { "type": "object" },
+        "top_arcs": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      }
+    },
     "inner_os_memory_class_summary": {
       "type": "object",
       "properties": {
@@ -304,6 +414,22 @@
         "uncertainty": { "type": "number" }
       }
     },
+    "inner_os_discussion_thread_registry_summary": {
+      "type": "object",
+      "properties": {
+        "threads": { "type": "object" },
+        "top_thread_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "dominant_thread_id": { "type": "string" },
+        "dominant_anchor": { "type": "string" },
+        "dominant_issue_state": { "type": "string" },
+        "total_threads": { "type": "integer" },
+        "thread_scores": { "type": "object" },
+        "uncertainty": { "type": "number" }
+      }
+    },
     "inner_os_daily_carry_summary": {
       "type": "object",
       "properties": {
@@ -316,13 +442,33 @@
           "items": { "type": "string" }
         },
         "dominant_carry_channel": { "type": "string" },
-        "carry_alignment": { "type": "object" }
+        "carry_alignment": { "type": "object" },
+        "temporal_alignment": { "type": "object" }
+      }
+    },
+    "inner_os_temporal_alignment": {
+      "type": "object",
+      "properties": {
+        "same_turn_mode": { "type": "string" },
+        "overnight_focus": { "type": "string" },
+        "focus_alignment": { "type": "boolean" },
+        "same_to_overnight_reentry_delta": { "type": "number" },
+        "reentry_carry_visible": { "type": "boolean" },
+        "reentry_carry_strength": { "type": "number" }
       }
     },
     "inner_os_sleep_memory_class_focus": { "type": "string" },
     "inner_os_sleep_agenda_focus": { "type": "string" },
     "inner_os_sleep_agenda_bias": { "type": "number" },
     "inner_os_sleep_agenda_reason": { "type": "string" },
+    "inner_os_sleep_agenda_window_focus": { "type": "string" },
+    "inner_os_sleep_agenda_window_bias": { "type": "number" },
+    "inner_os_sleep_agenda_window_reason": { "type": "string" },
+    "inner_os_sleep_agenda_window_carry_target": { "type": "string" },
+    "inner_os_sleep_learning_mode_focus": { "type": "string" },
+    "inner_os_sleep_learning_mode_carry_bias": { "type": "number" },
+    "inner_os_sleep_social_experiment_focus": { "type": "string" },
+    "inner_os_sleep_social_experiment_carry_bias": { "type": "number" },
     "inner_os_sleep_commitment_target_focus": { "type": "string" },
     "inner_os_sleep_commitment_state_focus": { "type": "string" },
     "inner_os_sleep_commitment_carry_bias": { "type": "number" },
@@ -337,6 +483,16 @@
     "inner_os_sleep_relational_continuity_carry_bias": { "type": "number" },
     "inner_os_sleep_group_thread_focus": { "type": "string" },
     "inner_os_sleep_group_thread_carry_bias": { "type": "number" },
+    "inner_os_sleep_autobiographical_thread_mode": { "type": "string" },
+    "inner_os_sleep_autobiographical_thread_anchor": { "type": "string" },
+    "inner_os_sleep_autobiographical_thread_focus": { "type": "string" },
+    "inner_os_sleep_autobiographical_thread_strength": { "type": "number" },
+    "inner_os_sleep_temporal_membrane_focus": { "type": "string" },
+    "inner_os_sleep_temporal_timeline_bias": { "type": "number" },
+    "inner_os_sleep_temporal_reentry_bias": { "type": "number" },
+    "inner_os_sleep_temporal_supersession_bias": { "type": "number" },
+    "inner_os_sleep_temporal_continuity_bias": { "type": "number" },
+    "inner_os_sleep_temporal_relation_reentry_bias": { "type": "number" },
     "inner_os_sleep_expressive_style_focus": { "type": "string" },
     "inner_os_sleep_expressive_style_carry_bias": { "type": "number" },
     "inner_os_sleep_expressive_style_history_focus": { "type": "string" },

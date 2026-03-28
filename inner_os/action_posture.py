@@ -43,6 +43,11 @@ def derive_action_posture(
     homeostasis_budget_state = dict(packet.get("homeostasis_budget_state") or {})
     initiative_readiness = dict(packet.get("initiative_readiness") or {})
     commitment_state = dict(packet.get("commitment_state") or {})
+    learning_mode_state = dict(packet.get("learning_mode_state") or {})
+    social_experiment_loop_state = dict(packet.get("social_experiment_loop_state") or {})
+    live_engagement_state = dict(packet.get("live_engagement_state") or {})
+    situation_risk_state = dict(packet.get("situation_risk_state") or {})
+    emergency_posture = dict(packet.get("emergency_posture") or {})
     relational_continuity_state = dict(packet.get("relational_continuity_state") or {})
     relation_competition_state = dict(packet.get("relation_competition_state") or {})
     social_topology_state = dict(packet.get("social_topology_state") or {})
@@ -106,6 +111,23 @@ def derive_action_posture(
     commitment_mode = str(commitment_state.get("state") or "").strip()
     commitment_target = str(commitment_state.get("target") or "").strip()
     commitment_score = _float01(commitment_state.get("score"))
+    learning_mode_name = str(learning_mode_state.get("state") or "").strip()
+    learning_mode_score = _float01(learning_mode_state.get("score"))
+    learning_mode_probe_room = _float01(learning_mode_state.get("probe_room"))
+    social_experiment_name = str(social_experiment_loop_state.get("state") or "").strip()
+    social_experiment_score = _float01(social_experiment_loop_state.get("score"))
+    social_experiment_probe_intensity = _float01(social_experiment_loop_state.get("probe_intensity"))
+    live_engagement_name = str(live_engagement_state.get("state") or "").strip()
+    live_engagement_score = _float01(live_engagement_state.get("score"))
+    live_primary_move = str(live_engagement_state.get("primary_move") or "").strip()
+    situation_risk_name = str(situation_risk_state.get("state") or "").strip()
+    situation_risk_immediacy = _float01(situation_risk_state.get("immediacy"))
+    situation_risk_dialogue_room = _float01(situation_risk_state.get("dialogue_room"))
+    situation_risk_relation_break = _float01(situation_risk_state.get("relation_break"))
+    emergency_posture_name = str(emergency_posture.get("state") or "").strip()
+    emergency_posture_score = _float01(emergency_posture.get("score"))
+    emergency_dialogue_permission = str(emergency_posture.get("dialogue_permission") or "").strip()
+    emergency_primary_action = str(emergency_posture.get("primary_action") or "").strip()
     relational_continuity_name = str(relational_continuity_state.get("state") or "").strip()
     relational_continuity_score = _float01(relational_continuity_state.get("score"))
     relation_competition_name = str(relation_competition_state.get("state") or "").strip()
@@ -450,6 +472,68 @@ def derive_action_posture(
                 ]
             )
         )
+    learning_mode_active = learning_mode_score >= 0.44
+    social_experiment_active = social_experiment_score >= 0.44 or social_experiment_probe_intensity >= 0.36
+
+    if learning_mode_name == "observe_only" and learning_mode_active:
+        if engagement_mode == "co_move":
+            engagement_mode = "reflect"
+            outcome_goal = "read_before_extension"
+        if boundary_mode == "forward_open":
+            boundary_mode = "bounded"
+        next_action_candidates = list(
+            dict.fromkeys(
+                [
+                    "observe_more",
+                    "read_reaction_first",
+                    *next_action_candidates,
+                ]
+            )
+        )
+    elif learning_mode_name == "hold_and_wait" and learning_mode_active:
+        if engagement_mode in {"attune", "co_move", "reflect"}:
+            engagement_mode = "wait"
+            outcome_goal = "hold_probe_without_losing_thread"
+        if boundary_mode in {"permeable", "forward_open"}:
+            boundary_mode = "bounded"
+        next_action_candidates = list(
+            dict.fromkeys(
+                [
+                    "hold_probe",
+                    "leave_return_point",
+                    *next_action_candidates,
+                ]
+            )
+        )
+    elif learning_mode_name == "repair_probe" and learning_mode_active:
+        if engagement_mode == "wait":
+            engagement_mode = "repair"
+            outcome_goal = "test_small_repair_contact"
+        next_action_candidates = list(dict.fromkeys(["test_repair_small", *next_action_candidates]))
+    elif (
+        learning_mode_name == "integrate_and_commit"
+        and learning_mode_active
+        and protection_mode_name not in {"contain", "stabilize", "shield"}
+        and body_recovery_guard_state == "open"
+    ):
+        if engagement_mode == "attune":
+            engagement_mode = "co_move"
+            outcome_goal = "carry_decided_direction"
+        next_action_candidates = list(dict.fromkeys(["confirm_shared_direction", *next_action_candidates]))
+    elif learning_mode_name == "test_small" and learning_mode_active and body_recovery_guard_state != "recovery_first":
+        next_action_candidates = list(dict.fromkeys(["test_small_step", *next_action_candidates]))
+
+    if social_experiment_name == "watch_and_read" and social_experiment_active:
+        next_action_candidates = list(dict.fromkeys(["read_reaction_first", *next_action_candidates]))
+    elif social_experiment_name == "hold_probe" and social_experiment_active:
+        next_action_candidates = list(dict.fromkeys(["hold_probe", "leave_return_point", *next_action_candidates]))
+    elif social_experiment_name == "repair_signal_probe" and social_experiment_active:
+        next_action_candidates = list(dict.fromkeys(["test_repair_small", *next_action_candidates]))
+    elif social_experiment_name == "test_small_step" and social_experiment_active:
+        next_action_candidates = list(dict.fromkeys(["test_small_step", *next_action_candidates]))
+    elif social_experiment_name == "confirm_shared_direction" and social_experiment_active:
+        next_action_candidates = list(dict.fromkeys(["confirm_shared_direction", *next_action_candidates]))
+
     if (
         initiative_readiness_state == "ready"
         and initiative_readiness_score >= 0.44
@@ -567,6 +651,120 @@ def derive_action_posture(
         if boundary_mode == "forward_open":
             boundary_mode = "bounded"
 
+    if live_engagement_name == "pickup_comment" and live_engagement_score >= 0.38:
+        next_action_candidates = list(
+            dict.fromkeys(
+                [
+                    "pick_up_comment",
+                    "answer_visible_comment",
+                    "return_to_chat",
+                    *next_action_candidates,
+                ]
+            )
+        )
+    elif live_engagement_name == "riff_with_comment" and live_engagement_score >= 0.38:
+        next_action_candidates = list(
+            dict.fromkeys(
+                [
+                    "riff_current_comment",
+                    "weave_light_callback",
+                    "keep_chat_loop_open",
+                    *next_action_candidates,
+                ]
+            )
+        )
+    elif live_engagement_name == "seed_topic" and live_engagement_score >= 0.38:
+        next_action_candidates = list(
+            dict.fromkeys(
+                [
+                    "seed_small_topic",
+                    "offer_chat_hook",
+                    "check_audience_reaction",
+                    *next_action_candidates,
+                ]
+            )
+        )
+
+    emergency_active = emergency_posture_score >= 0.38 and emergency_posture_name not in {"", "observe"}
+    if emergency_active and emergency_posture_name == "de_escalate":
+        if engagement_mode in {"attune", "co_move", "reflect"}:
+            engagement_mode = "contain"
+        outcome_goal = "lower_risk_without_escalation"
+        boundary_mode = "guarded" if boundary_mode == "permeable" else "protective"
+        next_action_candidates = list(
+            dict.fromkeys(
+                [
+                    "set_clear_boundary",
+                    "lower_heat",
+                    "keep_words_short",
+                    "watch_reaction",
+                    *next_action_candidates,
+                ]
+            )
+        )
+    elif emergency_active and emergency_posture_name == "create_distance":
+        engagement_mode = "contain"
+        outcome_goal = "increase_distance_safely"
+        boundary_mode = "protective"
+        next_action_candidates = list(
+            dict.fromkeys(
+                [
+                    "create_distance",
+                    "orient_to_exit",
+                    "keep_words_short",
+                    "avoid_negotiation",
+                    *next_action_candidates,
+                ]
+            )
+        )
+    elif emergency_active and emergency_posture_name == "exit":
+        engagement_mode = "contain"
+        outcome_goal = "leave_risk_field"
+        boundary_mode = "protective"
+        next_action_candidates = list(
+            dict.fromkeys(
+                [
+                    "exit_space",
+                    "move_to_safety",
+                    "terminate_contact",
+                    "seek_help_if_needed",
+                    *next_action_candidates,
+                ]
+            )
+        )
+    elif emergency_active and emergency_posture_name == "seek_help":
+        engagement_mode = "contain"
+        outcome_goal = "bring_in_support"
+        boundary_mode = "protective"
+        next_action_candidates = list(
+            dict.fromkeys(
+                [
+                    "seek_help",
+                    "make_risk_visible",
+                    "move_to_support",
+                    "terminate_contact",
+                    *next_action_candidates,
+                ]
+            )
+        )
+    elif emergency_active and emergency_posture_name == "emergency_protect":
+        engagement_mode = "contain"
+        outcome_goal = "protect_immediately"
+        boundary_mode = "protective"
+        next_action_candidates = list(
+            dict.fromkeys(
+                [
+                    "emergency_protect",
+                    "protect_others_if_present",
+                    "reduce_exposure",
+                    "terminate_contact",
+                    *next_action_candidates,
+                ]
+            )
+        )
+    elif situation_risk_name in {"guarded_context", "unstable_contact", "acute_threat"}:
+        next_action_candidates = list(dict.fromkeys(["assess_context_shift", *next_action_candidates]))
+
     return {
         "engagement_mode": engagement_mode,
         "outcome_goal": outcome_goal,
@@ -617,6 +815,26 @@ def derive_action_posture(
         "commitment_mode": commitment_mode,
         "commitment_target": commitment_target,
         "commitment_score": commitment_score,
+        "learning_mode_state": learning_mode_state,
+        "learning_mode_name": learning_mode_name,
+        "learning_mode_probe_room": learning_mode_probe_room,
+        "social_experiment_loop_state": social_experiment_loop_state,
+        "social_experiment_name": social_experiment_name,
+        "social_experiment_probe_intensity": social_experiment_probe_intensity,
+        "live_engagement_state": live_engagement_state,
+        "live_engagement_name": live_engagement_name,
+        "live_engagement_score": live_engagement_score,
+        "live_primary_move": live_primary_move,
+        "situation_risk_state": situation_risk_state,
+        "situation_risk_name": situation_risk_name,
+        "situation_risk_immediacy": situation_risk_immediacy,
+        "situation_risk_dialogue_room": situation_risk_dialogue_room,
+        "situation_risk_relation_break": situation_risk_relation_break,
+        "emergency_posture": emergency_posture,
+        "emergency_posture_name": emergency_posture_name,
+        "emergency_posture_score": emergency_posture_score,
+        "emergency_dialogue_permission": emergency_dialogue_permission,
+        "emergency_primary_action": emergency_primary_action,
         "relational_continuity_state": relational_continuity_state,
         "relational_continuity_name": relational_continuity_name,
         "relational_continuity_score": relational_continuity_score,

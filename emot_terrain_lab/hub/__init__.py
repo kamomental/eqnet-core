@@ -19,6 +19,17 @@ except Exception:  # pragma: no cover - optional
     RuntimeConfig = None  # type: ignore
 
 try:
+    from .lmstudio_pipeline_probe import (  # type: ignore
+        LMStudioPipelineProbe,
+        build_lmstudio_pipeline_probe,
+        render_lmstudio_pipeline_probe,
+    )
+except Exception:  # pragma: no cover - optional
+    LMStudioPipelineProbe = None  # type: ignore
+    build_lmstudio_pipeline_probe = None  # type: ignore
+    render_lmstudio_pipeline_probe = None  # type: ignore
+
+try:
     from .hub import Hub  # type: ignore
 except Exception:  # pragma: no cover - optional
     Hub = None  # type: ignore
@@ -35,5 +46,8 @@ __all__ = [
     "HubResponse",
     "EmotionalHubRuntime",
     "RuntimeConfig",
+    "LMStudioPipelineProbe",
+    "build_lmstudio_pipeline_probe",
+    "render_lmstudio_pipeline_probe",
     "Hub",
 ]

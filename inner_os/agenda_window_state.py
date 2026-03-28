@@ -89,6 +89,22 @@ def derive_agenda_window_state(
     pending_meaning = _clamp01(state_payload.get("pending_meaning"))
     stress = _clamp01(state_payload.get("stress"))
     recovery_need = _clamp01(state_payload.get("recovery_need"))
+    timeline_coherence = _clamp01(state_payload.get("temporal_timeline_coherence"))
+    reentry_pull = _clamp01(state_payload.get("temporal_reentry_pull"))
+    supersession_pressure = _clamp01(state_payload.get("temporal_supersession_pressure"))
+    continuity_pressure = _clamp01(state_payload.get("temporal_continuity_pressure"))
+    relation_reentry_pull = _clamp01(state_payload.get("temporal_relation_reentry_pull"))
+    if timeline_coherence <= 0.0:
+        timeline_coherence = _clamp01(state_payload.get("temporal_timeline_bias"))
+    if reentry_pull <= 0.0:
+        reentry_pull = _clamp01(state_payload.get("temporal_reentry_bias"))
+    if supersession_pressure <= 0.0:
+        supersession_pressure = _clamp01(state_payload.get("temporal_supersession_bias"))
+    if continuity_pressure <= 0.0:
+        continuity_pressure = _clamp01(state_payload.get("temporal_continuity_bias"))
+    if relation_reentry_pull <= 0.0:
+        relation_reentry_pull = _clamp01(state_payload.get("temporal_relation_reentry_bias"))
+    temporal_mode = str(state_payload.get("temporal_membrane_mode") or state_payload.get("temporal_membrane_focus") or "ambient").strip() or "ambient"
 
     carry_focus = str(state_payload.get("agenda_window_focus") or "").strip()
     carry_bias = _clamp01(state_payload.get("agenda_window_bias"))
@@ -156,6 +172,45 @@ def derive_agenda_window_state(
         + (0.1 if agenda_name == "hold" else 0.0)
         + (0.08 if commitment_target in {"hold", "stabilize"} else 0.0) * max(commitment_score, 0.5)
     )
+    reentry_bias = max(reentry_pull, relation_reentry_pull)
+    now_score = _clamp01(
+        now_score
+        + reentry_bias * 0.08
+        + continuity_pressure * 0.06
+        + timeline_coherence * 0.04
+        - supersession_pressure * 0.08
+    )
+    next_private_score = _clamp01(
+        next_private_score
+        + reentry_bias * 0.12
+        + continuity_pressure * 0.04
+        + (0.04 if relation_active > 0.0 else 0.0) * timeline_coherence
+    )
+    next_same_group_score = _clamp01(
+        next_same_group_score
+        + continuity_pressure * 0.08
+        + relation_reentry_pull * 0.08
+        + timeline_coherence * 0.04
+    )
+    next_same_culture_score = _clamp01(
+        next_same_culture_score
+        + timeline_coherence * 0.06
+        + continuity_pressure * 0.04
+    )
+    opportunistic_reentry_score = _clamp01(
+        opportunistic_reentry_score
+        + reentry_bias * 0.12
+        + timeline_coherence * 0.06
+        + continuity_pressure * 0.04
+        - supersession_pressure * 0.04
+    )
+    long_hold_score = _clamp01(long_hold_score + supersession_pressure * 0.14)
+    if temporal_mode == "supersede":
+        long_hold_score = _clamp01(long_hold_score + 0.04)
+        now_score = _clamp01(now_score - 0.04)
+    elif temporal_mode == "reentry":
+        opportunistic_reentry_score = _clamp01(opportunistic_reentry_score + 0.04)
+        next_private_score = _clamp01(next_private_score + 0.02)
 
     if guard_name == "recovery_first" or body_name == "depleted" or budget_name == "depleted":
         long_hold_score = _clamp01(long_hold_score + 0.24)
@@ -221,6 +276,9 @@ def derive_agenda_window_state(
             "prospective_memory_pull" if prospective_memory_pull >= 0.18 else "",
             "relation_competition" if str(competition.get("state") or "").strip() not in {"", "ambient"} else "",
             "overnight_agenda_window_carry" if carry_focus and carry_bias > 0.0 else "",
+            "temporal_reentry_pull" if reentry_bias >= 0.22 and winner in {"now", "next_private_window", "opportunistic_reentry"} else "",
+            "temporal_supersession_pressure" if supersession_pressure >= 0.22 and winner == "long_hold" else "",
+            "temporal_timeline_coherence" if timeline_coherence >= 0.22 and winner in {"next_same_group_window", "next_same_culture_window", "opportunistic_reentry"} else "",
         ]
     )
     return AgendaWindowState(

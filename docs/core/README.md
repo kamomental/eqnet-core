@@ -29,6 +29,28 @@ docs と実装では、以後この言い方で役割をそろえます。
 - Interaction option search architecture: `docs/core/interaction_option_search_architecture.md`
 - Qualia contact-access model: `docs/core/qualia_contact_access_model.md`
 - Qualia membrane projection model: `docs/core/qualia_membrane_projection_model.md`
+- Qualia structure + temporal memory integration: `docs/core/qualia_structure_temporal_integration.md`
+- EQNet boundary / residual layers: `docs/core/eqnet_boundary_residual_layers.md`
+- Emergency expression bridge: `docs/core/emergency_expression_bridge.md`
+- Deep disclosure reflection: `docs/core/deep_disclosure_reflection.md`
+- Contact reflection state: `docs/core/contact_reflection_state.md`
+- Green kernel contracts: `docs/core/green_kernel_contracts.md`
+- Surface expression selection: `docs/core/surface_expression_selection.md`
+- Surface context packet: `docs/core/surface_context_packet.md`
+- Codex use-case environment: `docs/core/codex_usecase_environment.md`
+- Codex plugin root: `docs/core/codex_plugin_root.md`
+- Route surface priority: `docs/core/route_surface_priority.md`
+- Evaluation criteria: `docs/core/evaluation_criteria.md`
+- Evaluation snapshot (2026-03-28): `docs/core/evaluation_snapshot_2026_03_28.md`
+- Evaluation targets: `docs/core/evaluation_targets.md`
+- Evaluation loop (anchor progress, 2026-03-28): `docs/core/evaluation_loop_anchor_progress_2026_03_28.md`
+- Mechanism issue map: `docs/core/mechanism_issue_map.md`
+- Recent dialogue state: `docs/core/recent_dialogue_state.md`
+- Discussion thread state: `docs/core/discussion_thread_state.md`
+- Issue state: `docs/core/issue_state.md`
+- Discussion thread registry: `docs/core/discussion_thread_registry.md`
+- Autobiographical thread: `docs/core/autobiographical_thread.md`
+- LM Studio pipeline probe: `docs/core/lmstudio_pipeline_probe.md`
 - Contact field + access projection model: `docs/core/contact_field_access_projection_model.md`
 - Conscious workspace model: `docs/core/conscious_workspace_model.md`
 - Core base spec: `docs/eqnet_core_base_spec.md`

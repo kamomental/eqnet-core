@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 from .schemas import (
     INNER_OS_HTTP_MANIFEST_SCHEMA,
+    INNER_OS_MEMORY_EVIDENCE_BUNDLE_SCHEMA,
     INNER_OS_MEMORY_RECALL_INPUT_SCHEMA,
     INNER_OS_MEMORY_RECALL_RESULT_SCHEMA,
     INNER_OS_POST_TURN_INPUT_SCHEMA,
@@ -13,6 +14,7 @@ from .schemas import (
     INNER_OS_RECALL_PAYLOAD_SCHEMA,
     INNER_OS_RESPONSE_GATE_INPUT_SCHEMA,
     INNER_OS_RESPONSE_GATE_RESULT_SCHEMA,
+    memory_evidence_bundle_contract,
     memory_record_contract,
     recall_payload_contract,
 )
@@ -36,6 +38,7 @@ def build_inner_os_manifest() -> Dict[str, Any]:
                 "request_schema": INNER_OS_MEMORY_RECALL_INPUT_SCHEMA,
                 "response_schema": INNER_OS_MEMORY_RECALL_RESULT_SCHEMA,
                 "recall_payload_schema": INNER_OS_RECALL_PAYLOAD_SCHEMA,
+                "memory_evidence_bundle_schema": INNER_OS_MEMORY_EVIDENCE_BUNDLE_SCHEMA,
             },
             "response_gate": {
                 "path": "/inner-os/response-gate",
@@ -53,6 +56,7 @@ def build_inner_os_manifest() -> Dict[str, Any]:
         "contracts": {
             "memory_record": memory_record_contract(),
             "recall_payload": recall_payload_contract(),
+            "memory_evidence_bundle": memory_evidence_bundle_contract(),
         },
         "notes": {
             "interaction_primary": True,

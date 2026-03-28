@@ -63,6 +63,8 @@ class _SurfaceHarness:
     _shape_inner_os_surface_text = EmotionalHubRuntime._shape_inner_os_surface_text
     _shape_inner_os_surface_profile_text = EmotionalHubRuntime._shape_inner_os_surface_profile_text
     _shape_inner_os_content_sequence = EmotionalHubRuntime._shape_inner_os_content_sequence
+    _select_short_inner_os_sequence = EmotionalHubRuntime._select_short_inner_os_sequence
+    _compact_inner_os_sequence_text = EmotionalHubRuntime._compact_inner_os_sequence_text
     _compose_inner_os_surface_text = EmotionalHubRuntime._compose_inner_os_surface_text
     _inner_os_surface_probe = EmotionalHubRuntime._inner_os_surface_probe
     _inner_os_surface_reopening_line = EmotionalHubRuntime._inner_os_surface_reopening_line

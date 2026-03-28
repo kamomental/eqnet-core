@@ -48,7 +48,7 @@ def load_locale_table(locale: str) -> Dict[str, Any]:
     return payload
 
 
-def lookup_text(locale: str, key: str) -> Optional[str]:
+def lookup_value(locale: str, key: str) -> Any:
     if not key:
         return None
     payload = load_locale_table(locale)
@@ -57,7 +57,12 @@ def lookup_text(locale: str, key: str) -> Optional[str]:
         if not isinstance(cursor, dict) or part not in cursor:
             return None
         cursor = cursor[part]
-    return cursor if isinstance(cursor, str) else None
+    return cursor
+
+
+def lookup_text(locale: str, key: str) -> Optional[str]:
+    value = lookup_value(locale, key)
+    return value if isinstance(value, str) else None
 
 
 def truncate_text(text: str, limit: Optional[int]) -> str:
@@ -68,4 +73,3 @@ def truncate_text(text: str, limit: Optional[int]) -> str:
     if limit <= 1:
         return text[:limit]
     return text[: limit - 1].rstrip() + "..."
-

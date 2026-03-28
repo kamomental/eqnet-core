@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
@@ -40,6 +41,7 @@ class _ProcessTurnHarness:
     _last_gate_context: Dict[str, Any] = field(default_factory=dict)
     _self_model: _SelfHarness = field(default_factory=_SelfHarness)
     _last_step_context: Optional[str] = None
+    _surface_user_history: Any = field(default_factory=lambda: deque(maxlen=4))
     _surface_world_state: Dict[str, Any] = field(
         default_factory=lambda: {
             "zone_id": "market",
@@ -58,14 +60,22 @@ class _ProcessTurnHarness:
     _inner_os_working_memory_seed = EmotionalHubRuntime._inner_os_working_memory_seed
     _merge_conscious_long_term_theme = EmotionalHubRuntime._merge_conscious_long_term_theme
     _latest_nightly_long_term_theme_summary = EmotionalHubRuntime._latest_nightly_long_term_theme_summary
+    _latest_nightly_identity_arc_summary = EmotionalHubRuntime._latest_nightly_identity_arc_summary
+    _latest_nightly_identity_arc_registry_summary = EmotionalHubRuntime._latest_nightly_identity_arc_registry_summary
+    _latest_nightly_relation_arc_summary = EmotionalHubRuntime._latest_nightly_relation_arc_summary
+    _latest_nightly_relation_arc_registry_summary = EmotionalHubRuntime._latest_nightly_relation_arc_registry_summary
+    _latest_nightly_group_relation_arc_summary = EmotionalHubRuntime._latest_nightly_group_relation_arc_summary
     _latest_nightly_partner_relation_summary = EmotionalHubRuntime._latest_nightly_partner_relation_summary
     _latest_nightly_partner_relation_registry_summary = EmotionalHubRuntime._latest_nightly_partner_relation_registry_summary
     _apply_inner_os_surface_policy = EmotionalHubRuntime._apply_inner_os_surface_policy
     _apply_inner_os_surface_profile = EmotionalHubRuntime._apply_inner_os_surface_profile
     _build_inner_os_llm_guidance = EmotionalHubRuntime._build_inner_os_llm_guidance
+    _apply_surface_context_packet_to_content_sequence = EmotionalHubRuntime._apply_surface_context_packet_to_content_sequence
     _shape_inner_os_surface_text = EmotionalHubRuntime._shape_inner_os_surface_text
     _shape_inner_os_surface_profile_text = EmotionalHubRuntime._shape_inner_os_surface_profile_text
     _shape_inner_os_content_sequence = EmotionalHubRuntime._shape_inner_os_content_sequence
+    _select_short_inner_os_sequence = EmotionalHubRuntime._select_short_inner_os_sequence
+    _compact_inner_os_sequence_text = EmotionalHubRuntime._compact_inner_os_sequence_text
     _inner_os_stream_state_from_hints = EmotionalHubRuntime._inner_os_stream_state_from_hints
     _inner_os_live_followup_signals = EmotionalHubRuntime._inner_os_live_followup_signals
     _inner_os_live_style_feedback = EmotionalHubRuntime._inner_os_live_style_feedback
@@ -80,6 +90,9 @@ class _ProcessTurnHarness:
     _inner_os_surface_closing = EmotionalHubRuntime._inner_os_surface_closing
     _inner_os_surface_policy_level = EmotionalHubRuntime._inner_os_surface_policy_level
     _inner_os_surface_policy_intent = EmotionalHubRuntime._inner_os_surface_policy_intent
+    _recent_surface_user_history = EmotionalHubRuntime._recent_surface_user_history
+    _recent_surface_response_history = EmotionalHubRuntime._recent_surface_response_history
+    _recent_dialogue_thread_history = EmotionalHubRuntime._recent_dialogue_thread_history
     _build_context_payload = EmotionalHubRuntime._build_context_payload
     _serialize_response_meta = EmotionalHubRuntime._serialize_response_meta
     _emit_inner_os_distillation_record = EmotionalHubRuntime._emit_inner_os_distillation_record
@@ -244,6 +257,27 @@ def test_apply_inner_os_surface_policy_uses_check_in_prefix() -> None:
     assert "I will avoid overreading the scene." not in updated.text
     assert updated.text.endswith("I want to stay with this gently first.")
     assert updated.controls_used["inner_os_surface_policy"] == "clarify_first_prefix:check_in"
+
+
+def test_process_turn_uses_response_history_for_discussion_anchor() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness._surface_response_history = deque(maxlen=3)
+    harness._surface_response_history.append(
+        "前に触れていた「港での約束」のところから、いま話せる分だけ戻れば十分です。"
+    )
+
+    result = harness.process_turn(
+        user_text="前に少し引っかかっていた話の続きを、いま少しだけ戻したいです。",
+        intent="check_in",
+    )
+
+    inner_os = dict(result.persona_meta.get("inner_os") or {})
+    packet = dict(inner_os.get("interaction_policy_packet") or {})
+    recent_dialogue_state = dict(packet.get("recent_dialogue_state") or {})
+    discussion_thread_state = dict(packet.get("discussion_thread_state") or {})
+
+    assert recent_dialogue_state.get("recent_anchor") == "港での約束"
+    assert discussion_thread_state.get("topic_anchor") == "港での約束"
 
 
 def test_apply_inner_os_surface_policy_can_use_interaction_policy_packet() -> None:
@@ -518,6 +552,16 @@ def test_build_inner_os_llm_guidance_uses_policy_packet_and_sequence() -> None:
                     "condition_key": "attuned_presence|familiar|harbor slope",
                 }
             },
+            "contact_reflection_state": {
+                "reflection_style": "reflect_only",
+            },
+            "green_kernel_composition": {
+                "field": {
+                    "guardedness": 0.62,
+                    "reopening_pull": 0.41,
+                    "affective_charge": 0.58,
+                }
+            },
         },
         user_text="Can you stay with what is visible first?",
         intent="clarify",
@@ -541,10 +585,143 @@ def test_build_inner_os_llm_guidance_uses_policy_packet_and_sequence() -> None:
     assert guidance["interaction_audit_report"]["report_lines"]
     assert guidance["interaction_audit_reference_case_ids"] == ["reference_1"]
     assert guidance["interaction_audit_reference_case_meta"]["reference_1"]["scene_family"] == "attuned_presence"
+    assert guidance["surface_context_packet"]["conversation_phase"] == "clarify"
+    assert guidance["surface_context_packet"]["constraints"]["no_generic_clarification"] is True
+    assert guidance["surface_context_packet"]["shared_core"]["already_shared"] == ["Can you stay with what is visible first?"]
+    assert guidance["surface_context_packet"]["response_role"]["secondary"] == "reflect_only"
     sequence = guidance["content_sequence"]
     assert isinstance(sequence, list)
     assert len(sequence) >= 2
     assert sequence[0]["act"] == "acknowledge_overreach"
+
+
+def test_build_inner_os_llm_guidance_prunes_thread_reopening_sequence_with_surface_context_packet() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    guidance = harness._build_inner_os_llm_guidance(
+        expression_hint={
+            "interaction_policy_packet": {
+                "dialogue_act": "check_in",
+                "recent_dialogue_state": {"state": "reopening_thread", "recent_anchor": "あの約束"},
+                "discussion_thread_state": {"state": "revisit_issue", "topic_anchor": "あの約束"},
+                "issue_state": {"state": "pausing_issue", "issue_anchor": "あの約束"},
+            },
+            "surface_response_length": "short",
+            "surface_cultural_register": "soft_companion",
+            "surface_group_register": "one_to_one",
+            "surface_sentence_temperature": "gentle",
+            "turn_delta": {
+                "kind": "issue_pause",
+                "preferred_act": "leave_return_point_from_anchor",
+                "anchor_hint": "あの約束",
+            },
+            "surface_context_packet": {
+                "conversation_phase": "issue_pause",
+                "shared_core": {
+                    "anchor": "あの約束",
+                    "already_shared": ["あの約束"],
+                    "not_yet_shared": [],
+                },
+                "response_role": {
+                    "primary": "leave_return_point_from_anchor",
+                    "secondary": "reflect_only",
+                },
+                "constraints": {
+                    "no_generic_clarification": True,
+                    "no_advice": True,
+                    "max_questions": 0,
+                    "keep_thread_visible": True,
+                    "prefer_return_point": True,
+                    "boundary_style": "soft_hold",
+                },
+                "surface_profile": {
+                    "response_length": "short",
+                    "cultural_register": "soft_companion",
+                    "group_register": "one_to_one",
+                    "sentence_temperature": "gentle",
+                    "surface_mode": "",
+                },
+                "source_state": {
+                    "recent_dialogue_state": "reopening_thread",
+                    "discussion_thread_state": "revisit_issue",
+                    "issue_state": "pausing_issue",
+                    "turn_delta_kind": "issue_pause",
+                    "green_guardedness": 0.4,
+                    "green_reopening_pull": 0.6,
+                    "green_affective_charge": 0.3,
+                },
+            },
+        },
+        user_text="前に少し引っかかっていた話の続きを、いま少しだけ戻したいです。",
+        intent="check_in",
+    )
+
+    sequence = guidance["content_sequence"]
+    acts = [item["act"] for item in sequence]
+    assert acts == ["leave_return_point_from_anchor"]
+
+
+def test_build_inner_os_llm_guidance_prunes_deep_disclosure_sequence_when_questions_are_blocked() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    guidance = harness._build_inner_os_llm_guidance(
+        expression_hint={
+            "interaction_policy_packet": {
+                "dialogue_act": "check_in",
+                "recent_dialogue_state": {"state": "continuing_thread"},
+                "discussion_thread_state": {"state": "discussion_unresolved"},
+                "issue_state": {"state": "exploring_issue"},
+            },
+            "surface_response_length": "short",
+            "surface_cultural_register": "soft_companion",
+            "surface_group_register": "one_to_one",
+            "surface_sentence_temperature": "gentle",
+            "turn_delta": {
+                "kind": "discussion_unresolved",
+                "preferred_act": "stay_with_present_need",
+            },
+            "surface_context_packet": {
+                "conversation_phase": "discussion_unresolved",
+                "shared_core": {
+                    "anchor": "",
+                    "already_shared": ["本当は、あのとき助けてほしかったって、まだ言えていないんです。"],
+                    "not_yet_shared": ["助けてほしかった"],
+                },
+                "response_role": {
+                    "primary": "stay_with_present_need",
+                    "secondary": "reflect_only",
+                },
+                "constraints": {
+                    "no_generic_clarification": True,
+                    "no_advice": True,
+                    "max_questions": 0,
+                    "keep_thread_visible": True,
+                    "prefer_return_point": False,
+                    "boundary_style": "soft_hold",
+                },
+                "surface_profile": {
+                    "response_length": "short",
+                    "cultural_register": "soft_companion",
+                    "group_register": "one_to_one",
+                    "sentence_temperature": "gentle",
+                    "surface_mode": "",
+                },
+                "source_state": {
+                    "recent_dialogue_state": "continuing_thread",
+                    "discussion_thread_state": "discussion_unresolved",
+                    "issue_state": "exploring_issue",
+                    "turn_delta_kind": "discussion_unresolved",
+                    "green_guardedness": 0.7,
+                    "green_reopening_pull": 0.2,
+                    "green_affective_charge": 0.8,
+                },
+            },
+        },
+        user_text="本当は、あのとき助けてほしかったって、まだ言えていないんです。",
+        intent="check_in",
+    )
+
+    sequence = guidance["content_sequence"]
+    acts = [item["act"] for item in sequence]
+    assert acts == ["reflect_hidden_need", "stay_with_present_need"]
 
 
 def test_apply_inner_os_surface_profile_shapes_text_and_controls() -> None:
@@ -743,6 +920,9 @@ def test_process_turn_injects_inner_os_metadata(tmp_path: Path) -> None:
     assert result.response.controls["inner_os"]["expression_hints"]["live_style_alignment"] >= 0.0
     assert result.response.controls["inner_os"]["expression_hints"]["contact_field"]["points"]
     assert result.response.controls["inner_os"]["expression_hints"]["contact_dynamics"]["stabilized_points"]
+    assert result.response.controls["inner_os"]["expression_hints"]["contact_reflection_state"]["reflection_style"] in {"reflect_then_question", "reflect_only", "boundary_only"}
+    assert "green_kernel_composition" in result.response.controls["inner_os"]["expression_hints"]
+    assert "field" in result.response.controls["inner_os"]["expression_hints"]["green_kernel_composition"]
     assert result.response.controls["inner_os"]["expression_hints"]["qualia_state"]["qualia"]
     assert result.response.controls["inner_os"]["expression_hints"]["qualia_state"]["gate"]
     assert len(result.response.controls["inner_os"]["expression_hints"]["qualia_state"]["qualia"]) == len(
@@ -884,6 +1064,8 @@ def test_process_turn_injects_inner_os_metadata(tmp_path: Path) -> None:
     assert result.persona_meta["inner_os"]["continuity_summary"]["same_turn"]["protection_mode"] in {"monitor", "contain", "stabilize", "repair", "shield"}
     assert result.persona_meta["inner_os"]["continuity_summary"]["same_turn"]["social_topology_state"] in {"ambient", "one_to_one", "threaded_group", "public_visible", "hierarchical", ""}
     assert result.persona_meta["inner_os"]["continuity_summary"]["same_turn"]["active_group_thread_total"] >= 0
+    assert result.persona_meta["inner_os"]["continuity_summary"]["same_turn"]["issue_state"] in {"ambient", "naming_issue", "exploring_issue", "pausing_issue", "resolving_issue", ""}
+    assert result.persona_meta["inner_os"]["discussion_thread_registry_summary"]["total_threads"] >= 0
     assert "dominant_carry_channel" in result.persona_meta["inner_os"]["continuity_summary"]
     assert result.persona_meta["inner_os"]["resonance_recommended_family"]
     assert result.persona_meta["inner_os"]["audit_report_lines"]
@@ -967,6 +1149,31 @@ def test_process_turn_restores_agenda_carry_into_overnight_view(tmp_path) -> Non
     assert result.metrics["inner_os/overnight_agenda_window_bias_active"] == 1.0
     assert result.metrics["inner_os/agenda_winner_margin"] >= 0.0
     assert result.persona_meta["inner_os"]["agenda_state"]["winner_margin"] >= 0.0
+
+
+def test_process_turn_restores_learning_and_social_experiment_carry_into_overnight_view(tmp_path) -> None:
+    memory_core = MemoryCore(tmp_path / "runtime_learning_mode.jsonl")
+    hooks = IntegrationHooks(memory_core=memory_core)
+    harness = _ProcessTurnHarness(_integration_hooks=hooks)
+    harness._last_gate_context["inner_os_learning_mode_focus"] = "repair_probe"
+    harness._last_gate_context["inner_os_learning_mode_carry_bias"] = 0.16
+    harness._last_gate_context["inner_os_social_experiment_focus"] = "repair_signal_probe"
+    harness._last_gate_context["inner_os_social_experiment_carry_bias"] = 0.14
+    result = harness.process_turn(
+        user_text="stay with what is visible first",
+        context="visual scene",
+        intent="check_in",
+    )
+
+    overnight = result.persona_meta["inner_os"]["reaction_vs_overnight_bias"]["overnight"]
+    assert overnight["learning_mode_focus"] == "repair_probe"
+    assert overnight["learning_mode_carry_bias"] == 0.16
+    assert overnight["social_experiment_focus"] == "repair_signal_probe"
+    assert overnight["social_experiment_carry_bias"] == 0.14
+    assert result.metrics["inner_os/overnight_learning_mode_bias_active"] == 1.0
+    assert result.metrics["inner_os/overnight_social_experiment_bias_active"] == 1.0
+    assert result.metrics["inner_os/learning_mode_winner_margin"] >= 0.0
+    assert result.metrics["inner_os/social_experiment_winner_margin"] >= 0.0
 
 
 def test_process_turn_restores_body_and_relational_carry_into_overnight_view(tmp_path) -> None:
@@ -1170,6 +1377,14 @@ def test_process_turn_writes_dashboard_snapshot_when_path_is_set(tmp_path: Path)
         "hierarchical",
         "",
     }
+    assert "temporal_membrane_mode" in payload["same_turn"]
+    assert "temporal_membrane_focus" in payload["overnight"]
+    assert "temporal_membrane_focus" in payload["transfer"]
+    assert "temporal_alignment" in payload
+    assert "focus_alignment" in payload["temporal_alignment"]
+    assert "same_to_overnight_reentry_delta" in payload["temporal_alignment"]
+    assert "contact_alignment" in payload
+    assert "style" in payload["contact_alignment"]
     assert "dominant_carry_channel" in payload
     assert result.metrics["inner_os/dashboard_snapshot_ready"] == 1.0
     assert result.metrics["inner_os/dashboard_snapshot_written"] == 1.0
@@ -1183,6 +1398,16 @@ def test_apply_transfer_package_restores_working_memory_seed_and_gate_context() 
         "runtime_seed": {
             "prev_qualia": [0.3],
             "commitment_state_focus": "commit",
+            "temporal_membrane_focus": "coherent_reentry",
+            "temporal_timeline_bias": 0.24,
+            "temporal_reentry_bias": 0.19,
+            "temporal_supersession_bias": 0.05,
+            "temporal_continuity_bias": 0.17,
+            "temporal_relation_reentry_bias": 0.14,
+            "autobiographical_thread_mode": "unfinished_thread",
+            "autobiographical_thread_anchor": "harbor promise",
+            "autobiographical_thread_focus": "unfinished promise",
+            "autobiographical_thread_strength": 0.38,
             "body_homeostasis_focus": "recovering",
             "body_homeostasis_carry_bias": 0.16,
             "homeostasis_budget_focus": "recovering",
@@ -1197,6 +1422,13 @@ def test_apply_transfer_package_restores_working_memory_seed_and_gate_context() 
             "group_thread_registry_snapshot": {
                 "dominant_thread_id": "threaded_group:person:friend|person:harbor",
                 "top_thread_ids": ["threaded_group:person:friend|person:harbor"],
+                "total_threads": 1,
+            },
+            "discussion_thread_registry_snapshot": {
+                "dominant_thread_id": "repair_anchor",
+                "dominant_anchor": "repair anchor",
+                "dominant_issue_state": "pausing_issue",
+                "top_thread_ids": ["repair_anchor"],
                 "total_threads": 1,
             },
             "group_thread_focus": "threaded_group",
@@ -1237,11 +1469,18 @@ def test_apply_transfer_package_restores_working_memory_seed_and_gate_context() 
 
     assert restored["commitment_state_focus"] == "commit"
     assert harness._last_gate_context["inner_os_commitment_state_focus"] == "commit"
+    assert harness._last_gate_context["inner_os_temporal_membrane_focus"] == "coherent_reentry"
+    assert harness._last_gate_context["inner_os_autobiographical_thread_mode"] == "unfinished_thread"
+    assert harness._last_gate_context["inner_os_autobiographical_thread_anchor"] == "harbor promise"
+    assert harness._last_gate_context["inner_os_autobiographical_thread_strength"] == 0.38
+    assert harness._last_gate_context["inner_os_temporal_timeline_bias"] == 0.24
+    assert harness._last_gate_context["inner_os_temporal_reentry_bias"] == 0.19
     assert harness._last_gate_context["inner_os_body_homeostasis_focus"] == "recovering"
     assert harness._last_gate_context["inner_os_homeostasis_budget_focus"] == "recovering"
     assert harness._last_gate_context["inner_os_relational_continuity_focus"] == "reopening"
     assert harness._last_gate_context["inner_os_person_registry_snapshot"]["total_people"] == 2
     assert harness._last_gate_context["inner_os_group_thread_registry_snapshot"]["total_threads"] == 1
+    assert harness._last_gate_context["inner_os_discussion_thread_registry_snapshot"]["dominant_issue_state"] == "pausing_issue"
     assert harness._last_gate_context["inner_os_group_thread_focus"] == "threaded_group"
     seed = harness._surface_world_state["working_memory_seed"]
     assert seed["semantic_seed_focus"] == "harbor slope"
@@ -1264,6 +1503,8 @@ def test_load_inner_os_transfer_package_returns_warm_start_summary() -> None:
             },
             "initiative_followup_state": "reopen_softly",
             "commitment_target_focus": "repair",
+            "temporal_membrane_focus": "same_group_reentry",
+            "temporal_reentry_bias": 0.18,
             "homeostasis_budget_focus": "recovering",
             "homeostasis_budget_bias": 0.07,
             "person_registry_snapshot": {
@@ -1276,6 +1517,13 @@ def test_load_inner_os_transfer_package_returns_warm_start_summary() -> None:
                 "top_thread_ids": ["threaded_group:person:friend|person:harbor"],
                 "total_threads": 1,
             },
+            "discussion_thread_registry_snapshot": {
+                "dominant_thread_id": "repair_anchor",
+                "dominant_anchor": "repair anchor",
+                "dominant_issue_state": "pausing_issue",
+                "top_thread_ids": ["repair_anchor"],
+                "total_threads": 1,
+            },
             "group_thread_focus": "threaded_group",
             "group_thread_carry_bias": 0.12,
         }
@@ -1286,9 +1534,14 @@ def test_load_inner_os_transfer_package_returns_warm_start_summary() -> None:
     assert summary["source_model"]["name"] == "qwen-legacy"
     assert summary["initiative_followup_state"] == "reopen_softly"
     assert summary["commitment_target_focus"] == "repair"
+    assert summary["temporal_membrane_focus"] == "same_group_reentry"
+    assert summary["temporal_reentry_bias"] == 0.18
     assert summary["homeostasis_budget_focus"] == "recovering"
     assert summary["person_registry_total_people"] == 2
     assert summary["group_thread_total_threads"] == 1
+    assert summary["discussion_thread_total_threads"] == 1
+    assert summary["discussion_thread_dominant_anchor"] == "repair anchor"
+    assert summary["discussion_thread_dominant_issue_state"] == "pausing_issue"
     assert summary["group_thread_focus"] == "threaded_group"
     assert summary["semantic_seed_anchor"] == "harbor slope"
     assert harness._surface_world_state["working_memory_seed"]["semantic_seed_focus"] == "harbor slope"
@@ -1442,6 +1695,12 @@ def test_process_turn_exposes_transfer_summary_after_warm_start(tmp_path: Path, 
             "commitment_target_focus": "repair",
             "agenda_focus": "repair",
             "agenda_bias": 0.18,
+            "temporal_membrane_focus": "same_group_reentry",
+            "temporal_timeline_bias": 0.22,
+            "temporal_reentry_bias": 0.2,
+            "temporal_supersession_bias": 0.04,
+            "temporal_continuity_bias": 0.18,
+            "temporal_relation_reentry_bias": 0.16,
             "homeostasis_budget_focus": "recovering",
             "homeostasis_budget_bias": 0.08,
             "person_registry_snapshot": {
@@ -1452,6 +1711,13 @@ def test_process_turn_exposes_transfer_summary_after_warm_start(tmp_path: Path, 
             "group_thread_registry_snapshot": {
                 "dominant_thread_id": "threaded_group:person:friend|person:harbor",
                 "top_thread_ids": ["threaded_group:person:friend|person:harbor"],
+                "total_threads": 1,
+            },
+            "discussion_thread_registry_snapshot": {
+                "dominant_thread_id": "repair_anchor",
+                "dominant_anchor": "repair anchor",
+                "dominant_issue_state": "pausing_issue",
+                "top_thread_ids": ["repair_anchor"],
                 "total_threads": 1,
             },
             "group_thread_focus": "threaded_group",
@@ -1472,9 +1738,14 @@ def test_process_turn_exposes_transfer_summary_after_warm_start(tmp_path: Path, 
     assert summary["commitment_target_focus"] == "repair"
     assert summary["agenda_focus"] == "repair"
     assert summary["agenda_bias"] == 0.18
+    assert summary["temporal_membrane_focus"] == "same_group_reentry"
+    assert summary["temporal_reentry_bias"] == 0.2
     assert summary["homeostasis_budget_focus"] == "recovering"
     assert summary["person_registry_total_people"] == 2
     assert summary["group_thread_total_threads"] == 1
+    assert summary["discussion_thread_total_threads"] == 1
+    assert summary["discussion_thread_dominant_anchor"] == "repair anchor"
+    assert summary["discussion_thread_dominant_issue_state"] == "pausing_issue"
     assert summary["group_thread_focus"] == "threaded_group"
     assert summary["target_model"] == "qwen-3.5-coder"
     assert result.metrics["inner_os/transfer_migration_active"] == 1.0
@@ -1483,9 +1754,13 @@ def test_process_turn_exposes_transfer_summary_after_warm_start(tmp_path: Path, 
     assert result.metrics["inner_os/transfer_target_model_requested"] == 1.0
     assert result.metrics["inner_os/person_registry_total_people"] == 2.0
     assert result.metrics["inner_os/group_thread_total_threads"] == 1.0
+    assert result.metrics["inner_os/discussion_thread_total_threads"] == 1.0
     assert result.persona_meta["inner_os"]["group_thread_registry_summary"]["total_threads"] == 1
+    assert result.persona_meta["inner_os"]["discussion_thread_registry_summary"]["total_threads"] >= 1
     assert result.persona_meta["inner_os"]["group_thread_focus"] == "threaded_group"
     assert result.persona_meta["inner_os"]["continuity_summary"]["overnight"]["group_thread_focus"] == "threaded_group"
+    assert result.persona_meta["inner_os"]["continuity_summary"]["overnight"]["temporal_membrane_focus"] == "same_group_reentry"
+    assert result.persona_meta["inner_os"]["continuity_summary"]["overnight"]["temporal_reentry_bias"] == 0.2
 
 
 def test_process_turn_passes_working_memory_seed_into_inner_os_pre_turn(tmp_path: Path) -> None:
@@ -1662,6 +1937,110 @@ def test_process_turn_derives_seed_from_nightly_long_term_theme(tmp_path: Path) 
     assert result.metrics["inner_os/long_term_theme_strength"] == 0.6
     assert result.persona_meta["inner_os"]["long_term_theme_focus"] == "harbor slope"
     assert result.persona_meta["inner_os"]["long_term_theme_summary"] == "quiet harbor slope memory"
+
+
+def test_process_turn_derives_identity_arc_from_nightly_summary(tmp_path: Path) -> None:
+    hooks = IntegrationHooks(memory_core=MemoryCore(path=tmp_path / "inner_os_memory.jsonl"))
+    harness = _ProcessTurnHarness(_integration_hooks=hooks)
+    harness._latest_nightly_identity_arc_summary = lambda: {
+        "arc_kind": "repairing_bond",
+        "phase": "shifting",
+        "summary": "repair is gathering around a relationship thread / phase=shifting / anchor=harbor slope",
+        "open_tension": "timing_sensitive_reentry",
+        "stability": 0.58,
+        "memory_anchor": "harbor slope",
+    }
+    result = harness.process_turn(user_text="", context="previous framing")
+    assert result.metrics["inner_os/identity_arc_visible"] == 1.0
+    assert result.metrics["inner_os/identity_arc_stability"] == 0.58
+    assert result.persona_meta["inner_os"]["identity_arc_kind"] == "repairing_bond"
+    assert result.persona_meta["inner_os"]["identity_arc_phase"] == "shifting"
+    assert result.persona_meta["inner_os"]["identity_arc_summary"].startswith("repair is gathering")
+    assert result.persona_meta["inner_os"]["continuity_summary"]["same_turn"]["identity_arc_kind"] == "repairing_bond"
+
+
+def test_process_turn_exposes_identity_arc_registry_from_nightly_summary(tmp_path: Path) -> None:
+    hooks = IntegrationHooks(memory_core=MemoryCore(path=tmp_path / "inner_os_memory.jsonl"))
+    harness = _ProcessTurnHarness(_integration_hooks=hooks)
+    harness._latest_nightly_identity_arc_registry_summary = lambda: {
+        "dominant_arc_id": "repairing_bond::person:user::meaning::harbor",
+        "dominant_arc_kind": "repairing_bond",
+        "dominant_arc_phase": "shifting",
+        "dominant_arc_summary": "repair is gathering around a relationship thread / phase=shifting / anchor=harbor slope",
+        "active_arc_count": 1,
+        "total_arcs": 1,
+        "top_arc_ids": ["repairing_bond::person:user::meaning::harbor"],
+        "status_counts": {"active": 1},
+    }
+    result = harness.process_turn(user_text="", context="previous framing")
+    assert result.persona_meta["inner_os"]["identity_arc_registry_summary"]["dominant_arc_kind"] == "repairing_bond"
+    assert result.persona_meta["inner_os"]["continuity_summary"]["same_turn"]["identity_arc_registry_dominant_kind"] == "repairing_bond"
+    assert result.persona_meta["inner_os"]["continuity_summary"]["overnight"]["identity_arc_registry_active_count"] == 1
+
+
+def test_process_turn_derives_relation_arc_from_nightly_summary(tmp_path: Path) -> None:
+    hooks = IntegrationHooks(memory_core=MemoryCore(path=tmp_path / "inner_os_memory.jsonl"))
+    harness = _ProcessTurnHarness(_integration_hooks=hooks)
+    harness._latest_nightly_relation_arc_summary = lambda: {
+        "arc_kind": "repairing_relation",
+        "phase": "shifting",
+        "summary": "repair is gathering around a companion thread",
+        "open_tension": "timing_sensitive_reentry",
+        "stability": 0.56,
+        "related_person_id": "person:harbor",
+        "group_thread_id": "threaded_group:person:friend|person:harbor",
+    }
+    result = harness.process_turn(user_text="", context="previous framing")
+    assert result.persona_meta["inner_os"]["relation_arc_kind"] == "repairing_relation"
+    assert result.persona_meta["inner_os"]["relation_arc_phase"] == "shifting"
+    assert result.persona_meta["inner_os"]["relation_arc_summary"] == "repair is gathering around a companion thread"
+    assert result.persona_meta["inner_os"]["continuity_summary"]["same_turn"]["relation_arc_kind"] == "repairing_relation"
+    assert result.persona_meta["inner_os"]["continuity_summary"]["overnight"]["relation_arc_summary"] == "repair is gathering around a companion thread"
+
+
+def test_process_turn_exposes_relation_arc_registry_from_nightly_summary(tmp_path: Path) -> None:
+    hooks = IntegrationHooks(memory_core=MemoryCore(path=tmp_path / "inner_os_memory.jsonl"))
+    harness = _ProcessTurnHarness(_integration_hooks=hooks)
+    harness._latest_nightly_relation_arc_registry_summary = lambda: {
+        "dominant_arc_id": "repairing_relation::person:harbor::companion",
+        "dominant_arc_kind": "repairing_relation",
+        "dominant_arc_phase": "shifting",
+        "dominant_arc_summary": "repair is gathering around a companion thread",
+        "dominant_person_id": "person:harbor",
+        "dominant_group_thread_id": "threaded_group:person:friend|person:harbor",
+        "active_arc_count": 1,
+        "total_arcs": 1,
+        "top_arc_ids": ["repairing_relation::person:harbor::companion"],
+        "status_counts": {"active": 1},
+    }
+    result = harness.process_turn(user_text="", context="previous framing")
+    assert result.persona_meta["inner_os"]["relation_arc_registry_summary"]["dominant_arc_kind"] == "repairing_relation"
+    assert result.persona_meta["inner_os"]["continuity_summary"]["same_turn"]["relation_arc_registry_dominant_kind"] == "repairing_relation"
+    assert result.persona_meta["inner_os"]["continuity_summary"]["overnight"]["relation_arc_registry_active_count"] == 1
+
+
+def test_process_turn_derives_group_relation_arc_from_nightly_summary(tmp_path: Path) -> None:
+    hooks = IntegrationHooks(memory_core=MemoryCore(path=tmp_path / "inner_os_memory.jsonl"))
+    harness = _ProcessTurnHarness(_integration_hooks=hooks)
+    harness._latest_nightly_group_relation_arc_summary = lambda: {
+        "arc_kind": "repairing_relation",
+        "phase": "shifting",
+        "summary": "repair is moving through a shared group thread in small steps",
+        "group_thread_id": "threaded_group:person:friend|person:harbor",
+        "topology_focus": "threaded_group",
+        "boundary_mode": "same_group_reentry",
+        "reentry_window_focus": "next_same_group_window",
+        "dominant_person_id": "person:harbor",
+        "stability": 0.61,
+    }
+    result = harness.process_turn(user_text="", context="previous framing")
+    assert result.persona_meta["inner_os"]["group_relation_arc_kind"] == "repairing_relation"
+    assert result.persona_meta["inner_os"]["group_relation_arc_phase"] == "shifting"
+    assert result.persona_meta["inner_os"]["group_relation_arc_boundary_mode"] == "same_group_reentry"
+    assert result.persona_meta["inner_os"]["group_relation_arc_group_thread_id"] == "threaded_group:person:friend|person:harbor"
+    assert result.persona_meta["inner_os"]["group_relation_arc"]["summary"] == "repair is moving through a shared group thread in small steps"
+    assert result.persona_meta["inner_os"]["continuity_summary"]["same_turn"]["group_relation_arc_kind"] == "repairing_relation"
+    assert result.persona_meta["inner_os"]["continuity_summary"]["overnight"]["group_relation_boundary_mode"] == "same_group_reentry"
 
 
 def test_process_turn_derives_relation_seed_from_nightly_partner_summary(tmp_path: Path) -> None:

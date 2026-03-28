@@ -107,3 +107,53 @@ def test_working_memory_absorbs_conscious_residue_without_promoting_to_long_term
     assert snap.long_term_theme_strength == 0.0
     assert snap.carryover_load > 0.12
     assert trace["conscious_residue_summary"] == "quiet harbor slope memory"
+
+
+def test_working_memory_snapshot_absorbs_autobiographical_thread_pressure() -> None:
+    core = WorkingMemoryCore()
+    snap = core.snapshot(
+        user_input={"text": ""},
+        sensor_input={"body_stress_index": 0.12},
+        current_state={
+            "temporal_pressure": 0.16,
+            "recent_dialogue_state": {
+                "state": "reopening_thread",
+                "thread_carry": 0.58,
+                "reopen_pressure": 0.52,
+                "recent_anchor": "harbor promise",
+            },
+            "discussion_thread_state": {
+                "state": "revisit_issue",
+                "topic_anchor": "harbor promise",
+                "unresolved_pressure": 0.44,
+                "revisit_readiness": 0.62,
+            },
+            "issue_state": {
+                "state": "pausing_issue",
+                "issue_anchor": "harbor promise",
+                "pause_readiness": 0.64,
+            },
+            "discussion_thread_registry_snapshot": {
+                "dominant_anchor": "harbor promise",
+                "dominant_issue_state": "pausing_issue",
+                "thread_scores": {"harbor_promise": 0.68},
+                "total_threads": 1,
+                "uncertainty": 0.2,
+            },
+            "residual_reflection_mode": "withheld",
+            "residual_reflection_focus": "unfinished promise",
+            "residual_reflection_strength": 0.42,
+            "related_person_id": "user",
+        },
+        relational_world={},
+        previous_trace={"carryover_load": 0.1},
+        recall_payload={},
+    )
+
+    trace = core.build_trace_record(snapshot=snap, current_state={}, relational_world={})
+
+    assert snap.autobiographical_thread_mode != "none"
+    assert snap.autobiographical_thread_anchor == "harbor promise"
+    assert snap.autobiographical_thread_strength > 0.0
+    assert snap.focus_anchor == "harbor promise"
+    assert trace["autobiographical_thread_mode"] == snap.autobiographical_thread_mode

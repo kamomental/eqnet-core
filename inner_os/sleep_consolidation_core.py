@@ -69,6 +69,14 @@ class SleepConsolidationSnapshot:
     agenda_focus: str = ""
     agenda_bias: float = 0.0
     agenda_reason: str = ""
+    agenda_window_focus: str = ""
+    agenda_window_bias: float = 0.0
+    agenda_window_reason: str = ""
+    agenda_window_carry_target: str = ""
+    learning_mode_focus: str = ""
+    learning_mode_carry_bias: float = 0.0
+    social_experiment_focus: str = ""
+    social_experiment_carry_bias: float = 0.0
     commitment_target_focus: str = ""
     commitment_state_focus: str = "waver"
     commitment_carry_bias: float = 0.0
@@ -99,6 +107,16 @@ class SleepConsolidationSnapshot:
     relational_continuity_carry_bias: float = 0.0
     group_thread_focus: str = ""
     group_thread_carry_bias: float = 0.0
+    autobiographical_thread_mode: str = ""
+    autobiographical_thread_anchor: str = ""
+    autobiographical_thread_focus: str = ""
+    autobiographical_thread_strength: float = 0.0
+    temporal_membrane_focus: str = ""
+    temporal_timeline_bias: float = 0.0
+    temporal_reentry_bias: float = 0.0
+    temporal_supersession_bias: float = 0.0
+    temporal_continuity_bias: float = 0.0
+    temporal_relation_reentry_bias: float = 0.0
     expressive_style_focus: str = ""
     expressive_style_carry_bias: float = 0.0
     expressive_style_history_focus: str = ""
@@ -271,6 +289,53 @@ class SleepConsolidationCore:
             mode = "settle"
 
         agenda_bias = _derive_agenda_bias(current_state, mode=mode)
+        agenda_window_bias = _derive_agenda_window_bias(current_state, mode=mode)
+        learning_mode_bias = _derive_state_carry_bias(
+            current_state,
+            mode=mode,
+            state_field="learning_mode_state",
+            explicit_focus_field="learning_mode_focus",
+            explicit_bias_field="learning_mode_carry_bias",
+            mode_scale={
+                "restabilize": 0.12,
+                "defragment": 0.1,
+                "reconsolidate": 0.16,
+                "replay": 0.14,
+                "abstract": 0.1,
+                "settle": 0.1,
+            },
+            state_boosts={
+                "observe_only": 1.08,
+                "test_small": 0.94,
+                "repair_probe": 1.04,
+                "hold_and_wait": 1.12,
+                "integrate_and_commit": 0.92,
+            },
+            max_bias=0.14,
+        )
+        social_experiment_bias = _derive_state_carry_bias(
+            current_state,
+            mode=mode,
+            state_field="social_experiment_loop_state",
+            explicit_focus_field="social_experiment_focus",
+            explicit_bias_field="social_experiment_carry_bias",
+            mode_scale={
+                "restabilize": 0.1,
+                "defragment": 0.1,
+                "reconsolidate": 0.16,
+                "replay": 0.14,
+                "abstract": 0.1,
+                "settle": 0.1,
+            },
+            state_boosts={
+                "watch_and_read": 1.06,
+                "test_small_step": 0.94,
+                "repair_signal_probe": 1.08,
+                "confirm_shared_direction": 0.92,
+                "hold_probe": 1.12,
+            },
+            max_bias=0.14,
+        )
         temperament_bias = _derive_temperament_bias(current_state, mode=mode)
         homeostasis_budget_bias = _derive_state_carry_bias(
             current_state,
@@ -342,6 +407,19 @@ class SleepConsolidationCore:
             current_state,
             mode=mode,
         )
+        autobiographical_thread_mode = _text_from(current_state, "autobiographical_thread_mode")
+        autobiographical_thread_anchor = _text_from(current_state, "autobiographical_thread_anchor")
+        autobiographical_thread_focus = _text_from(current_state, "autobiographical_thread_focus")
+        autobiographical_thread_strength = _clamp01(
+            max(
+                _float_from(current_state, "autobiographical_thread_strength", 0.0),
+                autobiographical_pull * 0.42 if autobiographical_thread_mode else 0.0,
+            )
+        )
+        temporal_membrane_bias = _derive_temporal_membrane_carry(
+            current_state,
+            mode=mode,
+        )
         expressive_style_bias = _derive_state_carry_bias(
             current_state,
             mode=mode,
@@ -406,6 +484,14 @@ class SleepConsolidationCore:
             agenda_focus=agenda_bias["focus"],
             agenda_bias=agenda_bias["carry_bias"],
             agenda_reason=agenda_bias["reason"],
+            agenda_window_focus=agenda_window_bias["focus"],
+            agenda_window_bias=agenda_window_bias["carry_bias"],
+            agenda_window_reason=agenda_window_bias["reason"],
+            agenda_window_carry_target=agenda_window_bias["carry_target"],
+            learning_mode_focus=learning_mode_bias["focus"],
+            learning_mode_carry_bias=learning_mode_bias["carry_bias"],
+            social_experiment_focus=social_experiment_bias["focus"],
+            social_experiment_carry_bias=social_experiment_bias["carry_bias"],
             commitment_target_focus=commitment_bias["target_focus"],
             commitment_state_focus=commitment_bias["state_focus"],
             commitment_carry_bias=commitment_bias["carry_bias"],
@@ -436,6 +522,16 @@ class SleepConsolidationCore:
             relational_continuity_carry_bias=relational_continuity_bias["carry_bias"],
             group_thread_focus=group_thread_bias["focus"],
             group_thread_carry_bias=group_thread_bias["carry_bias"],
+            autobiographical_thread_mode=autobiographical_thread_mode,
+            autobiographical_thread_anchor=autobiographical_thread_anchor,
+            autobiographical_thread_focus=autobiographical_thread_focus,
+            autobiographical_thread_strength=round(autobiographical_thread_strength, 4),
+            temporal_membrane_focus=temporal_membrane_bias["focus"],
+            temporal_timeline_bias=temporal_membrane_bias["timeline_bias"],
+            temporal_reentry_bias=temporal_membrane_bias["reentry_bias"],
+            temporal_supersession_bias=temporal_membrane_bias["supersession_bias"],
+            temporal_continuity_bias=temporal_membrane_bias["continuity_bias"],
+            temporal_relation_reentry_bias=temporal_membrane_bias["relation_reentry_bias"],
             expressive_style_focus=expressive_style_bias["focus"],
             expressive_style_carry_bias=expressive_style_bias["carry_bias"],
             expressive_style_history_focus=expressive_style_history_bias["focus"],
@@ -696,6 +792,58 @@ def _derive_agenda_bias(
     }
 
 
+def _derive_agenda_window_bias(
+    current_state: Optional[Mapping[str, Any]],
+    *,
+    mode: str,
+) -> dict[str, Any]:
+    payload = dict(current_state or {})
+    window_payload = payload.get("agenda_window_state")
+    if not isinstance(window_payload, Mapping):
+        window_payload = {}
+    focus = _text_from(payload, "agenda_window_focus") or _text_from(window_payload, "state")
+    carry_bias = _clamp01(_float_from(payload, "agenda_window_bias", 0.0))
+    reason = _text_from(payload, "agenda_window_reason") or _text_from(window_payload, "reason")
+    carry_target = _text_from(payload, "agenda_window_carry_target") or _text_from(window_payload, "carry_target")
+    deferral_budget = _clamp01(_float_from(window_payload, "deferral_budget", 0.0))
+    window_score = _clamp01(_float_from(window_payload, "score", 0.0))
+    window_margin = _clamp01(_float_from(window_payload, "winner_margin", 0.0))
+    if not focus:
+        return {"focus": "", "carry_bias": 0.0, "reason": "", "carry_target": ""}
+    mode_scale = {
+        "restabilize": 0.18,
+        "defragment": 0.14,
+        "reconsolidate": 0.28,
+        "replay": 0.24,
+        "abstract": 0.16,
+        "settle": 0.12,
+    }.get(str(mode or "").strip(), 0.12)
+    focus_boost = {
+        "now": 0.82,
+        "next_private_window": 1.14,
+        "next_same_group_window": 1.18,
+        "next_same_culture_window": 1.12,
+        "opportunistic_reentry": 1.08,
+        "long_hold": 1.2,
+    }.get(focus, 1.0)
+    derived_bias = _clamp01(
+        (window_score * 0.22 + window_margin * 0.12 + deferral_budget * 0.18)
+        * mode_scale
+        * focus_boost
+    )
+    carry_bias = min(0.18, max(carry_bias, derived_bias))
+    if not reason:
+        reason = focus
+    if not carry_target:
+        carry_target = "later_safe_window"
+    return {
+        "focus": focus,
+        "carry_bias": round(_clamp01(carry_bias), 4),
+        "reason": reason,
+        "carry_target": carry_target,
+    }
+
+
 def _derive_temperament_bias(
     current_state: Optional[Mapping[str, Any]],
     *,
@@ -883,6 +1031,117 @@ def _derive_group_thread_carry(
     return {
         "focus": focus,
         "carry_bias": round(min(0.16, max(carry_bias, derived_bias)), 4),
+    }
+
+
+def _derive_temporal_membrane_carry(
+    current_state: Optional[Mapping[str, Any]],
+    *,
+    mode: str,
+) -> dict[str, Any]:
+    payload = dict(current_state or {})
+    focus = _text_from(payload, "temporal_membrane_focus") or _text_from(payload, "temporal_membrane_mode")
+    timeline_coherence = _clamp01(_float_from(payload, "temporal_timeline_coherence", 0.0))
+    reentry_pull = _clamp01(_float_from(payload, "temporal_reentry_pull", 0.0))
+    supersession_pressure = _clamp01(_float_from(payload, "temporal_supersession_pressure", 0.0))
+    continuity_pressure = _clamp01(_float_from(payload, "temporal_continuity_pressure", 0.0))
+    relation_reentry_pull = _clamp01(_float_from(payload, "temporal_relation_reentry_pull", 0.0))
+    explicit_timeline_bias = _clamp01(_float_from(payload, "temporal_timeline_bias", 0.0))
+    explicit_reentry_bias = _clamp01(_float_from(payload, "temporal_reentry_bias", 0.0))
+    explicit_supersession_bias = _clamp01(_float_from(payload, "temporal_supersession_bias", 0.0))
+    explicit_continuity_bias = _clamp01(_float_from(payload, "temporal_continuity_bias", 0.0))
+    explicit_relation_reentry_bias = _clamp01(_float_from(payload, "temporal_relation_reentry_bias", 0.0))
+
+    if not focus:
+        focus_scores = {
+            "timeline": timeline_coherence,
+            "reentry": reentry_pull,
+            "supersession": supersession_pressure,
+            "continuity": continuity_pressure,
+            "relation_reentry": relation_reentry_pull,
+        }
+        if any(score > 0.0 for score in focus_scores.values()):
+            focus = max(
+                focus_scores.keys(),
+                key=lambda key: (focus_scores[key], key),
+            )
+
+    if (
+        not focus
+        and explicit_timeline_bias <= 0.0
+        and explicit_reentry_bias <= 0.0
+        and explicit_supersession_bias <= 0.0
+        and explicit_continuity_bias <= 0.0
+        and explicit_relation_reentry_bias <= 0.0
+    ):
+        return {
+            "focus": "",
+            "timeline_bias": 0.0,
+            "reentry_bias": 0.0,
+            "supersession_bias": 0.0,
+            "continuity_bias": 0.0,
+            "relation_reentry_bias": 0.0,
+        }
+
+    mode_scale = {
+        "restabilize": 0.12,
+        "defragment": 0.14,
+        "reconsolidate": 0.2,
+        "replay": 0.18,
+        "abstract": 0.12,
+        "settle": 0.11,
+    }.get(str(mode or "").strip(), 0.11)
+    focus_boost = {
+        "timeline": 1.0,
+        "reentry": 1.08,
+        "supersession": 1.06,
+        "continuity": 1.04,
+        "relation_reentry": 1.1,
+        "ambient": 0.94,
+    }.get(focus, 1.0)
+
+    timeline_bias = min(
+        0.14,
+        max(
+            explicit_timeline_bias,
+            _clamp01((timeline_coherence * 0.76 + continuity_pressure * 0.12) * mode_scale * focus_boost),
+        ),
+    )
+    reentry_bias = min(
+        0.16,
+        max(
+            explicit_reentry_bias,
+            _clamp01((reentry_pull * 0.78 + relation_reentry_pull * 0.14 + continuity_pressure * 0.08) * mode_scale * focus_boost),
+        ),
+    )
+    supersession_bias = min(
+        0.14,
+        max(
+            explicit_supersession_bias,
+            _clamp01((supersession_pressure * 0.82 + timeline_coherence * 0.08) * mode_scale * focus_boost),
+        ),
+    )
+    continuity_bias = min(
+        0.15,
+        max(
+            explicit_continuity_bias,
+            _clamp01((continuity_pressure * 0.78 + timeline_coherence * 0.14 + reentry_pull * 0.06) * mode_scale * focus_boost),
+        ),
+    )
+    relation_reentry_bias = min(
+        0.16,
+        max(
+            explicit_relation_reentry_bias,
+            _clamp01((relation_reentry_pull * 0.82 + reentry_pull * 0.12 + continuity_pressure * 0.08) * mode_scale * focus_boost),
+        ),
+    )
+    return {
+        "focus": focus,
+        "timeline_bias": round(_clamp01(timeline_bias), 4),
+        "reentry_bias": round(_clamp01(reentry_bias), 4),
+        "supersession_bias": round(_clamp01(supersession_bias), 4),
+        "continuity_bias": round(_clamp01(continuity_bias), 4),
+        "relation_reentry_bias": round(_clamp01(relation_reentry_bias), 4),
     }
 
 

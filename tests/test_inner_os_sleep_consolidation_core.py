@@ -330,6 +330,105 @@ def test_sleep_consolidation_core_reads_commitment_carry_bias() -> None:
     assert snapshot.commitment_carry_reason == "commit:repair"
 
 
+def test_sleep_consolidation_core_derives_agenda_window_carry_bias() -> None:
+    core = SleepConsolidationCore()
+    snapshot = core.snapshot(
+        current_state={
+            "agenda_window_state": {
+                "state": "next_same_culture_window",
+                "reason": "hold_for_same_culture_context",
+                "score": 0.58,
+                "winner_margin": 0.14,
+                "deferral_budget": 0.66,
+                "carry_target": "same_culture_window",
+            },
+        },
+        forgetting_snapshot={"forgetting_pressure": 0.16, "replay_horizon": 2},
+        memory_orchestration={
+            "reuse_trajectory": 0.28,
+            "consolidation_priority": 0.34,
+            "monument_salience": 0.18,
+            "prospective_memory_pull": 0.12,
+            "interference_pressure": 0.14,
+            "conscious_mosaic_recentness": 0.26,
+        },
+        persistence_state={"recent_strain": 0.18, "social_grounding": 0.6, "continuity_score": 0.56},
+        development_state={"belonging": 0.48, "trust_bias": 0.5, "norm_pressure": 0.42, "role_commitment": 0.46},
+    )
+
+    assert snapshot.agenda_window_focus == "next_same_culture_window"
+    assert snapshot.agenda_window_bias > 0.0
+    assert snapshot.agenda_window_reason == "hold_for_same_culture_context"
+    assert snapshot.agenda_window_carry_target == "same_culture_window"
+
+
+def test_sleep_consolidation_core_derives_learning_and_social_experiment_carry_bias() -> None:
+    core = SleepConsolidationCore()
+    snapshot = core.snapshot(
+        current_state={
+            "learning_mode_state": {
+                "state": "repair_probe",
+                "score": 0.58,
+                "winner_margin": 0.14,
+                "probe_room": 0.48,
+            },
+            "social_experiment_loop_state": {
+                "state": "repair_signal_probe",
+                "score": 0.54,
+                "winner_margin": 0.12,
+                "probe_intensity": 0.42,
+            },
+        },
+        forgetting_snapshot={"forgetting_pressure": 0.16, "replay_horizon": 2},
+        memory_orchestration={
+            "reuse_trajectory": 0.28,
+            "consolidation_priority": 0.34,
+            "monument_salience": 0.18,
+            "prospective_memory_pull": 0.12,
+            "interference_pressure": 0.14,
+            "conscious_mosaic_recentness": 0.26,
+        },
+        persistence_state={"recent_strain": 0.18, "social_grounding": 0.6, "continuity_score": 0.56},
+        development_state={"belonging": 0.48, "trust_bias": 0.5, "norm_pressure": 0.42, "role_commitment": 0.46},
+    )
+
+    assert snapshot.learning_mode_focus == "repair_probe"
+    assert snapshot.learning_mode_carry_bias > 0.0
+    assert snapshot.social_experiment_focus == "repair_signal_probe"
+    assert snapshot.social_experiment_carry_bias > 0.0
+
+
+def test_sleep_consolidation_core_derives_temporal_membrane_carry_bias() -> None:
+    core = SleepConsolidationCore()
+    snapshot = core.snapshot(
+        current_state={
+            "temporal_membrane_mode": "reentry",
+            "temporal_timeline_coherence": 0.44,
+            "temporal_reentry_pull": 0.58,
+            "temporal_supersession_pressure": 0.09,
+            "temporal_continuity_pressure": 0.36,
+            "temporal_relation_reentry_pull": 0.41,
+        },
+        forgetting_snapshot={"forgetting_pressure": 0.16, "replay_horizon": 2},
+        memory_orchestration={
+            "reuse_trajectory": 0.28,
+            "consolidation_priority": 0.34,
+            "monument_salience": 0.18,
+            "prospective_memory_pull": 0.12,
+            "interference_pressure": 0.14,
+            "conscious_mosaic_recentness": 0.26,
+        },
+        persistence_state={"recent_strain": 0.18, "social_grounding": 0.6, "continuity_score": 0.56},
+        development_state={"belonging": 0.48, "trust_bias": 0.5, "norm_pressure": 0.42, "role_commitment": 0.46},
+    )
+
+    assert snapshot.temporal_membrane_focus == "reentry"
+    assert snapshot.temporal_timeline_bias > 0.0
+    assert snapshot.temporal_reentry_bias > 0.0
+    assert snapshot.temporal_continuity_bias > 0.0
+    assert snapshot.temporal_relation_reentry_bias > 0.0
+
+
 def test_sleep_consolidation_core_derives_temperament_sleep_bias() -> None:
     core = SleepConsolidationCore()
     snapshot = core.snapshot(

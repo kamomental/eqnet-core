@@ -38,6 +38,16 @@ def test_inner_os_service_roundtrip(tmp_path: Path) -> None:
     assert recall["ignition_hints"]["recall_active"] is True
     assert recall["ignition_hints"]["environment_pressure"]["summary"]
     assert "community_profile_pressure" in recall["recall_payload"]
+    assert recall["memory_evidence_bundle_schema"] == "inner_os_memory_evidence_bundle/v1"
+    assert recall["memory_evidence_bundle"]["schema"] == "inner_os_memory_evidence_bundle/v1"
+    assert isinstance(recall["memory_evidence_bundle"]["temporal_constraints"], list)
+    assert recall["ignition_hints"]["qualia_membrane_temporal"]["dominant_mode"] in {
+        "cohere",
+        "reentry",
+        "supersede",
+        "ambient",
+    }
+    assert recall["recall_payload"]["temporal_timeline_coherence"] >= 0.0
 
     gate = service.response_gate(
         {

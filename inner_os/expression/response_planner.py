@@ -8,11 +8,13 @@ from ..access_dynamics import advance_access_dynamics
 from ..access_projection import project_access_regions
 from ..access.models import ForegroundState
 from ..affect_blend import derive_affect_blend_state
+from ..boundary_transformer import derive_boundary_transform_result
 from ..conscious_workspace import ignite_conscious_workspace
 from ..conversation_contract import build_conversation_contract
 from ..conversational_objects import derive_conversational_objects
 from ..contact_dynamics import advance_contact_dynamics
 from ..contact_field import derive_contact_field
+from ..contact_reflection_state import derive_contact_reflection_state
 from ..constraint_field import derive_constraint_field
 from ..interaction_effects import derive_interaction_effects
 from ..interaction_audit_bundle import build_interaction_audit_bundle
@@ -33,11 +35,16 @@ from ..interaction import (
     summarize_situation_state,
 )
 from ..interaction_option_search import generate_interaction_option_candidates
+from ..issue_state import derive_issue_state
 from ..memory.orchestration import MemoryContext
 from ..object_operations import derive_object_operations
 from ..partner_style import resolve_partner_utterance_stance
 from ..policy_packet import derive_interaction_policy_packet
 from ..qualia_kernel_adapter import QualiaPlannerView
+from ..discussion_thread_state import derive_discussion_thread_state
+from ..green_kernel_contracts import build_green_kernel_composition
+from ..recent_dialogue_state import derive_recent_dialogue_state
+from ..residual_reflector import derive_residual_reflection
 from ..resonance_evaluator import (
     evaluate_interaction_resonance,
     rerank_interaction_option_candidates,
@@ -45,9 +52,13 @@ from ..resonance_evaluator import (
 from ..scene_state import derive_scene_state
 from .content_policy import derive_content_sequence, derive_content_skeleton
 from .hint_bridge import ensure_qualia_planner_view
+from .interaction_constraints import derive_interaction_constraints
 from .models import DialogueContext, ResponsePlan
+from .repetition_guard import derive_repetition_guard
 from .surface_language_profile import derive_surface_language_profile
 from .surface_profile import derive_surface_profile
+from .surface_context_packet import build_surface_context_packet
+from .turn_delta import derive_turn_delta
 
 
 def render_response(
@@ -193,6 +204,11 @@ def render_response(
         recovery_need=float(foreground_state.affective_summary.get("recovery_need", 0.0) or 0.0),
         safety_bias=float(foreground_state.affective_summary.get("safety_bias", 0.0) or 0.0),
         relation_bias_strength=(memory_context.relation_bias_strength if memory_context is not None else 0.0),
+        temporal_membrane_bias=(
+            expression_hints.get("qualia_membrane_temporal")
+            or foreground_state.affective_summary.get("qualia_membrane_temporal")
+            or {}
+        ),
     )
     constraint_field = derive_constraint_field(
         scene_state=scene_state,
@@ -225,6 +241,13 @@ def render_response(
         qualia_state=qualia_state_hint if isinstance(qualia_state_hint, dict) else None,
         terrain_readout=expression_hints.get("terrain_readout"),
         insight_event=expression_hints.get("insight_event"),
+    )
+    contact_reflection_state = derive_contact_reflection_state(
+        contact_field=contact_field.to_dict(),
+        contact_dynamics=contact_dynamics.to_dict(),
+        access_projection=access_projection.to_dict(),
+        constraint_field=constraint_field.to_dict(),
+        current_risks=foreground_state.current_risks,
     )
     access_dynamics = advance_access_dynamics(
         access_projection=access_projection.to_dict(),
@@ -420,6 +443,7 @@ def render_response(
         insight_class_focus=str(expression_hints.get("insight_class_focus") or "").strip(),
         self_state=foreground_state.affective_summary,
     )
+    interaction_policy["contact_reflection_state"] = contact_reflection_state.to_dict()
     surface_profile = _apply_interaction_policy_surface_bias(surface_profile, interaction_policy)
     conversation_contract = build_conversation_contract(
         conversational_objects=conversational_objects.to_dict(),
@@ -430,16 +454,87 @@ def render_response(
         interaction_policy=interaction_policy,
     )
     interaction_policy["conversation_contract"] = conversation_contract
+    interaction_constraints = derive_interaction_constraints(interaction_policy).to_dict()
+    repetition_guard = derive_repetition_guard(dialogue_context.history).to_dict()
+    recent_dialogue_state = derive_recent_dialogue_state(
+        dialogue_context.user_text,
+        dialogue_context.history,
+        interaction_policy=interaction_policy,
+    ).to_dict()
+    interaction_policy["recent_dialogue_state"] = recent_dialogue_state
+    discussion_thread_state = derive_discussion_thread_state(
+        dialogue_context.user_text,
+        dialogue_context.history,
+        recent_dialogue_state=recent_dialogue_state,
+        interaction_policy=interaction_policy,
+    ).to_dict()
+    interaction_policy["discussion_thread_state"] = discussion_thread_state
+    issue_state = derive_issue_state(
+        dialogue_context.user_text,
+        dialogue_context.history,
+        discussion_thread_state=discussion_thread_state,
+        recent_dialogue_state=recent_dialogue_state,
+        interaction_policy=interaction_policy,
+    ).to_dict()
+    interaction_policy["issue_state"] = issue_state
+    turn_delta = derive_turn_delta(
+        interaction_policy,
+        interaction_constraints=interaction_constraints,
+    ).to_dict()
     content_skeleton = derive_content_skeleton(
         current_text=" ".join(foreground_state.reportable_facts) or "stay with what is visible first",
         interaction_policy=interaction_policy,
         conscious_access={"intent": speech_act},
+        history=dialogue_context.history,
+        interaction_constraints=interaction_constraints,
+        repetition_guard=repetition_guard,
+        turn_delta=turn_delta,
     )
     content_sequence = derive_content_sequence(
         current_text=" ".join(foreground_state.reportable_facts) or "stay with what is visible first",
         interaction_policy=interaction_policy,
         conscious_access={"intent": speech_act},
+        history=dialogue_context.history,
+        interaction_constraints=interaction_constraints,
+        repetition_guard=repetition_guard,
+        turn_delta=turn_delta,
     )
+    boundary_transform = derive_boundary_transform_result(
+        content_sequence=content_sequence,
+        interaction_constraints=interaction_constraints,
+        conversation_contract=conversation_contract,
+        constraint_field=constraint_field.to_dict(),
+        reportability_gate=(conscious_workspace.to_dict().get("reportability_gate") or {}),
+        current_risks=foreground_state.current_risks,
+    ).to_dict()
+    residual_reflection = derive_residual_reflection(
+        boundary_transform=boundary_transform,
+        conversation_contract=conversation_contract,
+    ).to_dict()
+    autobiographical_thread = {
+        "mode": str(interaction_policy.get("autobiographical_thread_mode") or ""),
+        "anchor": str(interaction_policy.get("autobiographical_thread_anchor") or ""),
+        "focus": str(interaction_policy.get("autobiographical_thread_focus") or ""),
+        "strength": interaction_policy.get("autobiographical_thread_strength") or 0.0,
+        "reasons": list(interaction_policy.get("autobiographical_thread_reasons") or []),
+    }
+    green_kernel_composition = build_green_kernel_composition(
+        temporal_membrane_bias=(
+            expression_hints.get("qualia_membrane_temporal")
+            or foreground_state.affective_summary.get("qualia_membrane_temporal")
+            or {}
+        ),
+        memory_evidence_bundle=expression_hints.get("temporal_memory_evidence_bundle"),
+        affect_blend_state=affect_blend_state.to_dict(),
+        recent_dialogue_state=recent_dialogue_state,
+        discussion_thread_state=discussion_thread_state,
+        issue_state=issue_state,
+        contact_reflection_state=contact_reflection_state.to_dict(),
+        boundary_transform=boundary_transform,
+        residual_reflection=residual_reflection,
+        autobiographical_thread=autobiographical_thread,
+    ).to_dict()
+    interaction_policy["green_kernel_composition"] = green_kernel_composition
     action_posture = derive_action_posture(interaction_policy)
     actuation_plan = derive_actuation_plan(interaction_policy, action_posture)
     multimodal_cues = sorted(set(multimodal_cues + nonverbal_profile.cues))
@@ -487,6 +582,7 @@ def render_response(
     multimodal_cues = sorted(set(multimodal_cues + list(constraint_field.cues)))
     multimodal_cues = sorted(set(multimodal_cues + list(contact_field.cues)))
     multimodal_cues = sorted(set(multimodal_cues + list(contact_dynamics.cues)))
+    multimodal_cues = sorted(set(multimodal_cues + list(contact_reflection_state.cues)))
     multimodal_cues = sorted(set(multimodal_cues + list(access_projection.cues)))
     multimodal_cues = sorted(set(multimodal_cues + list(access_dynamics.cues)))
     multimodal_cues = sorted(set(multimodal_cues + list(conscious_workspace.cues)))
@@ -495,6 +591,8 @@ def render_response(
     multimodal_cues = sorted(set(multimodal_cues + list(interaction_effects.cues)))
     multimodal_cues = sorted(set(multimodal_cues + list(interaction_judgement_view.cues)))
     multimodal_cues = sorted(set(multimodal_cues + list(resonance_evaluation.cues)))
+    multimodal_cues = sorted(set(multimodal_cues + list(boundary_transform.get("cues") or [])))
+    multimodal_cues = sorted(set(multimodal_cues + list(residual_reflection.get("cues") or [])))
     multimodal_cues = sorted(set(multimodal_cues + [f"action_{action_posture['engagement_mode']}"]))
     multimodal_cues = sorted(set(multimodal_cues + [f"actuation_{actuation_plan['primary_action']}"]))
     nonverbal_profile_payload = {
@@ -529,6 +627,7 @@ def render_response(
         "interaction_option_candidates": [candidate.__dict__ for candidate in interaction_option_candidates],
         "contact_field": contact_field.to_dict(),
         "contact_dynamics": contact_dynamics.to_dict(),
+        "contact_reflection_state": contact_reflection_state.to_dict(),
         "access_projection": access_projection.to_dict(),
         "access_dynamics": access_dynamics.to_dict(),
         "affect_blend_state": affect_blend_state.to_dict(),
@@ -554,7 +653,29 @@ def render_response(
         "qualia_hint_expected_mismatch": qualia_hint_expected_mismatch,
         "resonance_evaluation": resonance_evaluation.to_dict(),
         "qualia_planner_view": qualia_planner_view.to_dict(),
+        "recent_dialogue_state": recent_dialogue_state,
+        "discussion_thread_state": discussion_thread_state,
+        "issue_state": issue_state,
+        "boundary_transform": boundary_transform,
+        "residual_reflection": residual_reflection,
+        "green_kernel_composition": green_kernel_composition,
     }
+    surface_context_packet = build_surface_context_packet(
+        recent_dialogue_state=recent_dialogue_state,
+        discussion_thread_state=discussion_thread_state,
+        issue_state=issue_state,
+        turn_delta=turn_delta,
+        interaction_constraints=interaction_constraints,
+        boundary_transform=boundary_transform,
+        residual_reflection=residual_reflection,
+        surface_profile=surface_profile,
+        contact_reflection_state=contact_reflection_state.to_dict(),
+        green_kernel_composition=green_kernel_composition,
+        dialogue_context={
+            "user_text": dialogue_context.user_text,
+            "history": list(dialogue_context.history),
+        },
+    ).to_dict()
     return ResponsePlan(
         speech_act=speech_act,
         content_brief=list(foreground_state.reportable_facts),
@@ -563,6 +684,8 @@ def render_response(
         action_posture=action_posture,
         actuation_plan=actuation_plan,
         surface_profile=surface_profile,
+        boundary_transform=boundary_transform,
+        residual_reflection=residual_reflection,
         llm_payload={
             "foreground": {
                 "salient_entities": list(foreground_state.salient_entities),
@@ -578,16 +701,27 @@ def render_response(
             "memory_context": memory_payload,
             "utterance_stance": utterance_stance,
             "interaction_policy": interaction_policy,
+            "interaction_constraints": interaction_constraints,
+            "repetition_guard": repetition_guard,
+            "recent_dialogue_state": recent_dialogue_state,
+            "discussion_thread_state": discussion_thread_state,
+            "issue_state": issue_state,
+            "turn_delta": turn_delta,
             "action_posture": action_posture,
             "actuation_plan": actuation_plan,
             "content_skeleton": content_skeleton,
             "content_sequence": content_sequence,
             "surface_profile": surface_profile,
+            "surface_context_packet": surface_context_packet,
+            "boundary_transform": boundary_transform,
+            "residual_reflection": residual_reflection,
+            "green_kernel_composition": green_kernel_composition,
             "nonverbal_profile": nonverbal_profile_payload,
             "scene_state": scene_state.__dict__,
             "interaction_option_candidates": [candidate.__dict__ for candidate in interaction_option_candidates],
             "contact_field": contact_field.to_dict(),
             "contact_dynamics": contact_dynamics.to_dict(),
+            "contact_reflection_state": contact_reflection_state.to_dict(),
             "access_projection": access_projection.to_dict(),
             "access_dynamics": access_dynamics.to_dict(),
             "affect_blend_state": affect_blend_state.to_dict(),
@@ -699,9 +833,29 @@ def _apply_interaction_policy_surface_bias(
     relational_continuity_state = dict(interaction_policy.get("relational_continuity_state") or {})
     social_topology_state = dict(interaction_policy.get("social_topology_state") or {})
     protection_mode = dict(interaction_policy.get("protection_mode") or {})
+    learning_mode_state = dict(interaction_policy.get("learning_mode_state") or {})
+    social_experiment_loop_state = dict(interaction_policy.get("social_experiment_loop_state") or {})
+    persona_memory_selection = dict(interaction_policy.get("persona_memory_selection") or {})
+    identity_arc_kind = str(interaction_policy.get("identity_arc_kind") or "").strip()
+    identity_arc_phase = str(interaction_policy.get("identity_arc_phase") or "").strip()
+    identity_arc_summary = str(interaction_policy.get("identity_arc_summary") or "").strip()
+    identity_arc_open_tension = str(interaction_policy.get("identity_arc_open_tension") or "").strip()
+    identity_arc_stability = _clamp01(float(interaction_policy.get("identity_arc_stability", 0.0) or 0.0))
+    persona_selected_fragments = [
+        dict(item)
+        for item in persona_memory_selection.get("selected_fragments") or []
+        if isinstance(item, dict)
+    ]
+    persona_dominant_fragment_id = str(persona_memory_selection.get("dominant_fragment_id") or "").strip()
+    persona_fragment_kinds = {
+        str(item.get("kind") or "").strip()
+        for item in persona_selected_fragments
+        if str(item.get("kind") or "").strip()
+    }
 
     recovery_state = str(body_recovery_guard.get("state") or "").strip()
     recovery_score = _clamp01(float(body_recovery_guard.get("score", 0.0) or 0.0))
+    recovery_winner_margin = _clamp01(float(body_recovery_guard.get("winner_margin", 0.0) or 0.0))
     body_homeostasis_name = str(body_homeostasis_state.get("state") or "").strip()
     body_homeostasis_score = _clamp01(float(body_homeostasis_state.get("score", 0.0) or 0.0))
     homeostasis_budget_name = str(homeostasis_budget_state.get("state") or "").strip()
@@ -743,6 +897,12 @@ def _apply_interaction_policy_surface_bias(
     social_topology_name = str(social_topology_state.get("state") or "").strip()
     social_topology_score = _clamp01(float(social_topology_state.get("score", 0.0) or 0.0))
     protection_mode_name = str(protection_mode.get("mode") or "").strip()
+    learning_mode_name = str(learning_mode_state.get("state") or "").strip()
+    learning_mode_score = _clamp01(float(learning_mode_state.get("score", 0.0) or 0.0))
+    learning_mode_probe_room = _clamp01(float(learning_mode_state.get("probe_room", 0.0) or 0.0))
+    social_experiment_name = str(social_experiment_loop_state.get("state") or "").strip()
+    social_experiment_score = _clamp01(float(social_experiment_loop_state.get("score", 0.0) or 0.0))
+    social_experiment_probe_intensity = _clamp01(float(social_experiment_loop_state.get("probe_intensity", 0.0) or 0.0))
     forward_warm_safe = (
         recovery_state == "open"
         and body_homeostasis_name not in {"recovering", "depleted"}
@@ -764,7 +924,14 @@ def _apply_interaction_policy_surface_bias(
     certainty_style = str(updated.get("certainty_style") or "direct")
     cues = list(updated.get("cues") or [])
 
-    if recovery_state == "recovery_first":
+    recovery_guard_surface_active = (
+        recovery_score >= 0.22
+        or recovery_winner_margin >= 0.08
+        or body_homeostasis_name in {"recovering", "depleted"}
+        or homeostasis_budget_name in {"recovering", "depleted"}
+    )
+
+    if recovery_state == "recovery_first" and recovery_guard_surface_active:
         if opening_delay in {"brief", "measured"}:
             opening_delay = "long"
         response_length = "short"
@@ -777,7 +944,7 @@ def _apply_interaction_policy_surface_bias(
                 "surface_restore_body_margin",
             ]
         )
-    elif recovery_state == "guarded":
+    elif recovery_state == "guarded" and recovery_guard_surface_active:
         if opening_delay == "brief":
             opening_delay = "measured"
         if response_length == "forward_leaning":
@@ -883,6 +1050,151 @@ def _apply_interaction_policy_surface_bias(
             certainty_style = "careful"
         cues.append("surface_long_hold")
 
+    learning_mode_active = learning_mode_score >= 0.44
+    social_experiment_active = social_experiment_score >= 0.44 or social_experiment_probe_intensity >= 0.36
+
+    if learning_mode_name == "observe_only" and learning_mode_active:
+        if opening_delay == "brief":
+            opening_delay = "measured"
+        if response_length == "forward_leaning":
+            response_length = "balanced"
+        if certainty_style == "direct":
+            certainty_style = "tentative"
+        if pause_insertion == "none":
+            pause_insertion = "soft_pause"
+        cues.extend(["surface_learning_observe_only", "surface_read_reaction_first"])
+    elif learning_mode_name == "hold_and_wait" and learning_mode_active:
+        if response_length == "forward_leaning":
+            response_length = "short"
+        if certainty_style == "direct":
+            certainty_style = "tentative"
+        if pause_insertion == "none":
+            pause_insertion = "soft_pause"
+        cues.extend(["surface_learning_hold_and_wait", "surface_leave_return_point"])
+    elif learning_mode_name == "repair_probe" and learning_mode_active:
+        if sentence_temperature in {"neutral", "measured"}:
+            sentence_temperature = "gentle"
+        if certainty_style == "direct":
+            certainty_style = "tentative"
+        if pause_insertion == "none":
+            pause_insertion = "soft_pause"
+        cues.append("surface_learning_repair_probe")
+    elif learning_mode_name == "test_small" and learning_mode_active:
+        if response_length == "short":
+            response_length = "balanced"
+        if certainty_style == "careful":
+            certainty_style = "tentative"
+        cues.append("surface_learning_test_small")
+    elif (
+        learning_mode_name == "integrate_and_commit"
+        and learning_mode_active
+        and recovery_state == "open"
+        and protection_mode_name not in {"contain", "stabilize", "shield"}
+    ):
+        if response_length in {"short", "balanced"}:
+            response_length = "forward_leaning"
+        if certainty_style in {"careful", "tentative"}:
+            certainty_style = "steady"
+        cues.append("surface_learning_integrate_and_commit")
+
+    if social_experiment_name == "watch_and_read" and social_experiment_active:
+        if certainty_style == "direct":
+            certainty_style = "tentative"
+        if pause_insertion == "none":
+            pause_insertion = "soft_pause"
+        cues.append("surface_experiment_watch_and_read")
+    elif social_experiment_name == "hold_probe" and social_experiment_active:
+        if response_length == "forward_leaning":
+            response_length = "balanced"
+        if certainty_style == "direct":
+            certainty_style = "tentative"
+        cues.extend(["surface_experiment_hold_probe", "surface_leave_return_point"])
+    elif social_experiment_name == "repair_signal_probe" and social_experiment_active:
+        if sentence_temperature in {"neutral", "measured"}:
+            sentence_temperature = "gentle"
+        if certainty_style == "direct":
+            certainty_style = "tentative"
+        cues.append("surface_experiment_repair_signal_probe")
+    elif social_experiment_name == "test_small_step" and social_experiment_active:
+        if response_length == "short":
+            response_length = "balanced"
+        if certainty_style == "careful":
+            certainty_style = "tentative"
+        cues.append("surface_experiment_test_small_step")
+    elif (
+        social_experiment_name == "confirm_shared_direction"
+        and social_experiment_active
+        and recovery_state == "open"
+        and protection_mode_name not in {"contain", "stabilize", "shield"}
+    ):
+        if response_length in {"short", "balanced"}:
+            response_length = "forward_leaning"
+        if certainty_style in {"careful", "tentative"}:
+            certainty_style = "steady"
+        cues.append("surface_experiment_confirm_shared_direction")
+
+    if identity_arc_kind == "repairing_bond":
+        if response_length == "forward_leaning":
+            response_length = "balanced"
+        if sentence_temperature in {"neutral", "measured"}:
+            sentence_temperature = "gentle"
+        if pause_insertion == "none":
+            pause_insertion = "soft_pause"
+        if identity_arc_open_tension in {"timing_sensitive_reentry", "careful_repair"} and certainty_style == "direct":
+            certainty_style = "tentative"
+        cues.append("surface_identity_repairing_bond")
+    elif identity_arc_kind == "holding_thread":
+        if response_length == "forward_leaning":
+            response_length = "balanced"
+        if sentence_temperature == "neutral":
+            sentence_temperature = "gentle"
+        if pause_insertion == "none":
+            pause_insertion = "soft_pause"
+        cues.extend(["surface_identity_holding_thread", "surface_leave_return_point"])
+    elif identity_arc_kind in {"stabilizing_self", "repairing_self"}:
+        if opening_delay == "brief":
+            opening_delay = "measured"
+        if response_length == "forward_leaning":
+            response_length = "balanced"
+        if sentence_temperature == "warm":
+            sentence_temperature = "gentle"
+        elif sentence_temperature == "neutral":
+            sentence_temperature = "measured" if identity_arc_kind == "stabilizing_self" else "gentle"
+        if certainty_style == "direct":
+            certainty_style = "careful"
+        if pause_insertion == "none":
+            pause_insertion = "soft_pause"
+        cues.append(f"surface_identity_{identity_arc_kind}")
+    elif (
+        identity_arc_kind == "growing_edge"
+        and identity_arc_phase in {"holding", "integrating"}
+        and identity_arc_stability >= 0.36
+        and recovery_state == "open"
+        and protection_mode_name not in {"contain", "stabilize", "shield"}
+    ):
+        if response_length in {"short", "balanced"}:
+            response_length = "forward_leaning"
+        if sentence_temperature in {"neutral", "measured"}:
+            sentence_temperature = "warm"
+        if certainty_style == "careful":
+            certainty_style = "tentative"
+        cues.append("surface_identity_growing_edge")
+
+    if identity_arc_open_tension == "timing_sensitive_reentry":
+        if response_length == "forward_leaning":
+            response_length = "balanced"
+        if certainty_style == "direct":
+            certainty_style = "tentative"
+        cues.extend(["surface_identity_timing_sensitive_reentry", "surface_leave_return_point"])
+    elif identity_arc_open_tension == "multi_thread_balance":
+        if response_length == "forward_leaning":
+            response_length = "balanced"
+        if pause_insertion == "none":
+            pause_insertion = "soft_pause"
+        cues.append("surface_identity_multi_thread_balance")
+    elif identity_arc_open_tension == "guarded_closeness" and certainty_style == "direct":
+        certainty_style = "tentative"
+
     if social_topology_name == "public_visible" and social_topology_score >= 0.34:
         if opening_delay == "brief":
             opening_delay = "measured"
@@ -982,7 +1294,7 @@ def _apply_interaction_policy_surface_bias(
         if response_length == "forward_leaning":
             response_length = "balanced"
         if certainty_style == "direct":
-            certainty_style = "careful"
+            certainty_style = "tentative"
         cues.append("surface_reflex_attention_guard")
     elif attention_state == "split_guarded":
         if response_length == "forward_leaning":
@@ -995,7 +1307,8 @@ def _apply_interaction_policy_surface_bias(
 
     if grice_state == "hold_obvious_advice":
         response_length = "short"
-        certainty_style = "careful"
+        if certainty_style == "direct":
+            certainty_style = "tentative"
         if sentence_temperature == "warm":
             sentence_temperature = "gentle"
         if pause_insertion == "none":
@@ -1157,13 +1470,47 @@ def _apply_interaction_policy_surface_bias(
             cues.append(f"surface_commit_{commitment_target}")
     elif commitment_mode == "waver" and commitment_score >= 0.2:
         if certainty_style == "direct":
-            certainty_style = "careful"
+            certainty_style = "tentative"
         if pause_insertion == "none":
             pause_insertion = "soft_pause"
         cues.append("surface_commitment_waver")
 
+    if "boundary" in persona_fragment_kinds:
+        if certainty_style == "direct":
+            certainty_style = "tentative"
+        if pause_insertion == "none":
+            pause_insertion = "soft_pause"
+        cues.append("surface_persona_boundary_memory")
+    if {"relation", "identity"} & persona_fragment_kinds:
+        if sentence_temperature in {"neutral", "measured"}:
+            sentence_temperature = "gentle"
+        if response_length == "short" and identity_arc_stability >= 0.34:
+            response_length = "balanced"
+        cues.append("surface_persona_continuity_memory")
+    if "theme" in persona_fragment_kinds and agenda_window_name in {
+        "next_same_group_window",
+        "next_same_culture_window",
+        "opportunistic_reentry",
+    }:
+        if certainty_style == "direct":
+            certainty_style = "steady"
+        cues.append("surface_persona_theme_memory")
+    if "style" in persona_fragment_kinds and lightness_budget_name not in {"suppressed", "grounded_only"}:
+        if sentence_temperature == "neutral":
+            sentence_temperature = "gentle"
+        cues.append("surface_persona_style_memory")
+
     if grice_state == "hold_obvious_advice":
+        if certainty_style == "direct":
+            certainty_style = "tentative"
+    if (
+        attention_state == "reflex_guard"
+        and grice_state == "hold_obvious_advice"
+        and commitment_target in {"hold", "stabilize"}
+        and certainty_style == "tentative"
+    ):
         certainty_style = "careful"
+        cues.append("surface_guarded_hold_careful")
     if cultural_directness_ceiling <= 0.36 and certainty_style == "direct":
         certainty_style = "tentative"
     if cultural_politeness_pressure >= 0.32 and sentence_temperature == "warm" and lightness_budget_name != "open_play":
@@ -1187,6 +1534,9 @@ def _apply_interaction_policy_surface_bias(
         cultural_state_name=cultural_state_name,
         cultural_joke_ratio_ceiling=cultural_joke_ratio_ceiling,
         lexical_variation_carry_bias=lexical_variation_carry_bias,
+        identity_arc_kind=identity_arc_kind,
+        identity_arc_phase=identity_arc_phase,
+        identity_arc_open_tension=identity_arc_open_tension,
     )
     if surface_language_profile.banter_move != "none":
         cues.append(f"surface_language_banter_{surface_language_profile.banter_move}")
@@ -1219,6 +1569,18 @@ def _apply_interaction_policy_surface_bias(
     updated["agenda_window_state"] = agenda_window_name or "long_hold"
     updated["agenda_window_deferral_budget"] = round(agenda_window_deferral_budget, 4)
     updated["agenda_window_carry_target"] = agenda_window_carry_target or "later_safe_window"
+    updated["learning_mode_state"] = learning_mode_name or "observe_only"
+    updated["learning_mode_probe_room"] = round(learning_mode_probe_room, 4)
+    updated["social_experiment_state"] = social_experiment_name or "watch_and_read"
+    updated["social_experiment_probe_intensity"] = round(social_experiment_probe_intensity, 4)
+    updated["identity_arc_kind"] = identity_arc_kind
+    updated["identity_arc_phase"] = identity_arc_phase
+    updated["identity_arc_summary"] = identity_arc_summary
+    updated["identity_arc_open_tension"] = identity_arc_open_tension
+    updated["identity_arc_stability"] = round(identity_arc_stability, 4)
+    updated["persona_dominant_fragment_id"] = persona_dominant_fragment_id
+    updated["persona_fragment_kinds"] = sorted(persona_fragment_kinds)
+    updated["persona_memory_selection"] = persona_memory_selection
     updated["expressive_style_history_focus"] = expressive_style_history_focus
     updated["expressive_style_history_bias"] = round(expressive_style_history_bias, 4)
     updated["banter_style_focus"] = banter_style_focus

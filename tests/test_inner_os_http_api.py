@@ -40,6 +40,7 @@ def test_inner_os_memory_recall_route() -> None:
     assert payload["status"] == "ok"
     assert payload["result"]["schema"] == "inner_os_memory_recall_result/v1"
     assert payload["result"]["recall_payload_schema"] == "inner_os_recall_payload/v1"
+    assert payload["result"]["memory_evidence_bundle_schema"] == "inner_os_memory_evidence_bundle/v1"
     assert payload["result"]["ignition_hints"]["recall_active"] is True
 
 

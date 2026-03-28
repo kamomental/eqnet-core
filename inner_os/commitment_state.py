@@ -77,6 +77,22 @@ def derive_commitment_state(
     risk_tolerance = _clamp01(float(temperament.get("risk_tolerance", 0.0) or 0.0))
     insight_triggered = 1.0 if bool(insight.get("triggered", False)) else 0.0
     insight_orient_bias = _clamp01(float(insight.get("orient_bias", 0.0) or 0.0))
+    timeline_coherence = _clamp01(float(self_payload.get("temporal_timeline_coherence", 0.0) or 0.0))
+    reentry_pull = _clamp01(float(self_payload.get("temporal_reentry_pull", 0.0) or 0.0))
+    supersession_pressure = _clamp01(float(self_payload.get("temporal_supersession_pressure", 0.0) or 0.0))
+    continuity_pressure = _clamp01(float(self_payload.get("temporal_continuity_pressure", 0.0) or 0.0))
+    relation_reentry_pull = _clamp01(float(self_payload.get("temporal_relation_reentry_pull", 0.0) or 0.0))
+    if timeline_coherence <= 0.0:
+        timeline_coherence = _clamp01(float(self_payload.get("temporal_timeline_bias", 0.0) or 0.0))
+    if reentry_pull <= 0.0:
+        reentry_pull = _clamp01(float(self_payload.get("temporal_reentry_bias", 0.0) or 0.0))
+    if supersession_pressure <= 0.0:
+        supersession_pressure = _clamp01(float(self_payload.get("temporal_supersession_bias", 0.0) or 0.0))
+    if continuity_pressure <= 0.0:
+        continuity_pressure = _clamp01(float(self_payload.get("temporal_continuity_bias", 0.0) or 0.0))
+    if relation_reentry_pull <= 0.0:
+        relation_reentry_pull = _clamp01(float(self_payload.get("temporal_relation_reentry_bias", 0.0) or 0.0))
+    temporal_mode = str(self_payload.get("temporal_membrane_mode") or self_payload.get("temporal_membrane_focus") or "ambient").strip() or "ambient"
 
     accepted_cost = _clamp01(
         0.26 * body_load
@@ -102,6 +118,7 @@ def derive_commitment_state(
             + 0.12 * degraded
             + 0.12 * terrain_protect_bias
             + 0.08 * (1.0 if protection_mode_name == "contain" else 0.0)
+            + 0.12 * supersession_pressure
         ),
         "stabilize": _clamp01(
             0.28 * guard_score
@@ -110,6 +127,8 @@ def derive_commitment_state(
             + 0.1 * recovery_need
             + 0.08 * terrain_protect_bias
             + 0.06 * followup_reopen
+            + 0.08 * supersession_pressure
+            + 0.04 * timeline_coherence
         ),
         "repair": _clamp01(
             0.28 * protection_strength * (1.0 if protection_mode_name == "repair" else 0.0)
@@ -118,7 +137,11 @@ def derive_commitment_state(
             + 0.1 * terrain_approach_bias
             + 0.1 * repair_memory
             + 0.06 * insight_triggered
+            + 0.1 * reentry_pull
+            + 0.1 * relation_reentry_pull
+            + 0.04 * continuity_pressure
             - 0.08 * degraded
+            - 0.05 * supersession_pressure
         ),
         "bond_protect": _clamp01(
             0.22 * bond_drive
@@ -127,6 +150,8 @@ def derive_commitment_state(
             + 0.12 * terrain_protect_bias
             + 0.1 * followup_reopen
             + 0.08 * protection_strength * (1.0 if protection_mode_name in {"contain", "repair"} else 0.0)
+            + 0.08 * continuity_pressure
+            + 0.06 * relation_reentry_pull
             - 0.06 * degraded
         ),
         "step_forward": _clamp01(
@@ -136,11 +161,21 @@ def derive_commitment_state(
             + 0.14 * hero_tendency
             + 0.08 * risk_tolerance
             + 0.08 * safe_memory
+            + 0.06 * reentry_pull
+            + 0.04 * timeline_coherence
             - 0.14 * guard_score
             - 0.12 * terrain_protect_bias
             - 0.08 * degraded
+            - 0.12 * supersession_pressure
         ),
     }
+    if temporal_mode == "supersede":
+        target_scores["hold"] = _clamp01(target_scores["hold"] + 0.04)
+        target_scores["stabilize"] = _clamp01(target_scores["stabilize"] + 0.03)
+        target_scores["step_forward"] = _clamp01(target_scores["step_forward"] - 0.04)
+    elif temporal_mode == "reentry":
+        target_scores["repair"] = _clamp01(target_scores["repair"] + 0.03)
+        target_scores["step_forward"] = _clamp01(target_scores["step_forward"] + 0.02)
     target, target_margin = _winner_and_margin(target_scores)
 
     cross_pressure = min(guard_score, max(readiness_score, followup_open, followup_reopen))
@@ -167,6 +202,7 @@ def derive_commitment_state(
             + 0.12 * followup_hold
             + 0.08 * (1.0 - readiness_margin)
             + 0.08 * (1.0 - protection_margin)
+            + 0.08 * supersession_pressure
         ),
         "settle": _clamp01(
             0.24 * target_score
@@ -175,6 +211,7 @@ def derive_commitment_state(
             + 0.1 * max(followup_reopen, followup_open)
             + 0.08 * max(readiness_margin, protection_margin)
             + 0.06 * insight_orient_bias
+            + 0.04 * timeline_coherence
             - 0.08 * degraded
         ),
         "commit": _clamp01(
@@ -184,7 +221,10 @@ def derive_commitment_state(
             + 0.12 * accepted_cost
             + 0.08 * max(readiness_margin, protection_margin)
             + 0.08 * max(followup_open, followup_reopen)
+            + 0.06 * reentry_pull
+            + 0.04 * continuity_pressure
             - 0.08 * degraded
+            - 0.05 * supersession_pressure
         ),
     }
     if (
@@ -236,6 +276,9 @@ def derive_commitment_state(
             "bond_memory_trace" if bond_memory >= 1.0 else "",
             memory_write_class_reason if memory_write_class_reason else "",
             "insight_orientation" if insight_orient_bias >= 0.12 else "",
+            "temporal_reentry_pull" if reentry_pull >= 0.22 and target in {"repair", "step_forward", "bond_protect"} else "",
+            "temporal_supersession_pressure" if supersession_pressure >= 0.22 and target in {"hold", "stabilize"} else "",
+            "temporal_timeline_coherence" if timeline_coherence >= 0.22 and state in {"settle", "commit"} else "",
         ]
     )
 

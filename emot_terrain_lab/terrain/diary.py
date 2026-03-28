@@ -8,6 +8,8 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+from inner_os.identity_memory import IdentityArcRegistry
+from inner_os.relation_memory import RelationArcRegistry
 
 from .llm import chat_text
 
@@ -24,6 +26,8 @@ class DiaryEntry:
     working_memory_signature_summary: Optional[Dict[str, Any]] = None
     working_memory_replay_summary: Optional[Dict[str, Any]] = None
     long_term_theme_summary: Optional[Dict[str, Any]] = None
+    identity_arc_summary: Optional[Dict[str, Any]] = None
+    relation_arc_summary: Optional[Dict[str, Any]] = None
 
     def to_json(self) -> Dict:
         return {
@@ -37,6 +41,8 @@ class DiaryEntry:
             "working_memory_signature_summary": self.working_memory_signature_summary,
             "working_memory_replay_summary": self.working_memory_replay_summary,
             "long_term_theme_summary": self.long_term_theme_summary,
+            "identity_arc_summary": self.identity_arc_summary,
+            "relation_arc_summary": self.relation_arc_summary,
         }
 
     @staticmethod
@@ -52,6 +58,8 @@ class DiaryEntry:
             working_memory_signature_summary=payload.get("working_memory_signature_summary"),
             working_memory_replay_summary=payload.get("working_memory_replay_summary"),
             long_term_theme_summary=payload.get("long_term_theme_summary"),
+            identity_arc_summary=payload.get("identity_arc_summary"),
+            relation_arc_summary=payload.get("relation_arc_summary"),
         )
 
 
@@ -61,11 +69,15 @@ class DiaryManager:
     def __init__(self, max_entries: int = 512) -> None:
         self.entries: List[DiaryEntry] = []
         self.max_entries = max_entries
+        self.identity_arc_registry = IdentityArcRegistry()
+        self.relation_arc_registry = RelationArcRegistry()
 
     def to_json(self) -> Dict:
         return {
             "max_entries": self.max_entries,
             "entries": [entry.to_json() for entry in self.entries],
+            "identity_arc_registry": self.identity_arc_registry.to_dict(),
+            "relation_arc_registry": self.relation_arc_registry.to_dict(),
         }
 
     @staticmethod
@@ -74,6 +86,8 @@ class DiaryManager:
         manager.entries = [
             DiaryEntry.from_json(obj) for obj in payload.get("entries", [])
         ]
+        manager.identity_arc_registry = IdentityArcRegistry.from_dict(payload.get("identity_arc_registry"))
+        manager.relation_arc_registry = RelationArcRegistry.from_dict(payload.get("relation_arc_registry"))
         return manager
 
     def record_daily_entry(
@@ -92,6 +106,8 @@ class DiaryManager:
         working_memory_signature_summary: Optional[Dict[str, Any]] = None,
         working_memory_replay_summary: Optional[Dict[str, Any]] = None,
         long_term_theme_summary: Optional[Dict[str, Any]] = None,
+        identity_arc_summary: Optional[Dict[str, Any]] = None,
+        relation_arc_summary: Optional[Dict[str, Any]] = None,
     ) -> DiaryEntry:
         day_key = day.isoformat()
         entry = self._compose_entry(
@@ -109,9 +125,25 @@ class DiaryManager:
             working_memory_signature_summary,
             working_memory_replay_summary,
             long_term_theme_summary,
+            identity_arc_summary,
+            relation_arc_summary,
+        )
+        self.identity_arc_registry.update(
+            day_key=day_key,
+            identity_arc_summary=identity_arc_summary,
+        )
+        self.relation_arc_registry.update(
+            day_key=day_key,
+            relation_arc_summary=relation_arc_summary,
         )
         self._upsert_entry(entry)
         return entry
+
+    def identity_arc_registry_summary(self) -> Dict[str, Any]:
+        return self.identity_arc_registry.summary()
+
+    def relation_arc_registry_summary(self) -> Dict[str, Any]:
+        return self.relation_arc_registry.summary()
 
     def _compose_entry(
         self,
@@ -129,6 +161,8 @@ class DiaryManager:
         working_memory_signature_summary: Optional[Dict[str, Any]] = None,
         working_memory_replay_summary: Optional[Dict[str, Any]] = None,
         long_term_theme_summary: Optional[Dict[str, Any]] = None,
+        identity_arc_summary: Optional[Dict[str, Any]] = None,
+        relation_arc_summary: Optional[Dict[str, Any]] = None,
     ) -> DiaryEntry:
         entropy = float(metrics.get("entropy", 0.0))
         enthalpy = float(metrics.get("enthalpy_mean", 0.0))
@@ -159,6 +193,8 @@ class DiaryManager:
             working_memory_signature_summary=working_memory_signature_summary,
             working_memory_replay_summary=working_memory_replay_summary,
             long_term_theme_summary=long_term_theme_summary,
+            identity_arc_summary=identity_arc_summary,
+            relation_arc_summary=relation_arc_summary,
         )
 
         if use_llm:
@@ -175,6 +211,8 @@ class DiaryManager:
                 fatigue_flag,
                 metrics,
                 culture_lines=culture_lines,
+                identity_arc_summary=identity_arc_summary,
+                relation_arc_summary=relation_arc_summary,
             )
             llm_text = chat_text(*prompt, temperature=0.4)
             if llm_text:
@@ -196,6 +234,8 @@ class DiaryManager:
             working_memory_signature_summary=working_memory_signature_summary,
             working_memory_replay_summary=working_memory_replay_summary,
             long_term_theme_summary=long_term_theme_summary,
+            identity_arc_summary=identity_arc_summary,
+            relation_arc_summary=relation_arc_summary,
         )
         return entry
 
@@ -270,6 +310,8 @@ class DiaryManager:
         working_memory_signature_summary: Optional[Dict[str, Any]] = None,
         working_memory_replay_summary: Optional[Dict[str, Any]] = None,
         long_term_theme_summary: Optional[Dict[str, Any]] = None,
+        identity_arc_summary: Optional[Dict[str, Any]] = None,
+        relation_arc_summary: Optional[Dict[str, Any]] = None,
     ) -> str:
         lines = [
             f"[{day_key}] field memo",
@@ -306,6 +348,12 @@ class DiaryManager:
         long_term_theme_line = self._format_long_term_theme_line(long_term_theme_summary)
         if long_term_theme_line:
             lines.append(long_term_theme_line)
+        identity_arc_line = self._format_identity_arc_line(identity_arc_summary)
+        if identity_arc_line:
+            lines.append(identity_arc_line)
+        relation_arc_line = self._format_relation_arc_line(relation_arc_summary)
+        if relation_arc_line:
+            lines.append(relation_arc_line)
         lines.append("Thanks for recording today's flow. Share more whenever you feel ready.")
         return "\n".join(lines)
 
@@ -419,6 +467,79 @@ class DiaryManager:
             parts.append(f"summary={summary}")
         return "Long-term theme: " + " / ".join(parts)
 
+    def _format_identity_arc_line(
+        self,
+        identity_arc_summary: Optional[Dict[str, Any]],
+    ) -> Optional[str]:
+        if not identity_arc_summary:
+            return None
+        kind = str(identity_arc_summary.get("arc_kind") or "").strip()
+        phase = str(identity_arc_summary.get("phase") or "").strip()
+        summary = str(identity_arc_summary.get("summary") or "").strip()
+        anchor = str(identity_arc_summary.get("memory_anchor") or "").strip()
+        tension = str(identity_arc_summary.get("open_tension") or "").strip()
+        stability = float(identity_arc_summary.get("stability") or 0.0)
+        learning_mode = str(identity_arc_summary.get("learning_mode_focus") or "").strip()
+        social_experiment = str(identity_arc_summary.get("social_experiment_focus") or "").strip()
+        if not kind and not summary and not anchor:
+            return None
+        parts = []
+        if kind:
+            parts.append(f"kind={kind}")
+        if phase:
+            parts.append(f"phase={phase}")
+        if anchor:
+            parts.append(f"anchor={anchor}")
+        if stability > 0.0:
+            parts.append(f"stability={stability:.2f}")
+        if learning_mode:
+            parts.append(f"learning={learning_mode}")
+        if social_experiment:
+            parts.append(f"probe={social_experiment}")
+        if tension:
+            parts.append(f"tension={tension}")
+        if summary:
+            parts.append(f"summary={summary}")
+        return "Identity arc: " + " / ".join(parts)
+
+    def _format_relation_arc_line(
+        self,
+        relation_arc_summary: Optional[Dict[str, Any]],
+    ) -> Optional[str]:
+        if not relation_arc_summary:
+            return None
+        kind = str(relation_arc_summary.get("arc_kind") or "").strip()
+        phase = str(relation_arc_summary.get("phase") or "").strip()
+        summary = str(relation_arc_summary.get("summary") or "").strip()
+        person_id = str(relation_arc_summary.get("related_person_id") or "").strip()
+        group_thread_id = str(relation_arc_summary.get("group_thread_id") or "").strip()
+        tension = str(relation_arc_summary.get("open_tension") or "").strip()
+        stability = float(relation_arc_summary.get("stability") or 0.0)
+        learning_mode = str(relation_arc_summary.get("learning_mode_focus") or "").strip()
+        social_experiment = str(relation_arc_summary.get("social_experiment_focus") or "").strip()
+        if not kind and not summary and not person_id and not group_thread_id:
+            return None
+        parts = []
+        if kind:
+            parts.append(f"kind={kind}")
+        if phase:
+            parts.append(f"phase={phase}")
+        if person_id:
+            parts.append(f"person={person_id}")
+        if group_thread_id:
+            parts.append(f"group={group_thread_id}")
+        if stability > 0.0:
+            parts.append(f"stability={stability:.2f}")
+        if learning_mode:
+            parts.append(f"learning={learning_mode}")
+        if social_experiment:
+            parts.append(f"probe={social_experiment}")
+        if tension:
+            parts.append(f"tension={tension}")
+        if summary:
+            parts.append(f"summary={summary}")
+        return "Relation arc: " + " / ".join(parts)
+
 
     def _build_prompt(
         self,
@@ -434,6 +555,8 @@ class DiaryManager:
         fatigue_flag: bool,
         moment_metrics: Dict[str, float],
         culture_lines: Optional[List[str]] = None,
+        identity_arc_summary: Optional[Dict[str, Any]] = None,
+        relation_arc_summary: Optional[Dict[str, Any]] = None,
     ) -> tuple[str, str]:
         system_prompt = (
             "You are a gentle diary narrator. Summarize the day in calming Japanese,"
@@ -469,6 +592,12 @@ class DiaryManager:
         if culture_lines:
             for line in culture_lines:
                 bullets.append(f"- {line}")
+        identity_arc_line = self._format_identity_arc_line(identity_arc_summary)
+        if identity_arc_line:
+            bullets.append(f"- {identity_arc_line}")
+        relation_arc_line = self._format_relation_arc_line(relation_arc_summary)
+        if relation_arc_line:
+            bullets.append(f"- {relation_arc_line}")
         user_prompt = "今日の出来事をやわらかく日記にしてください:\n" + "\n".join(bullets)
         return system_prompt, user_prompt
 
@@ -539,4 +668,6 @@ class DiaryManager:
             entry.text = ""
             entry.highlights = []
         self.entries = []
+        self.identity_arc_registry = IdentityArcRegistry()
+        self.relation_arc_registry = RelationArcRegistry()
 

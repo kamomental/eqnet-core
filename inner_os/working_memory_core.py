@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Mapping, Optional
 
+from .autobiographical_thread import derive_autobiographical_thread_summary
+
 
 QUESTION_MARKERS = ("?", "what", "why", "how", "which", "where", "when")
 UNCERTAINTY_MARKERS = ("maybe", "unclear", "not sure", "still", "yet", "perhaps")
@@ -33,6 +35,11 @@ class WorkingMemorySnapshot:
     conscious_residue_anchor: str = ""
     conscious_residue_summary: str = ""
     conscious_residue_strength: float = 0.0
+    autobiographical_thread_mode: str = "none"
+    autobiographical_thread_anchor: str = ""
+    autobiographical_thread_focus: str = ""
+    autobiographical_thread_strength: float = 0.0
+    autobiographical_thread_reasons: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -122,12 +129,22 @@ class WorkingMemoryCore:
             "conscious_residue_strength",
             _float_from(previous_trace, "conscious_residue_strength", 0.0),
         )
+        autobiographical_thread = derive_autobiographical_thread_summary(current_state)
 
-        focus_text = user_text or str(previous_trace.get("focus_text") or recall_payload.get("summary") or semantic_seed_focus or long_term_theme_focus or conscious_residue_focus or "").strip()
+        focus_text = user_text or str(
+            previous_trace.get("focus_text")
+            or recall_payload.get("summary")
+            or autobiographical_thread.focus
+            or semantic_seed_focus
+            or long_term_theme_focus
+            or conscious_residue_focus
+            or ""
+        ).strip()
         focus_anchor = (
             str(relational_world.get("place_memory_anchor") or "").strip()
             or str(current_state.get("memory_anchor") or "").strip()
             or str(previous_trace.get("focus_anchor") or "").strip()
+            or autobiographical_thread.anchor
             or semantic_seed_anchor
             or long_term_theme_anchor
             or conscious_residue_anchor
@@ -152,6 +169,7 @@ class WorkingMemoryCore:
             + semantic_seed_strength * 0.08
             + long_term_theme_strength * 0.06
             + conscious_residue_strength * 0.04
+            + autobiographical_thread.strength * 0.12
         )
         social_focus = _clamp01(person_count * 0.16 + affiliation_bias * 0.24 + (0.16 if "social_role" in relational_world else 0.0))
         bodily_salience = _clamp01(body_stress * 0.46 + near_body_risk * 0.24 + (0.22 if private_flag == "private_high_arousal" else 0.0))
@@ -166,8 +184,16 @@ class WorkingMemoryCore:
             + semantic_seed_strength * 0.08
             + long_term_theme_strength * 0.06
             + conscious_residue_strength * 0.05
+            + autobiographical_thread.strength * 0.08
         )
-        carryover_load = _clamp01(previous_load * 0.7 + memory_pressure * 0.38 + semantic_seed_strength * 0.1 + long_term_theme_strength * 0.08 + conscious_residue_strength * 0.06)
+        carryover_load = _clamp01(
+            previous_load * 0.7
+            + memory_pressure * 0.38
+            + semantic_seed_strength * 0.1
+            + long_term_theme_strength * 0.08
+            + conscious_residue_strength * 0.06
+            + autobiographical_thread.strength * 0.1
+        )
         current_focus = _select_focus(
             focus_anchor=focus_anchor,
             pending_meaning=pending_meaning,
@@ -200,6 +226,11 @@ class WorkingMemoryCore:
             conscious_residue_anchor=conscious_residue_anchor[:160],
             conscious_residue_summary=conscious_residue_summary[:160],
             conscious_residue_strength=round(conscious_residue_strength, 4),
+            autobiographical_thread_mode=autobiographical_thread.mode,
+            autobiographical_thread_anchor=autobiographical_thread.anchor[:160],
+            autobiographical_thread_focus=autobiographical_thread.focus[:120],
+            autobiographical_thread_strength=round(autobiographical_thread.strength, 4),
+            autobiographical_thread_reasons=list(autobiographical_thread.reason_tokens),
         )
 
     def settle_after_turn(
@@ -254,6 +285,11 @@ class WorkingMemoryCore:
             conscious_residue_anchor=snapshot.conscious_residue_anchor,
             conscious_residue_summary=snapshot.conscious_residue_summary,
             conscious_residue_strength=round(snapshot.conscious_residue_strength, 4),
+            autobiographical_thread_mode=snapshot.autobiographical_thread_mode,
+            autobiographical_thread_anchor=snapshot.autobiographical_thread_anchor,
+            autobiographical_thread_focus=snapshot.autobiographical_thread_focus,
+            autobiographical_thread_strength=round(snapshot.autobiographical_thread_strength, 4),
+            autobiographical_thread_reasons=list(snapshot.autobiographical_thread_reasons),
         )
 
     def build_trace_record(
@@ -296,6 +332,11 @@ class WorkingMemoryCore:
             "conscious_residue_anchor": snapshot.conscious_residue_anchor,
             "conscious_residue_summary": snapshot.conscious_residue_summary,
             "conscious_residue_strength": snapshot.conscious_residue_strength,
+            "autobiographical_thread_mode": snapshot.autobiographical_thread_mode,
+            "autobiographical_thread_anchor": snapshot.autobiographical_thread_anchor,
+            "autobiographical_thread_focus": snapshot.autobiographical_thread_focus,
+            "autobiographical_thread_strength": snapshot.autobiographical_thread_strength,
+            "autobiographical_thread_reasons": list(snapshot.autobiographical_thread_reasons),
         }
 
 

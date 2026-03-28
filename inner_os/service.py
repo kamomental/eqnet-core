@@ -10,6 +10,7 @@ from .hook_contracts import (
 )
 from .integration_hooks import IntegrationHooks
 from .schemas import (
+    INNER_OS_MEMORY_EVIDENCE_BUNDLE_SCHEMA,
     INNER_OS_MEMORY_RECALL_RESULT_SCHEMA,
     INNER_OS_POST_TURN_RESULT_SCHEMA,
     INNER_OS_PRE_TURN_RESULT_SCHEMA,
@@ -50,6 +51,7 @@ class InnerOSService:
         )
         out = _with_schema(result.to_dict(), INNER_OS_MEMORY_RECALL_RESULT_SCHEMA)
         out.setdefault("recall_payload_schema", INNER_OS_RECALL_PAYLOAD_SCHEMA)
+        out.setdefault("memory_evidence_bundle_schema", INNER_OS_MEMORY_EVIDENCE_BUNDLE_SCHEMA)
         return out
 
     def response_gate(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
