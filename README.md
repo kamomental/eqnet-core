@@ -42,6 +42,7 @@ and becomes a presence that people can *trust and feel at ease with*.
 
 - Primary quickstart: `quickstart_core.bat` / `quickstart_core.sh`
 - Core quickstart note: `docs/core/core_quickstart_2026_04_25.md`
+- Review readiness: `docs/core/review_readiness_2026_04_25.md`
 - Full demo (camera / audio / TTS): `quickstart_gradio.bat` / `.sh`
 - Comparison / research path: `quickstart_llm.bat`
 
