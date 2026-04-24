@@ -26,6 +26,7 @@ core quickstart は、次の本流 state path を表示します。
 - `response_guideline`
 
 `evaluation` は、シナリオごとの期待 contract と actual contract を比較し、会話上の違反を出します。
+`prompt_baselines` は、観測済みまたは典型的な prompt-only 反応の失敗型を同じ contract で評価します。
 
 ## 確認コマンド
 単一シナリオ:
@@ -56,6 +57,9 @@ uv run python scripts/core_contract_eval.py --json
 - `failed_count = 0`
 - `pass_rate = 1.0`
 
+あわせて `prompt_baselines` には、prompt-only/raw 出力例の contract 違反が入ります。
+これは live ベンチマークではなく、観測済みの失敗型を再レビュー用 fixture として固定したものです。
+
 対象シナリオ:
 
 - `small_shared_moment`
@@ -69,7 +73,7 @@ uv run python scripts/core_contract_eval.py --json
 残る再レビュー上の穴:
 
 - シナリオはまだ 2 本だけです。
-- prompt-only baseline との比較はまだ入っていません。
+- prompt-only baseline は fixture 比較であり、live baseline ではありません。
 - LM Studio live 出力は同じ evaluator にまだ接続していません。
 - legacy / full demo 導線の分離は、さらに明確化が必要です。
 

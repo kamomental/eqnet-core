@@ -8,6 +8,11 @@ from .conversation_contract_eval import (
     evaluate_reaction_contract_against_expectation,
 )
 from .contracts import EvalReport
+from .prompt_baseline_fixtures import (
+    PROMPT_BASELINE_SAMPLES,
+    PromptBaselineSample,
+    prompt_baselines_for_scenario,
+)
 from .codex_environment import (
     CodexEvalEnvironment,
     CodexEvalSuite,
@@ -32,11 +37,14 @@ __all__ = [
     "ConversationContractExpectation",
     "ConversationContractViolation",
     "EvalReport",
+    "PROMPT_BASELINE_SAMPLES",
+    "PromptBaselineSample",
     "build_codex_eval_pytest_command",
     "default_codex_eval_environment",
     "evaluate_reaction_contract_against_expectation",
     "evaluate_run",
     "find_codex_eval_suite",
+    "prompt_baselines_for_scenario",
     "render_codex_architecture_summary_markdown",
     "render_codex_eval_plan_markdown",
     "render_codex_onboarding_markdown",

@@ -479,6 +479,7 @@ python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMM
    - `expected_contract`
    - `reaction_contract`
    - `evaluation`
+   - `prompt_baselines`
    - `response_guideline`
 
 4. **既定シナリオ**
