@@ -38,6 +38,27 @@ and becomes a presence that people can *trust and feel at ease with*.
 
 
 
+## Start Here
+
+- Primary quickstart: `quickstart_core.bat` / `quickstart_core.sh`
+- Core quickstart note: `docs/core/core_quickstart_2026_04_25.md`
+- Full demo (camera / audio / TTS): `quickstart_gradio.bat` / `.sh`
+- Comparison / research path: `quickstart_llm.bat`
+
+### Main Path
+
+EQNet の正規入口は、次の core loop です。
+
+1. `subjective_scene_state`
+2. `self_other_attribution_state`
+3. `shared_presence_state`
+4. `joint_state`
+5. `reaction_contract`
+6. `response_selection`
+
+このループを最短で確認するのが `quickstart_core.*` です。  
+`heartos_mini.py`、`gradio_demo_current_copy.py`、`gradio_demo_prev.py` は正規入口ではなく、実験 / full demo 系の導線です。
+
 ## Docs | Entry Points
 
 - Core (minimal loop, audits, forgetting): `docs/core/README.md`
@@ -436,7 +457,43 @@ python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMM
 
 
 
-### Quick Start – EQNet とスタンダード LLM の違いを数分で体験
+### Core Quick Start – 本流の最小ループを最短で確認
+
+1. **依存関係**
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
+
+2. **primary quickstart**
+   - Windows: `quickstart_core.bat`
+   - macOS / Linux: `./quickstart_core.sh`
+   - 直接実行: `python scripts/core_quickstart_demo.py`
+
+3. **何が見えるか**
+   - `subjective_scene`
+   - `self_other_attribution`
+   - `shared_presence`
+   - `joint_state`
+   - `reaction_contract`
+   - `response_guideline`
+
+4. **既定シナリオ**
+   - `small_shared_moment`
+   - `guarded_uncertainty`
+
+5. **JSON で確認**
+   ```bash
+   python scripts/core_quickstart_demo.py --json
+   ```
+
+これが、現在の EQNet 本流を最も短く確認する導線です。
+
+### Full / Research Quick Starts
+
+この節のコマンドは比較・可視化・研究用途です。  
+primary entry は `quickstart_core.*` であり、以下はその補助導線です。
+
+#### EQNet とスタンダード LLM の違いを数分で体験
 
 1. **事前準備**
    - `.env.example` をコピーして `.env` を作成し、`LMSTUDIO_BASE_URL` / `LMSTUDIO_API_KEY` / `LMSTUDIO_MODEL` を設定（例: `lmstudio-community/gpt-oss-20b`）。
@@ -588,7 +645,7 @@ uvicorn scripts.vision_bridge:app --host 0.0.0.0 --port 8000
 #### Quick Start - Observation Viewer / Gradio
 
 - `quickstart_viewer.bat` / `.sh` - launches the Streamlit telemetry viewer (wraps `streamlit run tools/eqnet_telemetry_viewer.py`). Pass Streamlit flags after the script name.
-- `quickstart_gradio.bat` / `.sh` - starts the current Gradio demo (wraps `python gradio_demo_prev.py`).
+- `quickstart_gradio.bat` / `.sh` - full demo / experimental visualization path (wraps `python gradio_demo_prev.py`). It is not the primary core quickstart.
 - Manual commands:
 
 ```bash

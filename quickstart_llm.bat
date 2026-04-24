@@ -1,6 +1,8 @@
 @echo off
 setlocal enabledelayedexpansion
 
+echo [info] quickstart_llm.bat is the comparison / research path. Use quickstart_core.bat for the primary EQNet core loop.
+
 REM Load environment variables from .env if present
 if exist ".env" (
   for /f "usebackq tokens=1* delims==" %%A in (".env") do (
