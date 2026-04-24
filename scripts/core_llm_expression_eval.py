@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -46,15 +47,23 @@ def evaluate_core_llm_expression(
     temperature: float = 0.45,
     top_p: float | None = 0.9,
     call_llm: bool = True,
+    model_label: str = "",
 ) -> dict[str, Any]:
     result = build_core_demo_result(
         scenario_name=scenario_name,
         input_text=text or None,
     )
     request = result["llm_expression_request"]
+    run_metadata = _build_run_metadata(
+        model_label=model_label,
+        temperature=temperature,
+        top_p=top_p,
+        call_llm=call_llm,
+    )
     if not request["should_call_llm"]:
         return {
             "scenario_name": scenario_name,
+            "run_metadata": run_metadata,
             "called_llm": False,
             "skip_reason": request["blocked_reason"],
             "llm_expression_request": request,
@@ -86,6 +95,7 @@ def evaluate_core_llm_expression(
     )
     return {
         "scenario_name": scenario_name,
+        "run_metadata": run_metadata,
         "called_llm": bool(call_llm),
         "latency_ms": round(latency_ms, 4),
         "llm_expression_request": request,
@@ -106,6 +116,36 @@ def evaluate_core_llm_expression(
     }
 
 
+def save_eval_jsonl(path: str | Path, record: dict[str, Any]) -> Path:
+    output_path = Path(path)
+    if not output_path.is_absolute():
+        output_path = REPO_ROOT / output_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True))
+        handle.write("\n")
+    return output_path
+
+
+def _build_run_metadata(
+    *,
+    model_label: str,
+    temperature: float,
+    top_p: float | None,
+    call_llm: bool,
+) -> dict[str, Any]:
+    return {
+        "model_label": model_label or _default_model_label(),
+        "temperature": temperature,
+        "top_p": top_p,
+        "call_llm": call_llm,
+    }
+
+
+def _default_model_label() -> str:
+    return os.getenv("OPENAI_MODEL") or os.getenv("LMSTUDIO_MODEL") or "unconfigured"
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="core quickstart の state-conditioned LLM expression を評価する。",
@@ -118,6 +158,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--text", default="")
     parser.add_argument("--temperature", type=float, default=0.45)
     parser.add_argument("--top-p", type=float, default=0.9)
+    parser.add_argument(
+        "--model-label",
+        default="",
+        help="評価ログに残すモデル名。未指定時は OPENAI_MODEL / LMSTUDIO_MODEL を使う。",
+    )
+    parser.add_argument(
+        "--save-jsonl",
+        default="",
+        help="評価結果を JSONL で追記保存するパス。",
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -136,7 +186,11 @@ def main() -> int:
         temperature=args.temperature,
         top_p=args.top_p,
         call_llm=not args.dry_run,
+        model_label=args.model_label,
     )
+    if args.save_jsonl:
+        saved_path = save_eval_jsonl(args.save_jsonl, result)
+        result["saved_jsonl"] = str(saved_path)
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
@@ -144,6 +198,7 @@ def main() -> int:
     print("EQNet Core LLM Expression Eval")
     print("==============================")
     print(f"scenario: {result['scenario_name']}")
+    print(f"model_label: {result['run_metadata']['model_label']}")
     print(f"called_llm: {result['called_llm']}")
     if "skip_reason" in result:
         print(f"skip_reason: {result['skip_reason']}")
@@ -159,6 +214,8 @@ def main() -> int:
     print()
     print("[final_action]")
     print(json.dumps(result["final_action"], ensure_ascii=False, indent=2))
+    if result.get("saved_jsonl"):
+        print(f"saved_jsonl: {result['saved_jsonl']}")
     return 0
 
 

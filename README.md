@@ -501,6 +501,7 @@ python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMM
    ```
 
    `--dry-run` を付けると LLM を呼ばず、`llm_expression_request` だけ確認できます。
+   `--save-jsonl artifacts/core_llm_expression_eval.jsonl --model-label <model>` を付けると、モデル別の出力と contract review を後から比較できる証跡として保存できます。
 
 これが、現在の EQNet 本流を最も短く確認する導線です。
 

@@ -14,6 +14,7 @@ venv/
 # Logs and reports
 logs/
 reports/nightly_artifacts/
+artifacts/*.jsonl
 *.log
 *.tmp
 
