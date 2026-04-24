@@ -66,6 +66,16 @@ class _SurfaceHarness:
     _select_short_inner_os_sequence = EmotionalHubRuntime._select_short_inner_os_sequence
     _compact_inner_os_sequence_text = EmotionalHubRuntime._compact_inner_os_sequence_text
     _compose_inner_os_surface_text = EmotionalHubRuntime._compose_inner_os_surface_text
+    _apply_surface_context_packet_to_content_sequence = (
+        EmotionalHubRuntime._apply_surface_context_packet_to_content_sequence
+    )
+    _render_fast_ack = EmotionalHubRuntime._render_fast_ack
+    _render_inner_os_response_channel_text = (
+        EmotionalHubRuntime._render_inner_os_response_channel_text
+    )
+    _apply_inner_os_actuation_timing_profile = (
+        EmotionalHubRuntime._apply_inner_os_actuation_timing_profile
+    )
     _inner_os_surface_probe = EmotionalHubRuntime._inner_os_surface_probe
     _inner_os_surface_reopening_line = EmotionalHubRuntime._inner_os_surface_reopening_line
     _inner_os_surface_closing = EmotionalHubRuntime._inner_os_surface_closing
@@ -100,7 +110,7 @@ def _render_case(
         "top_option_family": gate.expression_hints.get("top_interaction_option_family"),
         "dialogue_order": (
             (gate.expression_hints.get("interaction_policy_packet") or {}).get("dialogue_order")
-            if isinstance(gate.expression_hints.get("interaction_policy_packet"), dict)
+            if isinstance(gate.expression_hints.get("interaction_policy_packet"), Mapping)
             else None
         ),
         "stance": gate.expression_hints.get("partner_utterance_stance"),

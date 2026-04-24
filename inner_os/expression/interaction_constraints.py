@@ -35,10 +35,18 @@ def derive_interaction_constraints(
     relational_continuity_state = _nested_state(packet.get("relational_continuity_state"))
     learning_mode_state = _nested_state(packet.get("learning_mode_state"))
     social_topology_state = _nested_state(packet.get("social_topology_state"))
+    expressive_style_state = _nested_state(packet.get("expressive_style_state"))
     response_strategy = str(packet.get("response_strategy") or "").strip()
     primary_operation_kind = str(
         (packet.get("primary_object_operation") or {}).get("operation_kind") or ""
     ).strip()
+    live_engagement_state = _nested_state(packet.get("live_engagement_state"))
+    lightness_budget_state = _nested_state(packet.get("lightness_budget_state"))
+    lightness_budget_payload = dict(packet.get("lightness_budget_state") or {})
+    try:
+        lightness_banter_room = float(lightness_budget_payload.get("banter_room") or 0.0)
+    except (TypeError, ValueError):
+        lightness_banter_room = 0.0
     identity_arc_kind = str(packet.get("identity_arc_kind") or "").strip()
     identity_arc_open_tension = str(packet.get("identity_arc_open_tension") or "").strip()
     temporal_membrane_mode = str(
@@ -75,9 +83,22 @@ def derive_interaction_constraints(
             "careful_repair",
         }
     )
+    bright_continuity_room = (
+        live_engagement_state in {"pickup_comment", "riff_with_comment"}
+        or expressive_style_state == "light_playful"
+        or (
+            lightness_budget_state in {"open_play", "warm_only", "light_ok"}
+            and lightness_banter_room >= 0.18
+        )
+    )
     allow_small_next_step = (
         response_strategy == "shared_world_next_step"
         or primary_operation_kind == "offer_small_next_step"
+        or (
+            keep_thread_visible
+            and bright_continuity_room
+            and social_topology_state not in {"public_visible", "hierarchical"}
+        )
     )
     prefer_acknowledge_before_extension = response_strategy in {
         "attune_then_extend",
@@ -100,6 +121,8 @@ def derive_interaction_constraints(
         reasons.append("timing:return_point")
     if allow_small_next_step:
         reasons.append("strategy:small_step")
+    if bright_continuity_room:
+        reasons.append("continuity:bright_room")
     if avoid_overclosure:
         reasons.append("boundary:soft_close")
     if prefer_acknowledge_before_extension:

@@ -1,5 +1,9 @@
 # Evaluation Criteria
 
+## 関連文書
+- `docs/core/evaluation_operating_policy.md`
+- `docs/core/evaluation_targets.md`
+
 ## 目的
 
 `Inner OS` / `EQNet` 系の共生共鳴生命体を評価する際は、

@@ -6,6 +6,7 @@ from inner_os.expression import (
     build_expression_hints_from_gate_result,
     render_response,
 )
+from inner_os.expression_hints_contract import ExpressionHintsContract
 from inner_os.qualia_kernel_adapter import QUALIA_AXIS_LABELS
 from inner_os.grounding import ground_symbols, infer_affordances, observe, summarize_partner_grounding
 from inner_os.memory import build_memory_appends, build_memory_context
@@ -82,6 +83,7 @@ def test_inner_os_bootstrap_smoke_flow(tmp_path) -> None:
     assert "issue_state" in plan.llm_payload
     assert "turn_delta" in plan.llm_payload
     assert "surface_context_packet" in plan.llm_payload
+    assert "reaction_contract" in plan.llm_payload
     assert plan.interaction_policy["dialogue_act"] in {"report", "check_in"}
     assert plan.interaction_policy["dialogue_order"]
     assert plan.interaction_policy["scene_family"]
@@ -122,9 +124,18 @@ def test_inner_os_bootstrap_smoke_flow(tmp_path) -> None:
     assert "shared_core" in plan.llm_payload["surface_context_packet"]
     assert "response_role" in plan.llm_payload["surface_context_packet"]
     assert "constraints" in plan.llm_payload["surface_context_packet"]
+    assert "appraisal_state" in plan.llm_payload["surface_context_packet"]["source_state"]
+    assert "joint_state" in plan.llm_payload["surface_context_packet"]["source_state"]
+    assert "meaning_update_state" in plan.llm_payload["surface_context_packet"]["source_state"]
+    assert "utterance_reason_state" in plan.llm_payload["surface_context_packet"]["source_state"]
+    assert plan.llm_payload["reaction_contract"]["question_budget"] >= 0
+    assert plan.llm_payload["reaction_contract"]["response_channel"] in {"speak", "backchannel", "hold", "defer", ""}
     assert plan.llm_payload["interaction_policy"]["focus_now"]
     assert "response_action_now" in plan.llm_payload["interaction_policy"]
     assert plan.llm_payload["interaction_policy"]["wanted_effect_on_other"]
+    assert "appraisal_state" in plan.llm_payload["interaction_policy"]
+    assert "meaning_update_state" in plan.llm_payload["interaction_policy"]
+    assert "utterance_reason_packet" in plan.llm_payload["interaction_policy"]
     assert "learning_mode_state" in plan.llm_payload["interaction_policy"]
     assert "social_experiment_loop_state" in plan.llm_payload["interaction_policy"]
     assert "persona_memory_selection" in plan.llm_payload["interaction_policy"]
@@ -441,6 +452,7 @@ def test_response_planner_preserves_shared_qualia_view_when_present() -> None:
             },
         }
     )
+    assert isinstance(expression_hints, ExpressionHintsContract)
     plan = render_response(
         foreground,
         DialogueContext(

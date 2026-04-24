@@ -409,6 +409,28 @@ def test_daily_carry_summary_builder_reads_nightly_fragments() -> None:
             "inner_os_sleep_expressive_style_focus": "warm_companion",
             "inner_os_sleep_expressive_style_history_focus": "warm_companion",
             "inner_os_sleep_banter_style_focus": "gentle_tease",
+            "inner_os_sleep_growth_relational_trust": 0.64,
+            "inner_os_sleep_growth_epistemic_maturity": 0.58,
+            "inner_os_sleep_growth_expressive_range": 0.62,
+            "inner_os_sleep_growth_residue_integration": 0.55,
+            "inner_os_sleep_growth_playfulness_range": 0.49,
+            "inner_os_sleep_growth_self_coherence": 0.67,
+            "inner_os_sleep_growth_dominant_transition": "expressive_range",
+            "inner_os_sleep_growth_bond_axis": 0.61,
+            "inner_os_sleep_growth_stability_axis": 0.6,
+            "inner_os_sleep_growth_curiosity_axis": 0.57,
+            "inner_os_sleep_memory_dynamics_mode": "reconsolidate",
+            "inner_os_sleep_memory_dominant_link": "bond:user|memory:harbor_thread",
+            "inner_os_sleep_memory_monument_kind": "shared_ritual",
+            "inner_os_sleep_memory_monument_salience": 0.66,
+            "inner_os_sleep_memory_ignition_readiness": 0.52,
+            "inner_os_sleep_memory_consolidation_pull": 0.64,
+            "inner_os_sleep_memory_tension": 0.22,
+            "inner_os_sleep_memory_topology_axis": 0.57,
+            "inner_os_sleep_memory_salience_axis": 0.66,
+            "inner_os_sleep_memory_ignition_axis": 0.52,
+            "inner_os_sleep_memory_consolidation_axis": 0.64,
+            "inner_os_sleep_memory_tension_axis": 0.22,
             "inner_os_sleep_agenda_bias": 0.26,
             "inner_os_sleep_agenda_window_bias": 0.17,
             "inner_os_sleep_learning_mode_carry_bias": 0.15,
@@ -459,6 +481,20 @@ def test_daily_carry_summary_builder_reads_nightly_fragments() -> None:
     assert summary["overnight_focus"]["expressive_style_focus"] == "warm_companion"
     assert summary["overnight_focus"]["expressive_style_history_focus"] == "warm_companion"
     assert summary["overnight_focus"]["banter_style_focus"] == "gentle_tease"
+    assert summary["overnight_focus"]["growth_relational_trust"] == 0.64
+    assert summary["overnight_focus"]["growth_epistemic_maturity"] == 0.58
+    assert summary["overnight_focus"]["growth_expressive_range"] == 0.62
+    assert summary["overnight_focus"]["growth_residue_integration"] == 0.55
+    assert summary["overnight_focus"]["growth_playfulness_range"] == 0.49
+    assert summary["overnight_focus"]["growth_self_coherence"] == 0.67
+    assert summary["overnight_focus"]["growth_dominant_transition"] == "expressive_range"
+    assert summary["overnight_focus"]["growth_bond_axis"] == 0.61
+    assert summary["overnight_focus"]["growth_stability_axis"] == 0.6
+    assert summary["overnight_focus"]["growth_curiosity_axis"] == 0.57
+    assert summary["overnight_focus"]["memory_dynamics_mode"] == "reconsolidate"
+    assert summary["overnight_focus"]["memory_dominant_link"] == "bond:user|memory:harbor_thread"
+    assert summary["overnight_focus"]["memory_monument_kind"] == "shared_ritual"
+    assert summary["overnight_focus"]["memory_consolidation_axis"] == 0.64
     assert summary["temporal_alignment"]["same_turn_mode"] == ""
     assert summary["temporal_alignment"]["overnight_focus"] == "reentry"
     assert summary["temporal_alignment"]["focus_alignment"] is False
@@ -485,6 +521,7 @@ def test_daily_carry_summary_builder_reads_nightly_fragments() -> None:
     assert summary["carry_alignment"]["relation_arc_registry_visible"] is True
     assert summary["carry_alignment"]["group_relation_arc_visible"] is True
     assert summary["carry_alignment"]["temporal_membrane_visible"] is True
+    assert summary["carry_alignment"]["memory_dynamics_carry_visible"] is True
     assert summary["carry_strengths"]["agenda"] == 0.26
     assert summary["carry_strengths"]["agenda_window"] == 0.17
     assert summary["carry_strengths"]["temporal_reentry"] == 0.17

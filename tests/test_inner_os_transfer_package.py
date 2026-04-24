@@ -106,6 +106,153 @@ def test_transfer_package_builder_keeps_portable_state_and_runtime_seed() -> Non
             "body_recovery_guard": {"state": "guarded", "score": 0.41},
             "body_homeostasis_state": {"state": "recovering", "score": 0.46, "winner_margin": 0.11},
             "social_topology_state": {"state": "threaded_group", "score": 0.52, "winner_margin": 0.1},
+            "growth_state": {
+                "relational_trust": 0.64,
+                "epistemic_maturity": 0.49,
+                "expressive_range": 0.57,
+                "residue_integration": 0.53,
+                "playfulness_range": 0.38,
+                "self_coherence": 0.61,
+                "social_update_strength": 0.73,
+                "identity_update_strength": 0.68,
+                "dominant_transition": "relational_trust",
+            },
+            "growth_replay_axes": {
+                "bond": {"value": 0.58, "delta": 0.06},
+                "stability": {"value": 0.54, "delta": 0.04},
+                "curiosity": {"value": 0.47, "delta": 0.03},
+            },
+            "epistemic_state": {
+                "freshness": 0.72,
+                "source_confidence": 0.68,
+                "verification_pressure": 0.29,
+                "change_likelihood": 0.34,
+                "stale_risk": 0.31,
+                "epistemic_caution": 0.36,
+                "dominant_posture": "carry_forward",
+            },
+            "epistemic_packet_axes": {
+                "grounding": {"value": 0.7, "delta": 0.04},
+                "volatility": {"value": 0.33, "delta": 0.01},
+                "verification": {"value": 0.32, "delta": -0.02},
+            },
+            "qualia_structure_state": {
+                "dominant_axis": "approval",
+                "phase": "echoing",
+                "emergence": 0.57,
+                "stability": 0.63,
+                "memory_resonance": 0.61,
+                "temporal_coherence": 0.58,
+                "drift": 0.19,
+                "trace": [{"step": 1, "phase": "echoing"}],
+            },
+            "qualia_structure_axes": {
+                "emergence": {"value": 0.57, "delta": 0.05},
+                "stability": {"value": 0.63, "delta": 0.04},
+                "resonance": {"value": 0.6, "delta": 0.03},
+                "drift": {"value": 0.19, "delta": 0.02},
+            },
+            "heartbeat_structure_state": {
+                "pulse_band": "lifted_pulse",
+                "phase_window": "upswing",
+                "dominant_reaction": "attune",
+                "activation_drive": 0.48,
+                "attunement": 0.57,
+                "containment_bias": 0.23,
+                "recovery_pull": 0.19,
+                "bounce_room": 0.36,
+                "response_tempo": 0.41,
+                "entrainment": 0.52,
+                "trace": [{"phase_window": "upswing", "dominant_reaction": "attune"}],
+            },
+            "heartbeat_structure_axes": {
+                "activation": {"value": 0.48, "delta": 0.05},
+                "attunement": {"value": 0.57, "delta": 0.04},
+                "containment": {"value": 0.23, "delta": -0.01},
+                "recovery": {"value": 0.19, "delta": 0.0},
+                "tempo": {"value": 0.41, "delta": 0.03},
+            },
+            "memory_dynamics_state": {
+                "palace_topology": 0.54,
+                "dominant_link_key": "harbor->promise",
+                "dominant_link_inputs": ["repeated_links", "unfinished_thread"],
+                "monument_salience": 0.47,
+                "monument_kind": "shared_ritual",
+                "ignition_readiness": 0.52,
+                "consolidation_pull": 0.44,
+                "forgetting_pressure": 0.18,
+                "memory_tension": 0.29,
+                "prospective_pull": 0.31,
+                "dominant_mode": "ignite",
+            },
+            "memory_dynamics_axes": {
+                "topology": {"value": 0.54, "delta": 0.05},
+                "salience": {"value": 0.47, "delta": 0.03},
+                "ignition": {"value": 0.52, "delta": 0.04},
+                "consolidation": {"value": 0.44, "delta": 0.02},
+                "tension": {"value": 0.29, "delta": -0.01},
+            },
+            "organism_state": {
+                "attunement": 0.62,
+                "coherence": 0.58,
+                "grounding": 0.64,
+                "protective_tension": 0.24,
+                "expressive_readiness": 0.57,
+                "play_window": 0.4,
+                "relation_pull": 0.59,
+                "social_exposure": 0.18,
+                "dominant_posture": "attune",
+                "relation_focus": "user",
+                "social_mode": "one_to_one",
+                "trace": [{"step": 1, "dominant_posture": "attune"}],
+            },
+            "organism_axes": {
+                "attunement": {"value": 0.62, "delta": 0.05},
+                "coherence": {"value": 0.58, "delta": 0.04},
+                "grounding": {"value": 0.64, "delta": 0.04},
+                "protection": {"value": 0.24, "delta": -0.01},
+                "expression": {"value": 0.5, "delta": 0.03},
+                "relation": {"value": 0.59, "delta": 0.05},
+            },
+            "external_field_state": {
+                "dominant_field": "continuity_field",
+                "social_mode": "one_to_one",
+                "thread_mode": "reopening_thread",
+                "environmental_load": 0.27,
+                "social_pressure": 0.19,
+                "continuity_pull": 0.66,
+                "ambiguity_load": 0.24,
+                "safety_envelope": 0.72,
+                "novelty": 0.18,
+                "trace": [{"step": 1, "dominant_field": "continuity_field"}],
+            },
+            "external_field_axes": {
+                "environment": {"value": 0.27, "delta": 0.02},
+                "social": {"value": 0.19, "delta": -0.01},
+                "continuity": {"value": 0.66, "delta": 0.07},
+                "ambiguity": {"value": 0.24, "delta": 0.01},
+                "safety": {"value": 0.72, "delta": 0.03},
+                "novelty": {"value": 0.18, "delta": 0.0},
+            },
+            "terrain_dynamics_state": {
+                "dominant_basin": "continuity_basin",
+                "dominant_flow": "reenter",
+                "terrain_energy": 0.43,
+                "entropy": 0.21,
+                "ignition_pressure": 0.38,
+                "barrier_height": 0.24,
+                "recovery_gradient": 0.47,
+                "basin_pull": 0.61,
+                "trace": [{"step": 1, "dominant_basin": "continuity_basin"}],
+            },
+            "terrain_dynamics_axes": {
+                "energy": {"value": 0.43, "delta": 0.03},
+                "entropy": {"value": 0.21, "delta": -0.01},
+                "ignition": {"value": 0.38, "delta": 0.02},
+                "barrier": {"value": 0.24, "delta": -0.01},
+                "recovery": {"value": 0.47, "delta": 0.03},
+                "basin": {"value": 0.61, "delta": 0.05},
+            },
             "initiative_readiness": {"state": "tentative", "score": 0.38},
             "commitment_state": {"state": "commit", "target": "repair", "accepted_cost": 0.33},
             "expressive_style_state": {"state": "quiet_repair", "lightness_room": 0.24, "continuity_weight": 0.61},
@@ -223,6 +370,24 @@ def test_transfer_package_builder_keeps_portable_state_and_runtime_seed() -> Non
     assert package["portable_state"]["same_turn"]["relational_style_memory_state"]["banter_style"] == "gentle_tease"
     assert package["portable_state"]["same_turn"]["relational_continuity_state"]["state"] == "reopening"
     assert package["portable_state"]["carry"]["daily_carry_summary"]["overnight_focus"]["commitment_target_focus"] == "repair"
+    assert package["portable_state"]["carry"]["growth_state"]["relational_trust"] == 0.64
+    assert package["portable_state"]["carry"]["growth_replay_axes"]["bond"]["value"] == 0.58
+    assert package["portable_state"]["carry"]["epistemic_state"]["freshness"] == 0.72
+    assert package["portable_state"]["carry"]["epistemic_packet_axes"]["grounding"]["value"] == 0.7
+    assert package["portable_state"]["carry"]["qualia_structure_state"]["phase"] == "echoing"
+    assert package["portable_state"]["carry"]["qualia_structure_axes"]["resonance"]["value"] == 0.6
+    assert package["portable_state"]["carry"]["heartbeat_structure_state"]["dominant_reaction"] == "attune"
+    assert package["portable_state"]["carry"]["heartbeat_structure_axes"]["tempo"]["value"] == 0.41
+    assert package["portable_state"]["carry"]["memory_dynamics_state"]["dominant_mode"] == "ignite"
+    assert package["portable_state"]["carry"]["memory_dynamics_state"]["monument_kind"] == "shared_ritual"
+    assert package["portable_state"]["carry"]["memory_dynamics_axes"]["ignition"]["value"] == 0.52
+    assert package["portable_state"]["carry"]["organism_state"]["dominant_posture"] == "attune"
+    assert package["portable_state"]["carry"]["organism_state"]["relation_focus"] == "user"
+    assert package["portable_state"]["carry"]["organism_axes"]["grounding"]["value"] == 0.64
+    assert package["portable_state"]["carry"]["external_field_state"]["dominant_field"] == "continuity_field"
+    assert package["portable_state"]["carry"]["external_field_axes"]["continuity"]["value"] == 0.66
+    assert package["portable_state"]["carry"]["terrain_dynamics_state"]["dominant_basin"] == "continuity_basin"
+    assert package["portable_state"]["carry"]["terrain_dynamics_axes"]["basin"]["value"] == 0.61
     assert package["portable_state"]["carry"]["learning_mode_carry"]["focus"] == "repair_probe"
     assert package["portable_state"]["carry"]["social_experiment_carry"]["focus"] == "repair_signal_probe"
     assert package["portable_state"]["carry"]["temporal_membrane"]["focus"] == "coherent_reentry"
@@ -274,10 +439,63 @@ def test_transfer_package_builder_keeps_portable_state_and_runtime_seed() -> Non
     assert package["runtime_seed"]["group_thread_focus"] == "threaded_group"
     assert package["runtime_seed"]["group_thread_carry_bias"] == 0.12
     assert package["runtime_seed"]["discussion_thread_registry_snapshot"]["dominant_issue_state"] == "pausing_issue"
+    assert package["runtime_seed"]["growth_state"]["self_coherence"] == 0.61
+    assert package["runtime_seed"]["growth_replay_axes"]["curiosity"]["value"] == 0.47
+    assert package["runtime_seed"]["epistemic_state"]["source_confidence"] == 0.68
+    assert package["runtime_seed"]["epistemic_packet_axes"]["verification"]["value"] == 0.32
+    assert package["runtime_seed"]["qualia_structure_state"]["dominant_axis"] == "approval"
+    assert package["runtime_seed"]["qualia_structure_axes"]["stability"]["value"] == 0.63
+    assert package["runtime_seed"]["heartbeat_structure_state"]["pulse_band"] == "lifted_pulse"
+    assert package["runtime_seed"]["heartbeat_structure_axes"]["attunement"]["value"] == 0.57
+    assert package["runtime_seed"]["memory_dynamics_state"]["dominant_mode"] == "ignite"
+    assert package["runtime_seed"]["memory_dynamics_axes"]["salience"]["value"] == 0.47
+    assert package["runtime_seed"]["organism_state"]["dominant_posture"] == "attune"
+    assert package["runtime_seed"]["organism_axes"]["expression"]["value"] == 0.5
+    assert package["runtime_seed"]["external_field_state"]["dominant_field"] == "continuity_field"
+    assert package["runtime_seed"]["external_field_axes"]["safety"]["value"] == 0.72
+    assert package["runtime_seed"]["terrain_dynamics_state"]["dominant_flow"] == "reenter"
+    assert package["runtime_seed"]["terrain_dynamics_axes"]["recovery"]["value"] == 0.47
     assert package["runtime_seed"]["autobiographical_thread_mode"] == "unfinished_thread"
     assert package["runtime_seed"]["autobiographical_thread_anchor"] == "harbor promise"
     assert package["runtime_seed"]["autobiographical_thread_strength"] == 0.43
     assert package["runtime_seed"]["prev_qualia"] == [0.2, 0.6]
+
+
+def test_transfer_package_builder_carries_joint_state() -> None:
+    builder = InnerOSTransferPackageBuilder()
+
+    package = builder.build(
+        session_id="session-joint",
+        turn_id="turn-joint",
+        timestamp_ms=4321,
+        current_state={
+            "joint_state": {
+                "dominant_mode": "delighted_jointness",
+                "shared_delight": 0.72,
+                "shared_tension": 0.18,
+                "repair_readiness": 0.49,
+                "common_ground": 0.66,
+                "joint_attention": 0.61,
+                "mutual_room": 0.57,
+                "coupling_strength": 0.69,
+                "trace": [{"step": 1, "dominant_mode": "delighted_jointness"}],
+            },
+            "joint_axes": {
+                "delight": {"value": 0.72, "delta": 0.08},
+                "tension": {"value": 0.18, "delta": -0.02},
+                "repair": {"value": 0.49, "delta": 0.03},
+                "ground": {"value": 0.66, "delta": 0.05},
+                "attention": {"value": 0.61, "delta": 0.04},
+                "coupling": {"value": 0.69, "delta": 0.06},
+            },
+        },
+    ).to_dict()
+
+    assert package["portable_state"]["carry"]["joint_state"]["dominant_mode"] == "delighted_jointness"
+    assert package["portable_state"]["carry"]["joint_state"]["shared_delight"] == 0.72
+    assert package["portable_state"]["carry"]["joint_axes"]["coupling"]["value"] == 0.69
+    assert package["runtime_seed"]["joint_state"]["dominant_mode"] == "delighted_jointness"
+    assert package["runtime_seed"]["joint_axes"]["ground"]["value"] == 0.66
 
 
 def test_transfer_package_builder_restores_runtime_seed_shape() -> None:
@@ -286,6 +504,153 @@ def test_transfer_package_builder_restores_runtime_seed_shape() -> None:
     seed = builder.to_runtime_seed(
         {
             "runtime_seed": {
+                "growth_state": {
+                    "relational_trust": 0.52,
+                    "epistemic_maturity": 0.44,
+                    "expressive_range": 0.49,
+                    "residue_integration": 0.41,
+                    "playfulness_range": 0.36,
+                    "self_coherence": 0.55,
+                    "social_update_strength": 0.67,
+                    "identity_update_strength": 0.59,
+                    "dominant_transition": "self_coherence",
+                },
+                "growth_replay_axes": {
+                    "bond": {"value": 0.5, "delta": 0.04},
+                    "stability": {"value": 0.53, "delta": 0.05},
+                    "curiosity": {"value": 0.43, "delta": 0.02},
+                },
+                "epistemic_state": {
+                    "freshness": 0.61,
+                    "source_confidence": 0.57,
+                    "verification_pressure": 0.41,
+                    "change_likelihood": 0.48,
+                    "stale_risk": 0.43,
+                    "epistemic_caution": 0.45,
+                    "dominant_posture": "carry_forward",
+                },
+                "epistemic_packet_axes": {
+                    "grounding": {"value": 0.59, "delta": 0.03},
+                    "volatility": {"value": 0.45, "delta": 0.06},
+                    "verification": {"value": 0.43, "delta": 0.05},
+                },
+                "qualia_structure_state": {
+                    "dominant_axis": "fear",
+                    "phase": "shifting",
+                    "emergence": 0.48,
+                    "stability": 0.44,
+                    "memory_resonance": 0.39,
+                    "temporal_coherence": 0.41,
+                    "drift": 0.26,
+                    "trace": [{"step": 2, "phase": "shifting"}],
+                },
+                "qualia_structure_axes": {
+                    "emergence": {"value": 0.48, "delta": 0.02},
+                    "stability": {"value": 0.44, "delta": -0.01},
+                    "resonance": {"value": 0.39, "delta": 0.03},
+                    "drift": {"value": 0.26, "delta": 0.07},
+                },
+                "heartbeat_structure_state": {
+                    "pulse_band": "racing_pulse",
+                    "phase_window": "crest",
+                    "dominant_reaction": "contain",
+                    "activation_drive": 0.61,
+                    "attunement": 0.34,
+                    "containment_bias": 0.58,
+                    "recovery_pull": 0.27,
+                    "bounce_room": 0.19,
+                    "response_tempo": 0.33,
+                    "entrainment": 0.44,
+                    "trace": [{"phase_window": "crest", "dominant_reaction": "contain"}],
+                },
+                "heartbeat_structure_axes": {
+                    "activation": {"value": 0.61, "delta": 0.09},
+                    "attunement": {"value": 0.34, "delta": 0.01},
+                    "containment": {"value": 0.58, "delta": 0.08},
+                    "recovery": {"value": 0.27, "delta": 0.03},
+                    "tempo": {"value": 0.33, "delta": -0.02},
+                },
+                "memory_dynamics_state": {
+                    "palace_topology": 0.33,
+                    "dominant_link_key": "harbor->promise",
+                    "dominant_link_inputs": ["replay", "nightly_trace"],
+                    "monument_salience": 0.42,
+                    "monument_kind": "shared_ritual",
+                    "ignition_readiness": 0.38,
+                    "consolidation_pull": 0.51,
+                    "forgetting_pressure": 0.24,
+                    "memory_tension": 0.34,
+                    "prospective_pull": 0.28,
+                    "dominant_mode": "reconsolidate",
+                },
+                "memory_dynamics_axes": {
+                    "topology": {"value": 0.33, "delta": 0.02},
+                    "salience": {"value": 0.42, "delta": 0.03},
+                    "ignition": {"value": 0.38, "delta": 0.01},
+                    "consolidation": {"value": 0.51, "delta": 0.06},
+                    "tension": {"value": 0.34, "delta": 0.04},
+                },
+                "organism_state": {
+                    "attunement": 0.41,
+                    "coherence": 0.46,
+                    "grounding": 0.49,
+                    "protective_tension": 0.52,
+                    "expressive_readiness": 0.31,
+                    "play_window": 0.17,
+                    "relation_pull": 0.43,
+                    "social_exposure": 0.29,
+                    "dominant_posture": "protect",
+                    "relation_focus": "user",
+                    "social_mode": "public_visible",
+                    "trace": [{"step": 2, "dominant_posture": "protect"}],
+                },
+                "organism_axes": {
+                    "attunement": {"value": 0.41, "delta": 0.02},
+                    "coherence": {"value": 0.46, "delta": 0.01},
+                    "grounding": {"value": 0.49, "delta": 0.03},
+                    "protection": {"value": 0.52, "delta": 0.07},
+                    "expression": {"value": 0.25, "delta": -0.02},
+                    "relation": {"value": 0.43, "delta": 0.02},
+                },
+                "external_field_state": {
+                    "dominant_field": "social_pressure_field",
+                    "social_mode": "public_visible",
+                    "thread_mode": "continuing_thread",
+                    "environmental_load": 0.39,
+                    "social_pressure": 0.58,
+                    "continuity_pull": 0.34,
+                    "ambiguity_load": 0.29,
+                    "safety_envelope": 0.41,
+                    "novelty": 0.22,
+                    "trace": [{"step": 2, "dominant_field": "social_pressure_field"}],
+                },
+                "external_field_axes": {
+                    "environment": {"value": 0.39, "delta": 0.05},
+                    "social": {"value": 0.58, "delta": 0.08},
+                    "continuity": {"value": 0.34, "delta": 0.01},
+                    "ambiguity": {"value": 0.29, "delta": 0.03},
+                    "safety": {"value": 0.41, "delta": -0.04},
+                    "novelty": {"value": 0.22, "delta": 0.02},
+                },
+                "terrain_dynamics_state": {
+                    "dominant_basin": "protective_basin",
+                    "dominant_flow": "contain",
+                    "terrain_energy": 0.37,
+                    "entropy": 0.34,
+                    "ignition_pressure": 0.22,
+                    "barrier_height": 0.57,
+                    "recovery_gradient": 0.31,
+                    "basin_pull": 0.42,
+                    "trace": [{"step": 2, "dominant_basin": "protective_basin"}],
+                },
+                "terrain_dynamics_axes": {
+                    "energy": {"value": 0.37, "delta": 0.02},
+                    "entropy": {"value": 0.34, "delta": 0.04},
+                    "ignition": {"value": 0.22, "delta": -0.01},
+                    "barrier": {"value": 0.57, "delta": 0.06},
+                    "recovery": {"value": 0.31, "delta": 0.02},
+                    "basin": {"value": 0.42, "delta": 0.01},
+                },
                 "prev_qualia": [0.4],
                 "prev_qualia_habituation": [0.1],
                 "prev_protection_grad_x": [0.2],
@@ -389,6 +754,22 @@ def test_transfer_package_builder_restores_runtime_seed_shape() -> None:
     )
 
     assert seed["initiative_followup_state"] == "offer_next_step"
+    assert seed["growth_state"]["dominant_transition"] == "self_coherence"
+    assert seed["growth_replay_axes"]["bond"]["value"] == 0.5
+    assert seed["epistemic_state"]["freshness"] == 0.61
+    assert seed["epistemic_packet_axes"]["volatility"]["value"] == 0.45
+    assert seed["qualia_structure_state"]["phase"] == "shifting"
+    assert seed["qualia_structure_axes"]["drift"]["value"] == 0.26
+    assert seed["heartbeat_structure_state"]["dominant_reaction"] == "contain"
+    assert seed["heartbeat_structure_axes"]["containment"]["value"] == 0.58
+    assert seed["memory_dynamics_state"]["dominant_mode"] == "reconsolidate"
+    assert seed["memory_dynamics_axes"]["consolidation"]["value"] == 0.51
+    assert seed["organism_state"]["dominant_posture"] == "protect"
+    assert seed["organism_axes"]["protection"]["value"] == 0.52
+    assert seed["external_field_state"]["dominant_field"] == "social_pressure_field"
+    assert seed["external_field_axes"]["social"]["value"] == 0.58
+    assert seed["terrain_dynamics_state"]["dominant_basin"] == "protective_basin"
+    assert seed["terrain_dynamics_axes"]["barrier"]["value"] == 0.57
     assert seed["commitment_target_focus"] == "step_forward"
     assert seed["agenda_focus"] == "step_forward"
     assert seed["agenda_bias"] == 0.24

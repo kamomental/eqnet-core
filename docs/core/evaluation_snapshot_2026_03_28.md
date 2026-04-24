@@ -1,5 +1,9 @@
 # Evaluation Snapshot 2026-03-28
 
+## 関連文書
+- `docs/core/evaluation_operating_policy.md`
+- `docs/core/evaluation_targets.md`
+
 ## 前提
 
 このスナップショットは、外部公開ベンチの実行結果ではなく、

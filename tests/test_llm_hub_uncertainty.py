@@ -323,3 +323,144 @@ def test_llm_hub_adds_japanese_language_instruction(monkeypatch):
 
     assert "Respond in natural Japanese only." in seen["system_prompt"]
     assert "Do not switch to English" in seen["system_prompt"]
+
+
+def test_llm_hub_adds_literal_guard_for_bright_continuity(monkeypatch):
+    monkeypatch.setenv("EQNET_SHOW_UNCERTAINTY_META", "0")
+    seen = {}
+
+    def fake_chat(system_prompt, prompt, **kwargs):
+        seen["system_prompt"] = system_prompt
+        seen["prompt"] = prompt
+        return "ok"
+
+    monkeypatch.setattr(terrain_llm, "chat_text", fake_chat)
+    hub = LLMHub()
+
+    _ = hub.generate(
+        "さっきの続きなんだけど、あのあとちょっと笑えることもあって。",
+        context=None,
+        controls={},
+        interaction_policy={"dialogue_act": "check_in"},
+        content_sequence=[
+            {"act": "shared_delight", "text": "それは、ちょっといい感じだね。"},
+            {"act": "light_bounce", "text": "それは、ちょっと気持ちが軽くなるね。"},
+        ],
+        surface_context_packet={
+            "conversation_phase": "bright_continuity",
+            "response_role": {
+                "primary": "light_bounce",
+                "secondary": "shared_delight",
+            },
+            "constraints": {
+                "no_generic_clarification": True,
+                "no_advice": True,
+                "max_questions": 0,
+                "keep_thread_visible": True,
+            },
+            "surface_profile": {
+                "response_length": "short",
+                "cultural_register": "soft_companion",
+                "group_register": "one_to_one",
+                "sentence_temperature": "gentle",
+                "surface_mode": "held",
+            },
+            "source_state": {
+                "recent_dialogue_state": "continuing_thread",
+                "discussion_thread_state": "open_thread",
+                "issue_state": "light_tension",
+                "turn_delta_kind": "bright_continuity",
+            },
+        },
+        surface_profile={"response_length": "short"},
+    )
+
+    assert "Stay with the small thing that actually happened" in seen["system_prompt"]
+    assert "Do not broaden into abstract nouns" in seen["system_prompt"]
+    assert "Do not turn the moment into advice" in seen["system_prompt"]
+    assert "Do not ask the user to explain more" in seen["system_prompt"]
+    assert "Do not ask any follow-up question" in seen["system_prompt"]
+
+
+def test_llm_hub_reason_guard_uses_joint_memory_and_organism(monkeypatch):
+    monkeypatch.setenv("EQNET_SHOW_UNCERTAINTY_META", "0")
+    seen = {}
+
+    def fake_chat(system_prompt, prompt, **kwargs):
+        seen["system_prompt"] = system_prompt
+        seen["prompt"] = prompt
+        return "ok"
+
+    monkeypatch.setattr(terrain_llm, "chat_text", fake_chat)
+    hub = LLMHub()
+
+    _ = hub.generate(
+        "さっきの続きなんだけど、あのあとちょっと笑えることもあって。",
+        context=None,
+        controls={},
+        interaction_policy={"dialogue_act": "check_in"},
+        content_sequence=[
+            {"act": "shared_delight", "text": "ふふっ、それ、ちょっと笑えるやつだね。"},
+            {"act": "light_bounce", "text": "そういうのあると、ちょっと楽になるよね。"},
+        ],
+        surface_context_packet={
+            "conversation_phase": "bright_continuity",
+            "response_role": {
+                "primary": "light_bounce",
+                "secondary": "shared_delight",
+            },
+            "constraints": {
+                "no_generic_clarification": True,
+                "no_advice": True,
+                "max_questions": 0,
+                "keep_thread_visible": True,
+            },
+            "surface_profile": {
+                "response_length": "short",
+                "cultural_register": "soft_companion",
+                "group_register": "one_to_one",
+                "sentence_temperature": "gentle",
+                "surface_mode": "held",
+            },
+            "source_state": {
+                "recent_dialogue_state": "continuing_thread",
+                "discussion_thread_state": "open_thread",
+                "issue_state": "light_tension",
+                "turn_delta_kind": "bright_continuity",
+                "joint_state": "delighted_jointness",
+                "joint_common_ground": 0.67,
+                "joint_mutual_room": 0.59,
+                "utterance_reason_state": "active",
+                "utterance_reason_offer": "brief_shared_smile",
+                "utterance_reason_preserve": "keep_it_small",
+                "utterance_reason_question_policy": "none",
+                "utterance_reason_memory_anchor": "harbor",
+                "memory_recall_anchor": "harbor",
+                "memory_activation_confidence": 0.58,
+                "organism_posture": "attune",
+                "organism_play_window": 0.64,
+                "organism_protective_tension": 0.18,
+                "external_field_dominant": "shared_room",
+                "external_field_safety_envelope": 0.82,
+                "external_field_ambiguity_load": 0.12,
+                "terrain_dominant_flow": "ease_into_shared_smile",
+                "terrain_ignition_pressure": 0.37,
+            },
+        },
+        surface_profile={"response_length": "short"},
+    )
+
+    assert "Treat the packet's appraisal, meaning update, and utterance reason as the immediate cause of the reply." in seen["system_prompt"]
+    assert "Do not step outside the moment to explain it from a helper, analyst, or counselor point of view." in seen["system_prompt"]
+    assert "The packet says there is no question room here, so do not ask a follow-up question." in seen["system_prompt"]
+    assert "For a brief shared smile, prefer a short co-present chat reaction" in seen["system_prompt"]
+    assert "Answer from inside the already-shared ground of the moment, not like an external observer describing the user." in seen["system_prompt"]
+    assert "Treat the recalled anchor as an already-known thread, and do not reframe it as a new issue that needs explanation." in seen["system_prompt"]
+    assert "If the state leaves room for play or attunement, prefer a co-present chat reaction over formal empathy copy." in seen["system_prompt"]
+    assert "Use the organism, field, and terrain state to decide force and stance before any generic helpfulness." in seen["system_prompt"]
+    assert '"response_cause"' in seen["prompt"]
+    assert '"reply_rule"' in seen["prompt"]
+    assert '"joint_position"' in seen["prompt"]
+    assert "Avoid vague or explanatory Japanese such as 笑い事" in seen["system_prompt"]
+    assert "Avoid causal or essay-like framing such as きっかけ" in seen["system_prompt"]
+    assert "Prefer plain chat phrasing close to それ、ちょっと笑えるやつだね" in seen["system_prompt"]

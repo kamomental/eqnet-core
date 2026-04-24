@@ -53,3 +53,49 @@ def test_recent_dialogue_state_prefers_quoted_anchor_when_reopening_text_is_gene
     assert state["state"] == "reopening_thread"
     assert state["recent_anchor"] == "港での約束"
     assert "quoted_history_anchor" in state["dominant_inputs"]
+
+
+def test_recent_dialogue_state_detects_continuation_marker_without_history() -> None:
+    state = derive_recent_dialogue_state(
+        "さっきの続きなんだけど、あのあとちょっと笑えることもあって。",
+        [],
+        interaction_policy={
+            "live_engagement_state": {"state": "pickup_comment"},
+            "lightness_budget_state": {"state": "open_play"},
+        },
+    ).to_dict()
+
+    assert state["state"] == "continuing_thread"
+    assert state["thread_carry"] >= 0.3
+    assert "continuation_marker" in state["dominant_inputs"]
+
+
+def test_recent_dialogue_state_prefers_continuing_thread_for_shared_smile_followup() -> None:
+    state = derive_recent_dialogue_state(
+        "さっきの続きなんだけど、あのあとちょっと笑えることもあって。",
+        ["前の流れはまだしんどさが残っていた。"],
+        interaction_policy={
+            "live_engagement_state": {"state": "riff_with_comment"},
+            "lightness_budget_state": {"state": "open_play"},
+            "shared_moment_state": {
+                "state": "shared_moment",
+                "moment_kind": "laugh",
+                "score": 0.72,
+                "jointness": 0.7,
+                "afterglow": 0.62,
+            },
+            "utterance_reason_packet": {
+                "state": "active",
+                "offer": "brief_shared_smile",
+                "question_policy": "none",
+            },
+            "organism_state": {
+                "dominant_posture": "play",
+                "play_window": 0.44,
+                "expressive_readiness": 0.58,
+            },
+        },
+    ).to_dict()
+
+    assert state["state"] == "continuing_thread"
+    assert "shared_moment_reentry" in state["dominant_inputs"]

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from inner_os import SleepConsolidationCore
+from inner_os.development_transition_policy import derive_growth_state
+from inner_os.memory_dynamics import derive_memory_dynamics_state
 from inner_os.schemas import INNER_OS_SLEEP_CONSOLIDATION_SCHEMA
 
 
@@ -48,6 +51,33 @@ def build_inner_os_sleep_snapshot(
         development_state=development_state,
         persistence_state=persistence_state,
         personality_state=personality_state,
+    )
+    previous_growth = (dict(current_state or {})).get("growth_state")
+    previous_memory_dynamics = (dict(current_state or {})).get("memory_dynamics_state")
+    growth_state = derive_growth_state(
+        previous_growth=previous_growth if isinstance(previous_growth, Mapping) else None,
+        development_state=development_state,
+        forgetting_snapshot=derived_forgetting,
+        sleep_consolidation=snapshot.to_dict(),
+    )
+    memory_dynamics_state = derive_memory_dynamics_state(
+        previous_state=previous_memory_dynamics if isinstance(previous_memory_dynamics, Mapping) else None,
+        memory_orchestration=derived_memory,
+        association_graph=merged_current.get("association_graph_state"),
+        forgetting_snapshot=derived_forgetting,
+        sleep_consolidation=snapshot.to_dict(),
+        recall_active=False,
+    )
+    snapshot = replace(
+        snapshot,
+        growth_state=growth_state.to_dict(),
+        growth_replay_axes=growth_state.to_replay_axes(
+            previous_growth if isinstance(previous_growth, Mapping) else None,
+        ),
+        memory_dynamics_state=memory_dynamics_state.to_dict(),
+        memory_dynamics_axes=memory_dynamics_state.to_packet_axes(
+            previous_memory_dynamics if isinstance(previous_memory_dynamics, Mapping) else None,
+        ),
     )
     return {
         "schema": INNER_OS_SLEEP_CONSOLIDATION_SCHEMA,

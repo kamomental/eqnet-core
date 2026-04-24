@@ -9,16 +9,69 @@ from inner_os.affective_terrain import (
     BasicAffectiveTerrain,
     make_neutral_affective_terrain_state,
 )
+from inner_os.action_posture import ActionPostureContract
+from inner_os.actuation_plan import ActuationPlanContract
+from inner_os.expression_hints_contract import ExpressionHintsContract
+from inner_os.expression_hint_bundles import (
+    FieldRegulationHintBundleContract,
+    InteractionAuditHintBundleContract,
+    InteractionReasoningHintBundleContract,
+    QualiaHintBundleContract,
+    SceneHintBundleContract,
+    TerrainInsightHintBundleContract,
+    WorkspaceHintBundleContract,
+)
 from inner_os.expression import (
     DialogueContext,
     build_expression_hints_from_gate_result,
     render_response,
 )
-from inner_os.integration_hooks import IntegrationHooks
+from inner_os.integration_hooks import (
+    HookState,
+    IntegrationHooks,
+    PreTurnUpdateResult,
+    ResponseGateResult,
+)
 from inner_os.interaction_judgement_comparison import compare_interaction_judgement_summaries
 from inner_os.interaction_inspection_report import build_interaction_inspection_report
 from inner_os.memory import build_memory_appends, build_memory_context
 from inner_os.memory_core import MemoryCore
+from inner_os.policy_packet import InteractionPolicyPacketContract
+
+
+def test_pre_turn_update_result_to_dict_serializes_contract_hint() -> None:
+    result = PreTurnUpdateResult(
+        state=HookState(),
+        interaction_hints={
+            "interaction_policy_packet": InteractionPolicyPacketContract(
+                payload={"dialogue_act": "report", "response_strategy": "hold_presence"}
+            )
+        },
+    )
+
+    exported = result.to_dict()
+
+    assert isinstance(result.interaction_hints["interaction_policy_packet"], InteractionPolicyPacketContract)
+    assert isinstance(exported["interaction_hints"]["interaction_policy_packet"], dict)
+    assert exported["interaction_hints"]["interaction_policy_packet"]["dialogue_act"] == "report"
+    assert exported["interaction_hints"]["interaction_policy_packet"]["response_strategy"] == "hold_presence"
+
+
+def test_response_gate_result_keeps_expression_hints_as_contract() -> None:
+    gate = ResponseGateResult(
+        talk_mode="watch",
+        route="conscious",
+        allowed_surface_intensity=0.4,
+        hesitation_bias=0.2,
+        expression_hints={"tentative_bias": 0.62, "surface_response_length": "short"},
+    )
+
+    exported = gate.to_dict()
+
+    assert isinstance(gate.expression_hints, ExpressionHintsContract)
+    assert gate.expression_hints["surface_response_length"] == "short"
+    assert isinstance(exported["expression_hints"], dict)
+    assert exported["expression_hints"]["tentative_bias"] == 0.62
 
 
 def test_integration_hooks_pre_and_recall_flow(tmp_path: Path) -> None:
@@ -44,6 +97,47 @@ def test_integration_hooks_pre_and_recall_flow(tmp_path: Path) -> None:
     assert isinstance(pre.interaction_hints["relationship_trace"], dict)
     assert isinstance(pre.interaction_hints["community_profile_trace"], dict)
     assert pre.interaction_hints["working_memory"]["memory_pressure"] >= 0.0
+    assert pre.interaction_hints["growth_state"]["relational_trust"] >= 0.0
+    assert pre.interaction_hints["growth_replay_axes"]["bond"]["value"] >= 0.0
+    assert pre.interaction_hints["epistemic_state"]["freshness"] >= 0.0
+    assert pre.interaction_hints["epistemic_packet_axes"]["grounding"]["value"] >= 0.0
+    assert pre.interaction_hints["memory_dynamics_state"]["dominant_mode"] in {
+        "ignite",
+        "reconsolidate",
+        "prospect",
+        "protect",
+        "stabilize",
+    }
+    assert pre.interaction_hints["memory_dynamics_axes"]["topology"]["value"] >= 0.0
+    assert pre.interaction_hints["memory_dynamics_state"]["palace_mode"] in {
+        "ambient",
+        "diffuse",
+        "anchored",
+        "clustered",
+        "sparse",
+    }
+    assert pre.interaction_hints["organism_state"]["dominant_posture"] in {
+        "steady",
+        "attune",
+        "open",
+        "play",
+        "protect",
+        "recover",
+        "verify",
+    }
+    assert pre.interaction_hints["organism_axes"]["grounding"]["value"] >= 0.0
+    assert pre.interaction_hints["joint_state"]["dominant_mode"] in {
+        "ambient",
+        "shared_attention",
+        "repair_attunement",
+        "strained_jointness",
+        "delighted_jointness",
+    }
+    assert pre.interaction_hints["joint_axes"]["coupling"]["value"] >= 0.0
+    assert pre.interaction_hints["external_field_state"]["dominant_field"]
+    assert pre.interaction_hints["external_field_axes"]["continuity"]["value"] >= 0.0
+    assert pre.interaction_hints["terrain_dynamics_state"]["dominant_basin"]
+    assert pre.interaction_hints["terrain_dynamics_axes"]["energy"]["value"] >= 0.0
     assert pre.state.community_resonance >= 0.0
     assert pre.state.culture_resonance >= 0.0
 
@@ -80,6 +174,32 @@ def test_integration_hooks_pre_and_recall_flow(tmp_path: Path) -> None:
     assert recall.ignition_hints["forgetting"]["replay_horizon"] >= 1
     assert recall.ignition_hints["memory_orchestration"]["consolidation_priority"] >= 0.0
     assert recall.ignition_hints["working_memory"]["current_focus"]
+    assert recall.ignition_hints["growth_state"]["epistemic_maturity"] >= 0.0
+    assert recall.ignition_hints["growth_replay_axes"]["stability"]["value"] >= 0.0
+    assert recall.ignition_hints["epistemic_state"]["source_confidence"] >= 0.0
+    assert recall.ignition_hints["epistemic_packet_axes"]["verification"]["value"] >= 0.0
+    assert recall.ignition_hints["memory_dynamics_state"]["ignition_readiness"] >= 0.0
+    assert recall.ignition_hints["memory_dynamics_axes"]["ignition"]["value"] >= 0.0
+    assert recall.ignition_hints["memory_dynamics_state"]["ignition_mode"] in {
+        "idle",
+        "arming",
+        "primed",
+        "active",
+    }
+    assert recall.ignition_hints["organism_state"]["coherence"] >= 0.0
+    assert recall.ignition_hints["organism_axes"]["relation"]["value"] >= 0.0
+    assert recall.ignition_hints["joint_state"]["dominant_mode"] in {
+        "ambient",
+        "shared_attention",
+        "repair_attunement",
+        "strained_jointness",
+        "delighted_jointness",
+    }
+    assert recall.ignition_hints["joint_axes"]["ground"]["value"] >= 0.0
+    assert recall.ignition_hints["external_field_state"]["social_mode"]
+    assert recall.ignition_hints["external_field_axes"]["social"]["value"] >= 0.0
+    assert recall.ignition_hints["terrain_dynamics_state"]["dominant_flow"]
+    assert recall.ignition_hints["terrain_dynamics_axes"]["ignition"]["value"] >= 0.0
     assert recall.retrieval_summary["inner_os_memory"]
     assert recall.memory_evidence_bundle["schema"] == "inner_os_memory_evidence_bundle/v1"
     assert recall.memory_evidence_bundle["facts_current"]
@@ -215,12 +335,42 @@ def test_post_turn_uses_predicted_vs_observed_interaction_alignment_for_relation
     assert aligned.audit_record["interaction_alignment_score"] > mismatched.audit_record["interaction_alignment_score"]
     assert aligned.state.social_grounding > mismatched.state.social_grounding
     assert aligned.state.trust_memory > mismatched.state.trust_memory
+    assert aligned.audit_record["growth_state"]["relational_trust"] >= 0.0
+    assert mismatched.audit_record["growth_replay_axes"]["bond"]["value"] >= 0.0
     assert mismatched.audit_record["distance_mismatch"] > aligned.audit_record["distance_mismatch"]
     assert mismatched.audit_record["opening_pace_mismatch"] > aligned.audit_record["opening_pace_mismatch"]
     assert mismatched.audit_record["return_gaze_mismatch"] > aligned.audit_record["return_gaze_mismatch"]
     assert mismatched.state.recent_strain > aligned.state.recent_strain
     assert mismatched.audit_record["observed_opening_pace"] in {"ready", "measured", "held"}
     assert mismatched.audit_record["observed_return_gaze"] in {"soft_return", "steady_return", "careful_return", "defer_return"}
+    assert aligned.audit_record["memory_dynamics_state"]["dominant_mode"] in {
+        "ignite",
+        "reconsolidate",
+        "prospect",
+        "protect",
+        "stabilize",
+    }
+    assert aligned.audit_record["memory_dynamics_axes"]["topology"]["value"] >= 0.0
+    assert aligned.audit_record["memory_dynamics_state"]["reconsolidation_mode"] in {
+        "settle",
+        "replaying",
+        "reconsolidating",
+        "defragmenting",
+    }
+    assert aligned.audit_record["organism_state"]["dominant_posture"] in {
+        "steady",
+        "attune",
+        "open",
+        "play",
+        "protect",
+        "recover",
+        "verify",
+    }
+    assert aligned.audit_record["organism_axes"]["attunement"]["value"] >= 0.0
+    assert aligned.audit_record["external_field_state"]["dominant_field"]
+    assert aligned.audit_record["external_field_axes"]["safety"]["value"] >= 0.0
+    assert aligned.audit_record["terrain_dynamics_state"]["dominant_basin"]
+    assert aligned.audit_record["terrain_dynamics_axes"]["barrier"]["value"] >= 0.0
 
 
 def test_post_turn_derives_interaction_trace_from_raw_observation_signals(tmp_path: Path) -> None:
@@ -1599,9 +1749,19 @@ def test_response_gate_emits_constraint_and_conscious_workspace_bundle() -> None
     interaction_inspection_report = gate.expression_hints["interaction_inspection_report"]
     interaction_audit_bundle = gate.expression_hints["interaction_audit_bundle"]
     interaction_audit_report = gate.expression_hints["interaction_audit_report"]
+    scene_hint_bundle = gate.expression_hints["scene_hint_bundle"]
+    workspace_hint_bundle = gate.expression_hints["workspace_hint_bundle"]
+    qualia_hint_bundle = gate.expression_hints["qualia_hint_bundle"]
+    field_regulation_hint_bundle = gate.expression_hints["field_regulation_hint_bundle"]
+    terrain_insight_hint_bundle = gate.expression_hints["terrain_insight_hint_bundle"]
+    interaction_reasoning_hint_bundle = gate.expression_hints[
+        "interaction_reasoning_hint_bundle"
+    ]
+    interaction_audit_hint_bundle = gate.expression_hints["interaction_audit_hint_bundle"]
     resonance = gate.expression_hints["resonance_evaluation"]
     packet = gate.expression_hints["interaction_policy_packet"]
     action_posture = gate.expression_hints["action_posture"]
+    actuation_plan = gate.expression_hints["actuation_plan"]
     assert constraint["reportability_limit"] == "withhold"
     assert contact_field["field_mode"] in {"guarded", "relational", "focused", "ambient"}
     assert contact_field["points"]
@@ -1625,6 +1785,26 @@ def test_response_gate_emits_constraint_and_conscious_workspace_bundle() -> None
     assert gate.expression_hints["qualia_hint_expected_mismatch"] is False
     assert gate.expression_hints["qualia_planner_view"]["trust"] >= 0.0
     assert gate.expression_hints["qualia_planner_view"]["felt_energy"] >= 0.0
+    assert isinstance(qualia_hint_bundle, QualiaHintBundleContract)
+    assert qualia_hint_bundle["qualia_hint_source"] == "shared"
+    assert qualia_hint_bundle["qualia_planner_view"] == gate.expression_hints["qualia_planner_view"]
+    assert isinstance(field_regulation_hint_bundle, FieldRegulationHintBundleContract)
+    assert field_regulation_hint_bundle["contact_dynamics"] == gate.expression_hints["contact_dynamics"]
+    assert field_regulation_hint_bundle["access_dynamics"] == gate.expression_hints["access_dynamics"]
+    assert isinstance(terrain_insight_hint_bundle, TerrainInsightHintBundleContract)
+    assert terrain_insight_hint_bundle["terrain_readout"] == gate.expression_hints["terrain_readout"]
+    assert terrain_insight_hint_bundle["resonance_evaluation"] == gate.expression_hints["resonance_evaluation"]
+    assert gate.expression_hints["qualia_structure_state"]["phase"] in {
+        "fragmenting",
+        "rising",
+        "echoing",
+        "settling",
+        "shifting",
+        "holding",
+    }
+    assert gate.expression_hints["qualia_structure_state"]["trace"]
+    assert gate.expression_hints["qualia_structure_axes"]["emergence"]["value"] >= 0.0
+    assert gate.expression_hints["qualia_structure_axes"]["resonance"]["value"] >= 0.0
     assert access_projection["projection_mode"] == "guarded_projection"
     assert access_projection["actionable_slice"]
     assert "access_qualia_input" in access_projection["cues"]
@@ -1669,12 +1849,53 @@ def test_response_gate_emits_constraint_and_conscious_workspace_bundle() -> None
     assert interaction_inspection_report["case_reports"]
     assert interaction_inspection_report["report_lines"]
     assert any("current_case" in line for line in interaction_inspection_report["report_lines"])
+    assert isinstance(scene_hint_bundle, SceneHintBundleContract)
+    assert scene_hint_bundle["scene_state"]["scene_family"] == gate.expression_hints["scene_state"]["scene_family"]
+    assert scene_hint_bundle["scene_family"] == gate.expression_hints["scene_family"]
+    assert scene_hint_bundle["interaction_option_candidates"]
+    assert scene_hint_bundle["interaction_option_candidates"][0]["family_id"] == gate.expression_hints["interaction_option_candidates"][0]["family_id"]
+    assert scene_hint_bundle["interaction_option_candidates"][0]["option_id"] == gate.expression_hints["interaction_option_candidates"][0]["option_id"]
+    assert isinstance(workspace_hint_bundle, WorkspaceHintBundleContract)
+    assert workspace_hint_bundle["conscious_workspace_mode"] == workspace["workspace_mode"]
+    assert workspace_hint_bundle["conscious_workspace_actionable_slice"] == gate.expression_hints["conscious_workspace_actionable_slice"]
+    assert workspace_hint_bundle["conscious_workspace_mode"] == gate.expression_hints["conscious_workspace_mode"]
     assert interaction_audit_bundle["report_lines"]
     assert interaction_audit_bundle["key_metrics"]["question_budget"] >= 0
     assert interaction_audit_report["report_lines"]
+    assert isinstance(interaction_reasoning_hint_bundle, InteractionReasoningHintBundleContract)
+    assert interaction_reasoning_hint_bundle["conversational_objects"]["primary_object_id"] == conversational_objects["primary_object_id"]
+    assert interaction_reasoning_hint_bundle["conversational_object_labels"] == gate.expression_hints["conversational_object_labels"]
+    assert interaction_reasoning_hint_bundle["object_operation_question_budget"] == object_operations["question_budget"]
+    assert interaction_reasoning_hint_bundle["interaction_judgement_view"]["observed_signals"] == interaction_judgement_view["observed_signals"]
+    assert list(interaction_reasoning_hint_bundle["interaction_condition_report"]["scene_lines"]) == list(interaction_condition_report["scene_lines"])
+    assert isinstance(interaction_audit_hint_bundle, InteractionAuditHintBundleContract)
+    assert interaction_audit_hint_bundle["interaction_audit_bundle"]["report_lines"] == list(
+        interaction_audit_bundle["report_lines"]
+    )
+    assert interaction_audit_hint_bundle["interaction_audit_bundle"]["key_metrics"] == interaction_audit_bundle["key_metrics"]
+    assert interaction_audit_hint_bundle["interaction_audit_reference_case_ids"] == gate.expression_hints["interaction_audit_reference_case_ids"]
+    assert qualia_hint_bundle["qualia_hint_source"] == gate.expression_hints["qualia_hint_source"]
     assert resonance["estimated_other_person_state"]["detail_room_level"] in {"low", "medium", "high"}
     assert resonance["recommended_family_id"] in {"wait", "repair", "contain", "reflect", "attune", "clarify", "withdraw", "co_move"}
     assert resonance["assessments"]
+    assert isinstance(packet, InteractionPolicyPacketContract)
+    assert isinstance(action_posture, ActionPostureContract)
+    assert isinstance(actuation_plan, ActuationPlanContract)
+    exported_gate = gate.to_dict()
+    exported_packet = exported_gate["expression_hints"]["interaction_policy_packet"]
+    exported_action_posture = exported_gate["expression_hints"]["action_posture"]
+    exported_actuation_plan = exported_gate["expression_hints"]["actuation_plan"]
+    assert isinstance(exported_packet, dict)
+    assert isinstance(exported_action_posture, dict)
+    assert isinstance(exported_actuation_plan, dict)
+    assert isinstance(exported_gate["expression_hints"]["scene_hint_bundle"], dict)
+    assert isinstance(exported_gate["expression_hints"]["workspace_hint_bundle"], dict)
+    assert isinstance(
+        exported_gate["expression_hints"]["interaction_reasoning_hint_bundle"], dict
+    )
+    assert not isinstance(exported_packet, InteractionPolicyPacketContract)
+    assert not isinstance(exported_action_posture, ActionPostureContract)
+    assert not isinstance(exported_actuation_plan, ActuationPlanContract)
     assert packet["conscious_workspace"]["workspace_mode"] == "guarded_foreground"
     assert packet["workspace_decision"]["workspace_mode"] == "guarded_foreground"
     assert packet["workspace_decision"]["winner_margin"] >= 0.0
@@ -1718,6 +1939,7 @@ def test_response_gate_emits_constraint_and_conscious_workspace_bundle() -> None
     assert gate.expression_hints["interaction_policy_association_reweighting_focus"] == "repeated_links"
     assert gate.expression_hints["interaction_policy_association_reweighting_reason"] == "repeated_insight_trace"
     assert gate.expression_hints["interaction_policy_insight_terrain_shape_target"] == "soft_relation"
+    assert gate.expression_hints["interaction_policy_contact_reflection_state"] == packet["contact_reflection_state"]
     assert gate.expression_hints["interaction_policy_overnight_bias_roles"]["insight_terrain_shape_target"] == "soft_relation"
     assert gate.expression_hints["interaction_policy_reaction_vs_overnight_bias"]["same_turn"]["memory_write_class"] == packet["memory_write_class"]
     assert gate.expression_hints["interaction_policy_reaction_vs_overnight_bias"]["same_turn"]["agenda_state"] == packet["agenda_state"]["state"]
@@ -1739,10 +1961,10 @@ def test_response_gate_emits_constraint_and_conscious_workspace_bundle() -> None
     assert action_posture["body_homeostasis_name"] in {"steady", "strained", "recovering", "depleted"}
     assert action_posture["commitment_target"] == packet["commitment_state"]["target"]
     assert action_posture["relational_continuity_name"] in {"distant", "holding_thread", "reopening", "co_regulating"}
-    assert gate.expression_hints["actuation_plan"]["protection_mode"] == protection_mode
-    assert gate.expression_hints["actuation_plan"]["commitment_target"] == packet["commitment_state"]["target"]
-    assert gate.expression_hints["actuation_plan"]["body_homeostasis_name"] in {"steady", "strained", "recovering", "depleted"}
-    assert gate.expression_hints["actuation_plan"]["relational_continuity_name"] in {"distant", "holding_thread", "reopening", "co_regulating"}
+    assert actuation_plan["protection_mode"] == protection_mode
+    assert actuation_plan["commitment_target"] == packet["commitment_state"]["target"]
+    assert actuation_plan["body_homeostasis_name"] in {"steady", "strained", "recovering", "depleted"}
+    assert actuation_plan["relational_continuity_name"] in {"distant", "holding_thread", "reopening", "co_regulating"}
     assert packet["memory_write_class"] in {
         "episodic",
         "body_risk",
@@ -1753,6 +1975,8 @@ def test_response_gate_emits_constraint_and_conscious_workspace_bundle() -> None
         "insight_trace",
     }
     assert gate.expression_hints["interaction_policy_memory_write_class"] == packet["memory_write_class"]
+    assert gate.expression_hints["surface_voice_texture"] == packet["expressive_style_state"]["state"]
+    assert gate.expression_hints["surface_lightness_budget_state"] == packet["lightness_budget_state"]["state"]
 
 
 def test_response_gate_routes_triggered_insight_into_action_reflection() -> None:

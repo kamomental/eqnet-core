@@ -189,7 +189,10 @@ def derive_content_sequence(
         or contract_operation.get("question_budget")
         or 0
     )
-    opening_request = _looks_like_opening_request(text, locale=locale)
+    opening_request = bool(packet.get("opening_request_hint")) or _looks_like_opening_request(
+        text,
+        locale=locale,
+    )
     emergency_posture = dict(packet.get("emergency_posture") or {})
     emergency_posture_name = str(
         emergency_posture.get("state")
@@ -288,6 +291,26 @@ def derive_content_sequence(
             _segment(
                 "small_extension",
                 f"If I add anything, I want it to be only the small part that is new around {target_phrase or 'this'}.",
+            ),
+            ],
+            interaction_constraints=constraints_model,
+            turn_delta=turn_delta_model,
+        )
+    if (
+        dialogue_act == "clarify"
+        and opening_request
+        and strategy not in {"repair_then_attune", "respectful_wait"}
+    ):
+        return finalize_sequence(
+            [
+            _segment("respect_boundary", "We do not have to press this right now."),
+            _segment(
+                "offer_small_opening_line",
+                "If you want a first line, even 'Something has been catching on me lately, and I want help looking at it' is enough.",
+            ),
+            _segment(
+                "quiet_presence",
+                "I can stay nearby without leaning on it, and come back when it feels easier.",
             ),
             ],
             interaction_constraints=constraints_model,
@@ -1663,6 +1686,16 @@ def _delta_segment(
         return _segment(
             "stay_with_present_need",
             "I can stay with what still needs care without pushing the obvious part any harder.",
+        )
+    if preferred_act == "shared_delight":
+        return _segment(
+            "shared_delight",
+            "That lands as a small bright spot between us, and it is fine to stay with that for a beat.",
+        )
+    if preferred_act == "light_bounce":
+        return _segment(
+            "light_bounce",
+            "That does lighten the air a little, and I can move with that without overmaking it.",
         )
     if preferred_act == "protect_talking_room":
         return _supporting_followup_segment("protect_talking_room")

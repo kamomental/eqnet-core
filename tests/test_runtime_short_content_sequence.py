@@ -90,6 +90,33 @@ def test_runtime_short_sequence_keeps_soft_anchor_reopen_before_generic_closing(
     ]
 
 
+def test_runtime_short_sequence_prioritizes_opening_frame_over_reflection_when_both_exist() -> None:
+    runtime = EmotionalHubRuntime(RuntimeConfig(use_eqnet_core=True))
+
+    selected = runtime._select_short_inner_os_sequence(
+        [
+            {
+                "act": "reflect_hidden_need",
+                "text": "You wanted help then, and it is still staying inside unsaid.",
+            },
+            {
+                "act": "offer_small_opening_frame",
+                "text": "If you want a first line, even 'Something has been catching on me lately' is enough.",
+            },
+            {
+                "act": "quiet_presence",
+                "text": "I can stay nearby without leaning on it, and come back when it feels easier.",
+            },
+        ]
+    )
+
+    acts = [str(item.get("act") or "").strip() for item in selected]
+    assert acts[:2] == [
+        "offer_small_opening_frame",
+        "quiet_presence",
+    ]
+
+
 def test_runtime_short_sequence_prioritizes_deep_disclosure_reflection_and_question() -> None:
     runtime = EmotionalHubRuntime(RuntimeConfig(use_eqnet_core=True))
 

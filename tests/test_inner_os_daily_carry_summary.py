@@ -68,6 +68,28 @@ def test_daily_carry_summary_builder_collects_same_turn_and_overnight_bias() -> 
         "inner_os_same_turn_autobiographical_thread_anchor": "harbor promise",
         "inner_os_same_turn_autobiographical_thread_focus": "unfinished promise",
         "inner_os_same_turn_autobiographical_thread_strength": 0.58,
+        "inner_os_same_turn_growth_relational_trust": 0.64,
+        "inner_os_same_turn_growth_epistemic_maturity": 0.47,
+        "inner_os_same_turn_growth_expressive_range": 0.56,
+        "inner_os_same_turn_growth_residue_integration": 0.53,
+        "inner_os_same_turn_growth_playfulness_range": 0.37,
+        "inner_os_same_turn_growth_self_coherence": 0.6,
+        "inner_os_same_turn_growth_dominant_transition": "relational_trust",
+        "inner_os_same_turn_growth_bond_axis": 0.59,
+        "inner_os_same_turn_growth_stability_axis": 0.52,
+        "inner_os_same_turn_growth_curiosity_axis": 0.44,
+        "inner_os_same_turn_memory_dynamics_mode": "ignite",
+        "inner_os_same_turn_memory_dominant_link": "bond:user|memory:harbor_promise",
+        "inner_os_same_turn_memory_monument_kind": "shared_ritual",
+        "inner_os_same_turn_memory_monument_salience": 0.63,
+        "inner_os_same_turn_memory_ignition_readiness": 0.57,
+        "inner_os_same_turn_memory_consolidation_pull": 0.42,
+        "inner_os_same_turn_memory_tension": 0.28,
+        "inner_os_same_turn_memory_topology_axis": 0.55,
+        "inner_os_same_turn_memory_salience_axis": 0.63,
+        "inner_os_same_turn_memory_ignition_axis": 0.57,
+        "inner_os_same_turn_memory_consolidation_axis": 0.42,
+        "inner_os_same_turn_memory_tension_axis": 0.28,
         "inner_os_sleep_temporal_membrane_focus": "reentry",
         "inner_os_sleep_temporal_timeline_bias": 0.12,
         "inner_os_sleep_temporal_reentry_bias": 0.17,
@@ -98,6 +120,28 @@ def test_daily_carry_summary_builder_collects_same_turn_and_overnight_bias() -> 
         "inner_os_sleep_temperament_guard_bias": 0.03,
         "inner_os_sleep_temperament_bond_bias": 0.05,
         "inner_os_sleep_temperament_recovery_bias": 0.02,
+        "inner_os_sleep_growth_relational_trust": 0.61,
+        "inner_os_sleep_growth_epistemic_maturity": 0.5,
+        "inner_os_sleep_growth_expressive_range": 0.54,
+        "inner_os_sleep_growth_residue_integration": 0.5,
+        "inner_os_sleep_growth_playfulness_range": 0.35,
+        "inner_os_sleep_growth_self_coherence": 0.58,
+        "inner_os_sleep_growth_dominant_transition": "self_coherence",
+        "inner_os_sleep_growth_bond_axis": 0.57,
+        "inner_os_sleep_growth_stability_axis": 0.55,
+        "inner_os_sleep_growth_curiosity_axis": 0.42,
+        "inner_os_sleep_memory_dynamics_mode": "reconsolidate",
+        "inner_os_sleep_memory_dominant_link": "bond:user|memory:harbor_promise",
+        "inner_os_sleep_memory_monument_kind": "shared_ritual",
+        "inner_os_sleep_memory_monument_salience": 0.66,
+        "inner_os_sleep_memory_ignition_readiness": 0.51,
+        "inner_os_sleep_memory_consolidation_pull": 0.62,
+        "inner_os_sleep_memory_tension": 0.24,
+        "inner_os_sleep_memory_topology_axis": 0.58,
+        "inner_os_sleep_memory_salience_axis": 0.66,
+        "inner_os_sleep_memory_ignition_axis": 0.51,
+        "inner_os_sleep_memory_consolidation_axis": 0.62,
+        "inner_os_sleep_memory_tension_axis": 0.24,
     }
 
     summary = DailyCarrySummaryBuilder().build(report).to_dict()
@@ -122,6 +166,13 @@ def test_daily_carry_summary_builder_collects_same_turn_and_overnight_bias() -> 
     assert summary["same_turn_focus"]["autobiographical_thread_mode"] == "unfinished_thread"
     assert summary["same_turn_focus"]["autobiographical_thread_anchor"] == "harbor promise"
     assert summary["same_turn_focus"]["autobiographical_thread_strength"] == 0.58
+    assert summary["same_turn_focus"]["growth_relational_trust"] == 0.64
+    assert summary["same_turn_focus"]["growth_dominant_transition"] == "relational_trust"
+    assert summary["same_turn_focus"]["growth_bond_axis"] == 0.59
+    assert summary["same_turn_focus"]["memory_dynamics_mode"] == "ignite"
+    assert summary["same_turn_focus"]["memory_dominant_link"] == "bond:user|memory:harbor_promise"
+    assert summary["same_turn_focus"]["memory_monument_kind"] == "shared_ritual"
+    assert summary["same_turn_focus"]["memory_ignition_axis"] == 0.57
     assert summary["overnight_focus"]["association_focus"] == "repeated_links"
     assert summary["overnight_focus"]["discussion_registry_dominant_anchor"] == "repair anchor"
     assert summary["overnight_focus"]["discussion_registry_dominant_issue_state"] == "pausing_issue"
@@ -130,6 +181,12 @@ def test_daily_carry_summary_builder_collects_same_turn_and_overnight_bias() -> 
     assert summary["overnight_focus"]["autobiographical_thread_strength"] == 0.41
     assert summary["overnight_focus"]["temporal_membrane_focus"] == "reentry"
     assert summary["overnight_focus"]["temporal_reentry_bias"] == 0.17
+    assert summary["overnight_focus"]["growth_self_coherence"] == 0.58
+    assert summary["overnight_focus"]["growth_dominant_transition"] == "self_coherence"
+    assert summary["overnight_focus"]["growth_stability_axis"] == 0.55
+    assert summary["overnight_focus"]["memory_dynamics_mode"] == "reconsolidate"
+    assert summary["overnight_focus"]["memory_monument_salience"] == 0.66
+    assert summary["overnight_focus"]["memory_consolidation_axis"] == 0.62
     assert summary["overnight_focus"]["identity_arc_phase"] == "shifting"
     assert summary["overnight_focus"]["relation_arc_phase"] == "shifting"
     assert summary["carry_strengths"]["commitment_carry"] == 0.37
@@ -165,3 +222,4 @@ def test_daily_carry_summary_builder_collects_same_turn_and_overnight_bias() -> 
     assert summary["carry_alignment"]["discussion_registry_visible"] is True
     assert summary["carry_alignment"]["autobiographical_thread_visible"] is True
     assert summary["carry_alignment"]["temperament_carry_visible"] is True
+    assert summary["carry_alignment"]["memory_dynamics_carry_visible"] is True

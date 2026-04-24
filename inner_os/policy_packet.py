@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterator, MutableMapping as MutableMappingABC
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
+
+from emot_terrain_lab.i18n.locale import lookup_value, normalize_locale
 
 from .agenda_state import derive_agenda_state
 from .agenda_window_state import derive_agenda_window_state
@@ -11,6 +15,12 @@ from .emergency_posture import derive_emergency_posture
 from .learning_mode_state import derive_learning_mode_state
 from .lightness_budget_state import derive_lightness_budget_state
 from .live_engagement_state import derive_live_engagement_state
+from .listener_action_state import derive_listener_action_state
+from .joint_state import derive_joint_state
+from .meaning_update_state import derive_meaning_update_state
+from .appraisal_state import derive_appraisal_state
+from .shared_moment_state import derive_shared_moment_state
+from .utterance_reason_packet import derive_utterance_reason_packet
 from .persona_memory_fragment import build_persona_memory_fragments
 from .persona_memory_selector import derive_persona_memory_selection
 from .relation_competition import derive_relation_competition_state
@@ -21,9 +31,42 @@ from .situation_risk_state import derive_situation_risk_state
 from .temperament_estimate import derive_temperament_estimate
 
 
+@dataclass
+class InteractionPolicyPacketContract(MutableMappingABC[str, object]):
+    payload: dict[str, object] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, object]:
+        return dict(self.payload)
+
+    def __getitem__(self, key: str) -> object:
+        return self.payload[key]
+
+    def __setitem__(self, key: str, value: object) -> None:
+        self.payload[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        del self.payload[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.payload)
+
+    def __len__(self) -> int:
+        return len(self.payload)
+
+
+def coerce_interaction_policy_packet(
+    value: Mapping[str, Any] | InteractionPolicyPacketContract | None,
+) -> InteractionPolicyPacketContract:
+    if isinstance(value, InteractionPolicyPacketContract):
+        return value
+    return InteractionPolicyPacketContract(payload=dict(value or {}))
+
+
 def derive_interaction_policy_packet(
     *,
     dialogue_act: str,
+    observed_text: str = "",
+    locale: str = "ja-JP",
     current_focus: str,
     current_risks: Sequence[str],
     reportable_facts: Sequence[str],
@@ -57,8 +100,10 @@ def derive_interaction_policy_packet(
     association_reweighting_focus: str = "",
     association_reweighting_reason: str = "",
     insight_terrain_shape_target: str = "",
+    external_field_state: Mapping[str, Any] | None = None,
+    terrain_dynamics_state: Mapping[str, Any] | None = None,
     self_state: Mapping[str, Any] | None = None,
-) -> dict[str, object]:
+) -> InteractionPolicyPacketContract:
     orchestration_mode = str(orchestration.get("orchestration_mode") or "attune")
     dominant_driver = str(orchestration.get("dominant_driver") or "shared_attention")
     contact_readiness = _clamp01(float(orchestration.get("contact_readiness", 0.0) or 0.0))
@@ -91,6 +136,12 @@ def derive_interaction_policy_packet(
     protection_mode_payload = dict(protection_mode or {})
     insight_event_payload = dict(insight_event or {})
     self_state_payload = dict(self_state or {})
+    external_field_payload = dict(
+        external_field_state or self_state_payload.get("external_field_state") or {}
+    )
+    terrain_dynamics_payload = dict(
+        terrain_dynamics_state or self_state_payload.get("terrain_dynamics_state") or {}
+    )
     identity_arc_kind = str(self_state_payload.get("identity_arc_kind") or "").strip()
     identity_arc_phase = str(self_state_payload.get("identity_arc_phase") or "").strip()
     identity_arc_summary = str(self_state_payload.get("identity_arc_summary") or "").strip()
@@ -285,7 +336,20 @@ def derive_interaction_policy_packet(
             )
         )
     )
-    clarify_context = top_option_family == "clarify" and not contain_context and not repair_context
+    explicit_clarify_request = str(dialogue_act or "").strip() == "clarify"
+    opening_request_hint = _looks_like_opening_request(observed_text, locale=locale)
+    clarify_context = (
+        (explicit_clarify_request or top_option_family == "clarify")
+        and not contain_context
+        and not repair_context
+    )
+    clarify_opening_context = (
+        explicit_clarify_request
+        and opening_request_hint
+        and not contain_context
+        and not repair_context
+        and not respectful_context
+    )
     withdraw_context = top_option_family == "withdraw" and not repair_context and not advance_context
 
     response_strategy = "attune_then_extend"
@@ -314,6 +378,13 @@ def derive_interaction_policy_packet(
         opening_move = "synchronize_then_propose"
         followup_move = "map_next_step"
         closing_move = "keep_pace_mutual"
+    elif clarify_opening_context:
+        response_strategy = "contain_then_stabilize"
+        resolved_dialogue_act = "clarify"
+        opening_move = "acknowledge_without_probe"
+        followup_move = "protect_talking_room"
+        closing_move = "leave_unfinished_part_closed_for_now"
+        question_budget = 0
     elif clarify_context:
         response_strategy = "attune_then_extend"
         resolved_dialogue_act = "clarify"
@@ -352,7 +423,7 @@ def derive_interaction_policy_packet(
         respectful_context=respectful_context,
         advance_context=advance_context,
     )
-    if object_driven_moves:
+    if object_driven_moves and not clarify_opening_context:
         opening_move = str(object_driven_moves.get("opening_move") or opening_move)
         followup_move = str(object_driven_moves.get("followup_move") or followup_move)
         closing_move = str(object_driven_moves.get("closing_move") or closing_move)
@@ -743,6 +814,25 @@ def derive_interaction_policy_packet(
         relational_style_memory_state=relational_style_memory_state,
         cultural_conversation_state=cultural_conversation_state,
     ).to_dict()
+    shared_moment_state = derive_shared_moment_state(
+        current_focus=current_focus,
+        current_risks=list(current_risks),
+        self_state=self_state_payload,
+        recent_dialogue_state=self_state_payload.get("recent_dialogue_state"),
+        discussion_thread_state=self_state_payload.get("discussion_thread_state"),
+        issue_state=self_state_payload.get("issue_state"),
+        lightness_budget_state=lightness_budget_state,
+    ).to_dict()
+    appraisal_state = derive_appraisal_state(
+        current_focus=current_focus,
+        current_risks=list(current_risks),
+        self_state=self_state_payload,
+        recent_dialogue_state=self_state_payload.get("recent_dialogue_state"),
+        issue_state=self_state_payload.get("issue_state"),
+        shared_moment_state=shared_moment_state,
+        lightness_budget_state=lightness_budget_state,
+        memory_dynamics_state=self_state_payload.get("memory_dynamics_state"),
+    ).to_dict()
     live_engagement_state = derive_live_engagement_state(
         self_state=self_state_payload,
         initiative_readiness=initiative_readiness,
@@ -753,6 +843,40 @@ def derive_interaction_policy_packet(
         body_recovery_guard=body_recovery_guard,
         body_homeostasis_state=body_homeostasis_state,
         homeostasis_budget_state=homeostasis_budget_state,
+        shared_moment_state=shared_moment_state,
+        joint_state=self_state_payload.get("joint_state"),
+    ).to_dict()
+    listener_action_state = derive_listener_action_state(
+        expressive_style_state=expressive_style_state,
+        cultural_conversation_state=cultural_conversation_state,
+        live_engagement_state=live_engagement_state,
+        shared_moment_state=shared_moment_state,
+        recent_dialogue_state=self_state_payload.get("recent_dialogue_state"),
+    ).to_dict()
+    meaning_update_state = derive_meaning_update_state(
+        appraisal_state=appraisal_state,
+        recent_dialogue_state=self_state_payload.get("recent_dialogue_state"),
+        discussion_thread_state=self_state_payload.get("discussion_thread_state"),
+        live_engagement_state=live_engagement_state,
+        memory_dynamics_state=self_state_payload.get("memory_dynamics_state"),
+    ).to_dict()
+    joint_state = derive_joint_state(
+        previous_state=self_state_payload.get("joint_state"),
+        shared_moment_state=shared_moment_state,
+        listener_action_state=listener_action_state,
+        live_engagement_state=live_engagement_state,
+        meaning_update_state=meaning_update_state,
+        organism_state=self_state_payload.get("organism_state"),
+        external_field_state=self_state_payload.get("external_field_state"),
+        terrain_dynamics_state=self_state_payload.get("terrain_dynamics_state"),
+        memory_dynamics_state=self_state_payload.get("memory_dynamics_state"),
+    ).to_dict()
+    utterance_reason_packet = derive_utterance_reason_packet(
+        appraisal_state=appraisal_state,
+        meaning_update_state=meaning_update_state,
+        listener_action_state=listener_action_state,
+        live_engagement_state=live_engagement_state,
+        memory_dynamics_state=self_state_payload.get("memory_dynamics_state"),
     ).to_dict()
     situation_risk_state = derive_situation_risk_state(
         current_risks=current_risks,
@@ -767,6 +891,95 @@ def derive_interaction_policy_packet(
         body_homeostasis_state=body_homeostasis_state,
         homeostasis_budget_state=homeostasis_budget_state,
     ).to_dict()
+    bright_strategy_override = _derive_bright_strategy_override(
+        response_strategy=response_strategy,
+        opening_move=opening_move,
+        followup_move=followup_move,
+        closing_move=closing_move,
+        current_risks=current_risks,
+        repair_context=repair_context,
+        respectful_context=respectful_context,
+        withdraw_context=withdraw_context,
+        contain_context=contain_context,
+        clarify_context=clarify_context,
+        clarify_opening_context=clarify_opening_context,
+        scene_family=scene_family,
+        top_option_family=top_option_family,
+        contact_readiness=contact_readiness,
+        coherence_score=coherence_score,
+        human_presence_signal=human_presence_signal,
+        strained_pause=strained_pause,
+        body_cost=body_cost,
+        boundary_pressure=boundary_pressure,
+        question_pressure=question_pressure,
+        defer_dominance=defer_dominance,
+        expressive_style_state=expressive_style_state,
+        relational_style_memory_state=relational_style_memory_state,
+        lightness_budget_state=lightness_budget_state,
+        shared_moment_state=shared_moment_state,
+        utterance_reason_packet=utterance_reason_packet,
+        live_engagement_state=live_engagement_state,
+        joint_state=joint_state,
+        organism_state=self_state_payload.get("organism_state") or {},
+        body_recovery_guard=body_recovery_guard,
+        body_homeostasis_state=body_homeostasis_state,
+        homeostasis_budget_state=homeostasis_budget_state,
+        situation_risk_state=situation_risk_state,
+        emergency_posture=emergency_posture,
+    )
+    if bool(bright_strategy_override.get("applied")):
+        response_strategy = str(
+            bright_strategy_override.get("response_strategy") or response_strategy
+        )
+        opening_move = str(
+            bright_strategy_override.get("opening_move") or opening_move
+        )
+        followup_move = str(
+            bright_strategy_override.get("followup_move") or followup_move
+        )
+        closing_move = str(
+            bright_strategy_override.get("closing_move") or closing_move
+        )
+        if (
+            disclosure_depth == "minimal"
+            and constraint_disclosure_limit != "minimal"
+            and response_strategy in {"attune_then_extend", "shared_world_next_step"}
+        ):
+            disclosure_depth = "light"
+    field_strategy_override = _derive_field_strategy_override(
+        response_strategy=response_strategy,
+        opening_move=opening_move,
+        followup_move=followup_move,
+        closing_move=closing_move,
+        current_risks=current_risks,
+        clarify_context=clarify_context,
+        clarify_opening_context=clarify_opening_context,
+        external_field_state=external_field_payload,
+        terrain_dynamics_state=terrain_dynamics_payload,
+        shared_moment_state=shared_moment_state,
+        utterance_reason_packet=utterance_reason_packet,
+        live_engagement_state=live_engagement_state,
+        joint_state=joint_state,
+        organism_state=self_state_payload.get("organism_state") or {},
+        body_recovery_guard=body_recovery_guard,
+        body_homeostasis_state=body_homeostasis_state,
+        homeostasis_budget_state=homeostasis_budget_state,
+        situation_risk_state=situation_risk_state,
+        emergency_posture=emergency_posture,
+    )
+    if bool(field_strategy_override.get("applied")):
+        response_strategy = str(
+            field_strategy_override.get("response_strategy") or response_strategy
+        )
+        opening_move = str(
+            field_strategy_override.get("opening_move") or opening_move
+        )
+        followup_move = str(
+            field_strategy_override.get("followup_move") or followup_move
+        )
+        closing_move = str(
+            field_strategy_override.get("closing_move") or closing_move
+        )
     effective_question_budget = min(
         question_budget,
         int(grice_guard_state.get("question_budget_cap") or question_budget),
@@ -923,10 +1136,48 @@ def derive_interaction_policy_packet(
             "lightness_budget_state": str(lightness_budget_state.get("state") or "grounded_only"),
             "lightness_budget_banter_room": round(float(lightness_budget_state.get("banter_room") or 0.0), 4),
             "lightness_budget_suppression": round(float(lightness_budget_state.get("suppression") or 0.0), 4),
+            "shared_moment_state": str(shared_moment_state.get("state") or "none"),
+            "shared_moment_kind": str(shared_moment_state.get("moment_kind") or ""),
+            "shared_moment_score": round(float(shared_moment_state.get("score", 0.0) or 0.0), 4),
+            "appraisal_state": str(appraisal_state.get("state") or "none"),
+            "appraisal_background_state": str(appraisal_state.get("background_state") or ""),
+            "appraisal_event": str(appraisal_state.get("moment_event") or ""),
+            "appraisal_shared_shift": str(appraisal_state.get("shared_shift") or ""),
+            "listener_action_state": str(listener_action_state.get("state") or "none"),
+            "listener_action_mode": str(listener_action_state.get("filler_mode") or ""),
+            "listener_action_profile": str(listener_action_state.get("token_profile") or ""),
+            "joint_state": str(joint_state.get("dominant_mode") or "ambient"),
+            "joint_shared_delight": round(float(joint_state.get("shared_delight") or 0.0), 4),
+            "joint_shared_tension": round(float(joint_state.get("shared_tension") or 0.0), 4),
+            "joint_repair_readiness": round(float(joint_state.get("repair_readiness") or 0.0), 4),
+            "joint_common_ground": round(float(joint_state.get("common_ground") or 0.0), 4),
+            "joint_attention": round(float(joint_state.get("joint_attention") or 0.0), 4),
+            "joint_mutual_room": round(float(joint_state.get("mutual_room") or 0.0), 4),
+            "joint_coupling_strength": round(float(joint_state.get("coupling_strength") or 0.0), 4),
+            "meaning_update_state": str(meaning_update_state.get("state") or "none"),
+            "meaning_update_self": str(meaning_update_state.get("self_update") or ""),
+            "meaning_update_relation": str(meaning_update_state.get("relation_update") or ""),
+            "meaning_update_world": str(meaning_update_state.get("world_update") or ""),
+            "utterance_reason_state": str(utterance_reason_packet.get("state") or "none"),
+            "utterance_reason_target": str(utterance_reason_packet.get("reaction_target") or ""),
+            "utterance_reason_offer": str(utterance_reason_packet.get("offer") or ""),
+            "utterance_reason_preserve": str(utterance_reason_packet.get("preserve") or ""),
             "live_engagement_state": str(live_engagement_state.get("state") or "hold"),
             "live_engagement_score": round(float(live_engagement_state.get("score", 0.0) or 0.0), 4),
             "live_engagement_winner_margin": round(float(live_engagement_state.get("winner_margin", 0.0) or 0.0), 4),
             "live_primary_move": str(live_engagement_state.get("primary_move") or "hold_presence"),
+            "external_field_state": str(external_field_payload.get("dominant_field") or "open_field"),
+            "external_field_social_mode": str(external_field_payload.get("social_mode") or ""),
+            "external_field_thread_mode": str(external_field_payload.get("thread_mode") or ""),
+            "external_field_continuity_pull": round(float(external_field_payload.get("continuity_pull", 0.0) or 0.0), 4),
+            "external_field_safety_envelope": round(float(external_field_payload.get("safety_envelope", 0.0) or 0.0), 4),
+            "terrain_dominant_basin": str(terrain_dynamics_payload.get("dominant_basin") or "steady_basin"),
+            "terrain_dominant_flow": str(terrain_dynamics_payload.get("dominant_flow") or "settle"),
+            "terrain_energy": round(float(terrain_dynamics_payload.get("terrain_energy", 0.0) or 0.0), 4),
+            "terrain_entropy": round(float(terrain_dynamics_payload.get("entropy", 0.0) or 0.0), 4),
+            "terrain_ignition_pressure": round(float(terrain_dynamics_payload.get("ignition_pressure", 0.0) or 0.0), 4),
+            "terrain_barrier_height": round(float(terrain_dynamics_payload.get("barrier_height", 0.0) or 0.0), 4),
+            "terrain_recovery_gradient": round(float(terrain_dynamics_payload.get("recovery_gradient", 0.0) or 0.0), 4),
             "situation_risk_state": str(situation_risk_state.get("state") or "ordinary_context"),
             "situation_risk_immediacy": round(float(situation_risk_state.get("immediacy", 0.0) or 0.0), 4),
             "situation_risk_intent_clarity": round(float(situation_risk_state.get("intent_clarity", 0.0) or 0.0), 4),
@@ -992,6 +1243,8 @@ def derive_interaction_policy_packet(
         affordance_priority.extend(["wait", "defer", "leave_return_point"])
     elif response_strategy == "repair_then_attune":
         affordance_priority.extend(["repair", "soften", "re-open-carefully"])
+    elif clarify_opening_context:
+        affordance_priority.extend(["clarify", "hold", "leave_return_point"])
     elif clarify_context:
         affordance_priority.extend(["clarify", "check_visible", "confirm_scope"])
     else:
@@ -1077,8 +1330,9 @@ def derive_interaction_policy_packet(
         "defer_dominance": round(defer_dominance, 4),
     }
 
-    return {
+    return InteractionPolicyPacketContract({
         "dialogue_act": resolved_dialogue_act,
+        "opening_request_hint": opening_request_hint,
         "response_strategy": response_strategy,
         "opening_move": opening_move,
         "followup_move": followup_move,
@@ -1126,7 +1380,17 @@ def derive_interaction_policy_packet(
         "cultural_conversation_state": cultural_conversation_state,
         "expressive_style_state": expressive_style_state,
         "lightness_budget_state": lightness_budget_state,
+        "shared_moment_state": shared_moment_state,
+        "appraisal_state": appraisal_state,
+        "listener_action_state": listener_action_state,
         "live_engagement_state": live_engagement_state,
+        "joint_state": joint_state,
+        "meaning_update_state": meaning_update_state,
+        "utterance_reason_packet": utterance_reason_packet,
+        "bright_strategy_override": bright_strategy_override,
+        "field_strategy_override": field_strategy_override,
+        "external_field_state": external_field_payload,
+        "terrain_dynamics_state": terrain_dynamics_payload,
         "situation_risk_state": situation_risk_state,
         "emergency_posture": emergency_posture,
         "expressive_style_history_focus": expressive_style_history_carry["focus"],
@@ -1203,11 +1467,622 @@ def derive_interaction_policy_packet(
         "insight_terrain_shape_target": insight_terrain_shape_target,
         "overnight_bias_roles": overnight_bias_roles,
         "reaction_vs_overnight_bias": reaction_vs_overnight_bias,
-    }
+    })
 
 
 def _compact(values: Sequence[str]) -> list[str]:
     return [value for value in values if value]
+
+
+def _contains_locale_cue(text: str, key: str, *, locale: str) -> bool:
+    body = str(text or "").strip()
+    if not body:
+        return False
+    cues = lookup_value(normalize_locale(locale or "ja-JP"), key)
+    if not isinstance(cues, list):
+        return False
+    return any(str(cue).strip() and str(cue).strip() in body for cue in cues)
+
+
+def _looks_like_opening_request(text: str, *, locale: str) -> bool:
+    return _contains_locale_cue(
+        text,
+        "inner_os.content_policy_cues.opening_request.contains_any",
+        locale=locale,
+    )
+
+
+def _derive_bright_strategy_override(
+    *,
+    response_strategy: str,
+    opening_move: str,
+    followup_move: str,
+    closing_move: str,
+    current_risks: Sequence[str],
+    repair_context: bool,
+    respectful_context: bool,
+    withdraw_context: bool,
+    contain_context: bool,
+    clarify_context: bool,
+    clarify_opening_context: bool,
+    scene_family: str,
+    top_option_family: str,
+    contact_readiness: float,
+    coherence_score: float,
+    human_presence_signal: float,
+    strained_pause: float,
+    body_cost: float,
+    boundary_pressure: float,
+    question_pressure: float,
+    defer_dominance: float,
+    expressive_style_state: Mapping[str, Any],
+    relational_style_memory_state: Mapping[str, Any],
+    lightness_budget_state: Mapping[str, Any],
+    shared_moment_state: Mapping[str, Any],
+    utterance_reason_packet: Mapping[str, Any],
+    live_engagement_state: Mapping[str, Any],
+    joint_state: Mapping[str, Any],
+    organism_state: Mapping[str, Any],
+    body_recovery_guard: Mapping[str, Any],
+    body_homeostasis_state: Mapping[str, Any],
+    homeostasis_budget_state: Mapping[str, Any],
+    situation_risk_state: Mapping[str, Any],
+    emergency_posture: Mapping[str, Any],
+) -> dict[str, object]:
+    if clarify_opening_context:
+        return {
+            "applied": False,
+            "response_strategy": response_strategy,
+            "opening_move": opening_move,
+            "followup_move": followup_move,
+            "closing_move": closing_move,
+            "reason": "clarify_opening_sticky",
+            "bright_room": 0.0,
+            "hard_containment": False,
+            "shared_moment_kind": "",
+            "shared_moment_room": 0.0,
+            "utterance_reason_offer": "",
+            "utterance_reason_room": 0.0,
+            "joint_mode": str(joint_state.get("dominant_mode") or "").strip(),
+            "joint_bright_room": 0.0,
+            "organism_posture": str(organism_state.get("dominant_posture") or "").strip(),
+            "organism_bright_room": 0.0,
+        }
+    expressive_name = str(expressive_style_state.get("state") or "").strip()
+    expressive_lightness_room = _clamp01(
+        float(expressive_style_state.get("lightness_room") or 0.0)
+    )
+    playful_ceiling = _clamp01(
+        float(relational_style_memory_state.get("playful_ceiling") or 0.0)
+    )
+    lightness_name = str(lightness_budget_state.get("state") or "").strip()
+    lightness_room = _clamp01(float(lightness_budget_state.get("banter_room") or 0.0))
+    lightness_playful_ceiling = _clamp01(
+        float(lightness_budget_state.get("playful_ceiling") or 0.0)
+    )
+    lightness_suppression = _clamp01(
+        float(lightness_budget_state.get("suppression") or 0.0)
+    )
+    shared_moment_name = str(shared_moment_state.get("state") or "").strip()
+    shared_moment_kind = str(shared_moment_state.get("moment_kind") or "").strip()
+    shared_moment_score = _clamp01(float(shared_moment_state.get("score") or 0.0))
+    shared_moment_jointness = _clamp01(
+        float(shared_moment_state.get("jointness") or 0.0)
+    )
+    shared_moment_afterglow = _clamp01(
+        float(shared_moment_state.get("afterglow") or 0.0)
+    )
+    shared_moment_room = _clamp01(
+        shared_moment_score * 0.56
+        + shared_moment_jointness * 0.24
+        + shared_moment_afterglow * 0.2
+    )
+    utterance_reason_state = str(utterance_reason_packet.get("state") or "").strip()
+    utterance_reason_offer = str(utterance_reason_packet.get("offer") or "").strip()
+    utterance_reason_question_policy = str(
+        utterance_reason_packet.get("question_policy") or ""
+    ).strip()
+    utterance_reason_room = _clamp01(
+        (0.42 if utterance_reason_state == "active" else 0.0)
+        + (
+            0.34
+            if utterance_reason_offer
+            in {"brief_shared_smile", "small_shared_relief", "tiny_shared_win"}
+            else 0.0
+        )
+        + (0.14 if utterance_reason_question_policy in {"", "none"} else 0.0)
+    )
+    live_name = str(live_engagement_state.get("state") or "").strip()
+    live_primary_move = str(live_engagement_state.get("primary_move") or "").strip()
+    live_score = _clamp01(float(live_engagement_state.get("score") or 0.0))
+    live_margin = _clamp01(float(live_engagement_state.get("winner_margin") or 0.0))
+    joint_mode = str(joint_state.get("dominant_mode") or "").strip()
+    joint_shared_delight = _clamp01(float(joint_state.get("shared_delight") or 0.0))
+    joint_shared_tension = _clamp01(float(joint_state.get("shared_tension") or 0.0))
+    joint_common_ground = _clamp01(float(joint_state.get("common_ground") or 0.0))
+    joint_attention = _clamp01(float(joint_state.get("joint_attention") or 0.0))
+    joint_mutual_room = _clamp01(float(joint_state.get("mutual_room") or 0.0))
+    joint_coupling_strength = _clamp01(float(joint_state.get("coupling_strength") or 0.0))
+    joint_bright_room = _clamp01(
+        joint_shared_delight * 0.22
+        + joint_common_ground * 0.18
+        + joint_attention * 0.18
+        + joint_mutual_room * 0.18
+        + joint_coupling_strength * 0.18
+        + (0.08 if joint_mode in {"delighted_jointness", "shared_attention"} else 0.0)
+        - joint_shared_tension * 0.18
+    )
+    organism_posture = str(organism_state.get("dominant_posture") or "").strip()
+    organism_play_window = _clamp01(float(organism_state.get("play_window") or 0.0))
+    organism_expressive_readiness = _clamp01(
+        float(organism_state.get("expressive_readiness") or 0.0)
+    )
+    organism_attunement = _clamp01(float(organism_state.get("attunement") or 0.0))
+    organism_bright_room = _clamp01(
+        organism_play_window * 0.52
+        + organism_expressive_readiness * 0.28
+        + organism_attunement * 0.2
+    )
+    guard_name = str(body_recovery_guard.get("state") or "").strip()
+    guard_score = _clamp01(float(body_recovery_guard.get("score") or 0.0))
+    body_state = str(body_homeostasis_state.get("state") or "").strip()
+    body_score = _clamp01(float(body_homeostasis_state.get("score") or 0.0))
+    budget_state = str(homeostasis_budget_state.get("state") or "").strip()
+    budget_score = _clamp01(float(homeostasis_budget_state.get("score") or 0.0))
+    risk_name = str(situation_risk_state.get("state") or "").strip()
+    emergency_permission = str(emergency_posture.get("dialogue_permission") or "").strip()
+
+    bright_room = (
+        lightness_name in {"open_play", "warm_only", "light_ok"}
+        and (
+            live_name in {"pickup_comment", "riff_with_comment", "seed_topic"}
+            or (live_name == "hold" and live_score >= 0.46 and live_margin <= 0.16)
+        )
+        and expressive_name in {
+            "light_playful",
+            "warm_companion",
+            "gal_bright",
+            "gal_casual",
+        }
+        and lightness_room >= 0.18
+        and expressive_lightness_room >= 0.18
+        and max(playful_ceiling, lightness_playful_ceiling, organism_play_window) >= 0.18
+        and (
+            shared_moment_name == "shared_moment"
+            or lightness_room >= 0.28
+        )
+        and live_score >= 0.28
+        and live_margin >= 0.04
+        and (
+            (
+                contact_readiness >= 0.5
+                and coherence_score >= 0.46
+                and human_presence_signal >= 0.46
+            )
+            or (
+                utterance_reason_room >= 0.56
+                and organism_posture in {"play", "open", "attune"}
+                and organism_bright_room >= 0.24
+                and live_score >= 0.42
+            )
+        )
+        and strained_pause <= 0.34
+        and lightness_suppression <= 0.48
+        and question_pressure <= 0.46
+        and defer_dominance <= 0.56
+        and (
+            shared_moment_room >= 0.22
+            or utterance_reason_room >= 0.56
+            or joint_bright_room >= 0.24
+            or (
+                organism_posture in {"play", "open", "attune"}
+                and organism_bright_room >= 0.24
+            )
+        )
+    )
+    hard_containment = (
+        "danger" in current_risks
+        or body_cost >= 0.66
+        or boundary_pressure >= 0.68
+        or guard_name in {"guarded", "recovery_first"}
+        or body_state in {"recovering", "depleted"}
+        or budget_state == "depleted"
+        or risk_name in {"immediate_danger", "high_guard"}
+        or emergency_permission in {"block", "allow_minimal"}
+    )
+    if not bright_room or hard_containment:
+        return {
+            "applied": False,
+            "response_strategy": response_strategy,
+            "opening_move": opening_move,
+            "followup_move": followup_move,
+            "closing_move": closing_move,
+            "reason": "",
+            "bright_room": round(float(bright_room), 4),
+            "hard_containment": hard_containment,
+            "shared_moment_kind": shared_moment_kind,
+            "shared_moment_room": round(shared_moment_room, 4),
+            "utterance_reason_offer": utterance_reason_offer,
+            "utterance_reason_room": round(utterance_reason_room, 4),
+            "joint_mode": joint_mode,
+            "joint_bright_room": round(joint_bright_room, 4),
+            "organism_posture": organism_posture,
+            "organism_bright_room": round(organism_bright_room, 4),
+        }
+
+    target_strategy = "attune_then_extend"
+    target_opening = "stay_with_visible"
+    target_followup = "invite_visible_state"
+    target_closing = "hold_space"
+    if live_primary_move in {
+        "pick_up_comment",
+        "riff_current_comment",
+        "seed_small_topic",
+    } or (
+        live_name in {"pickup_comment", "riff_with_comment", "seed_topic"}
+        and (
+            scene_family in {"co_present", "shared_world"}
+            or shared_moment_kind in {"laugh", "relief", "pleasant_surprise"}
+            or utterance_reason_offer
+            in {"brief_shared_smile", "small_shared_relief", "tiny_shared_win"}
+            or joint_mode in {"delighted_jointness", "shared_attention"}
+            or joint_bright_room >= 0.24
+            or (
+                organism_posture in {"play", "open", "attune"}
+                and organism_bright_room >= 0.24
+            )
+        )
+    ):
+        target_strategy = "shared_world_next_step"
+        target_opening = "synchronize_then_propose"
+        target_followup = "map_next_step"
+        target_closing = "keep_pace_mutual"
+
+    if response_strategy == target_strategy and not contain_context:
+        return {
+            "applied": False,
+            "response_strategy": response_strategy,
+            "opening_move": opening_move,
+            "followup_move": followup_move,
+            "closing_move": closing_move,
+            "reason": "",
+            "bright_room": 1.0,
+            "hard_containment": hard_containment,
+            "shared_moment_kind": shared_moment_kind,
+            "shared_moment_room": round(shared_moment_room, 4),
+            "utterance_reason_offer": utterance_reason_offer,
+            "utterance_reason_room": round(utterance_reason_room, 4),
+            "joint_mode": joint_mode,
+            "joint_bright_room": round(joint_bright_room, 4),
+            "organism_posture": organism_posture,
+            "organism_bright_room": round(organism_bright_room, 4),
+        }
+
+    return {
+        "applied": True,
+        "response_strategy": target_strategy,
+        "opening_move": target_opening,
+        "followup_move": target_followup,
+        "closing_move": target_closing,
+        "reason": "bright_continuity_room",
+        "bright_room": 1.0,
+        "hard_containment": hard_containment,
+        "shared_moment_kind": shared_moment_kind,
+        "shared_moment_room": round(shared_moment_room, 4),
+        "utterance_reason_offer": utterance_reason_offer,
+        "utterance_reason_room": round(utterance_reason_room, 4),
+        "joint_mode": joint_mode,
+        "joint_bright_room": round(joint_bright_room, 4),
+        "organism_posture": organism_posture,
+        "organism_bright_room": round(organism_bright_room, 4),
+    }
+
+
+def _derive_field_strategy_override(
+    *,
+    response_strategy: str,
+    opening_move: str,
+    followup_move: str,
+    closing_move: str,
+    current_risks: Sequence[str],
+    clarify_context: bool,
+    clarify_opening_context: bool,
+    external_field_state: Mapping[str, Any],
+    terrain_dynamics_state: Mapping[str, Any],
+    shared_moment_state: Mapping[str, Any],
+    utterance_reason_packet: Mapping[str, Any],
+    live_engagement_state: Mapping[str, Any],
+    joint_state: Mapping[str, Any],
+    organism_state: Mapping[str, Any],
+    body_recovery_guard: Mapping[str, Any],
+    body_homeostasis_state: Mapping[str, Any],
+    homeostasis_budget_state: Mapping[str, Any],
+    situation_risk_state: Mapping[str, Any],
+    emergency_posture: Mapping[str, Any],
+) -> dict[str, object]:
+    external_field_name = str(external_field_state.get("dominant_field") or "").strip()
+    external_continuity_pull = _clamp01(
+        float(external_field_state.get("continuity_pull") or 0.0)
+    )
+    external_social_pressure = _clamp01(
+        float(external_field_state.get("social_pressure") or 0.0)
+    )
+    external_safety_envelope = _clamp01(
+        float(external_field_state.get("safety_envelope") or 0.0)
+    )
+    terrain_basin = str(terrain_dynamics_state.get("dominant_basin") or "").strip()
+    terrain_flow = str(terrain_dynamics_state.get("dominant_flow") or "").strip()
+    terrain_energy = _clamp01(float(terrain_dynamics_state.get("terrain_energy") or 0.0))
+    terrain_entropy = _clamp01(float(terrain_dynamics_state.get("entropy") or 0.0))
+    terrain_ignition = _clamp01(
+        float(terrain_dynamics_state.get("ignition_pressure") or 0.0)
+    )
+    terrain_barrier = _clamp01(
+        float(terrain_dynamics_state.get("barrier_height") or 0.0)
+    )
+    terrain_recovery = _clamp01(
+        float(terrain_dynamics_state.get("recovery_gradient") or 0.0)
+    )
+    terrain_basin_pull = _clamp01(
+        float(terrain_dynamics_state.get("basin_pull") or 0.0)
+    )
+    shared_moment_name = str(shared_moment_state.get("state") or "").strip()
+    shared_moment_kind = str(shared_moment_state.get("moment_kind") or "").strip()
+    shared_moment_score = _clamp01(float(shared_moment_state.get("score") or 0.0))
+    shared_moment_jointness = _clamp01(
+        float(shared_moment_state.get("jointness") or 0.0)
+    )
+    shared_moment_afterglow = _clamp01(
+        float(shared_moment_state.get("afterglow") or 0.0)
+    )
+    shared_moment_room = _clamp01(
+        shared_moment_score * 0.52
+        + shared_moment_jointness * 0.28
+        + shared_moment_afterglow * 0.2
+    )
+    utterance_reason_state = str(utterance_reason_packet.get("state") or "").strip()
+    utterance_reason_offer = str(utterance_reason_packet.get("offer") or "").strip()
+    utterance_reason_question_policy = str(
+        utterance_reason_packet.get("question_policy") or ""
+    ).strip()
+    utterance_reason_relation_frame = str(
+        utterance_reason_packet.get("relation_frame") or ""
+    ).strip()
+    utterance_reason_causal_frame = str(
+        utterance_reason_packet.get("causal_frame") or ""
+    ).strip()
+    utterance_reason_memory_frame = str(
+        utterance_reason_packet.get("memory_frame") or ""
+    ).strip()
+    utterance_reason_preserve = str(
+        utterance_reason_packet.get("preserve") or ""
+    ).strip()
+    live_name = str(live_engagement_state.get("state") or "").strip()
+    live_primary_move = str(live_engagement_state.get("primary_move") or "").strip()
+    live_score = _clamp01(float(live_engagement_state.get("score") or 0.0))
+    joint_mode = str(joint_state.get("dominant_mode") or "").strip()
+    joint_shared_delight = _clamp01(float(joint_state.get("shared_delight") or 0.0))
+    joint_shared_tension = _clamp01(float(joint_state.get("shared_tension") or 0.0))
+    joint_common_ground = _clamp01(float(joint_state.get("common_ground") or 0.0))
+    joint_attention = _clamp01(float(joint_state.get("joint_attention") or 0.0))
+    joint_mutual_room = _clamp01(float(joint_state.get("mutual_room") or 0.0))
+    joint_coupling_strength = _clamp01(float(joint_state.get("coupling_strength") or 0.0))
+    joint_reentry_room = _clamp01(
+        joint_common_ground * 0.24
+        + joint_attention * 0.18
+        + joint_mutual_room * 0.18
+        + joint_coupling_strength * 0.18
+        + joint_shared_delight * 0.12
+        + (0.08 if joint_mode in {"delighted_jointness", "shared_attention"} else 0.0)
+        - joint_shared_tension * 0.14
+    )
+    organism_posture = str(organism_state.get("dominant_posture") or "").strip()
+    organism_play_window = _clamp01(float(organism_state.get("play_window") or 0.0))
+    organism_expressive_readiness = _clamp01(
+        float(organism_state.get("expressive_readiness") or 0.0)
+    )
+    organism_attunement = _clamp01(float(organism_state.get("attunement") or 0.0))
+    body_guard_name = str(body_recovery_guard.get("state") or "").strip()
+    body_state = str(body_homeostasis_state.get("state") or "").strip()
+    homeostasis_state = str(homeostasis_budget_state.get("state") or "").strip()
+    risk_name = str(situation_risk_state.get("state") or "").strip()
+    emergency_permission = str(emergency_posture.get("dialogue_permission") or "").strip()
+
+    hard_containment = (
+        "danger" in current_risks
+        or external_field_name == "hazard_field"
+        or external_safety_envelope >= 0.74
+        or terrain_basin == "protective_basin"
+        or terrain_barrier >= 0.72
+        or body_guard_name in {"guarded", "recovery_first"}
+        or body_state in {"recovering", "depleted"}
+        or homeostasis_state == "depleted"
+        or risk_name in {"immediate_danger", "high_guard", "acute_threat"}
+        or emergency_permission in {"block", "allow_minimal"}
+    )
+    if clarify_opening_context or clarify_context or not external_field_name or not terrain_basin:
+        return {
+            "applied": False,
+            "reason": "clarify_opening_sticky" if clarify_opening_context else "",
+            "hard_containment": hard_containment,
+            "joint_mode": joint_mode,
+            "joint_reentry_room": round(joint_reentry_room, 4),
+        }
+
+    if (
+        response_strategy in {"attune_then_extend", "shared_world_next_step"}
+        and not hard_containment
+        and external_field_name in {"social_pressure_field", "formal_field"}
+        and external_social_pressure >= 0.62
+        and terrain_barrier >= 0.48
+        and terrain_energy <= 0.56
+        and (
+            joint_shared_tension >= 0.42
+            or joint_mode in {"repair_attunement", "strained_jointness"}
+            or joint_reentry_room <= 0.44
+        )
+    ):
+        return {
+            "applied": True,
+            "response_strategy": "respectful_wait",
+            "opening_move": "acknowledge_and_wait",
+            "followup_move": "offer_return_point",
+            "closing_move": "leave_space",
+            "reason": "field_respectful_constraint",
+            "hard_containment": hard_containment,
+            "joint_mode": joint_mode,
+            "joint_reentry_room": round(joint_reentry_room, 4),
+            "external_field_state": external_field_name,
+            "terrain_dominant_flow": terrain_flow,
+        }
+
+    relation_reentry_signal = (
+        utterance_reason_relation_frame in {"cross_context_bridge", "returning_pattern"}
+        or utterance_reason_causal_frame in {"reframing_cause", "memory_trigger_cause"}
+        or utterance_reason_memory_frame
+        in {
+            "echo_known_thread",
+            "name_small_return",
+            "name_distant_link",
+            "echo_returning_pattern",
+        }
+    )
+    guarded_relation_signal = (
+        utterance_reason_relation_frame == "unfinished_link"
+        or utterance_reason_causal_frame in {"unfinished_thread_cause", "memory_trigger_cause"}
+        or utterance_reason_memory_frame
+        in {"keep_unfinished_link_near", "keep_known_thread_near", "echo_known_thread"}
+    )
+    if (
+        response_strategy in {"attune_then_extend", "shared_world_next_step"}
+        and not hard_containment
+        and guarded_relation_signal
+        and terrain_basin in {"protective_basin", "diffuse_basin", "steady_basin"}
+        and terrain_flow in {"contain", "diffuse", "settle"}
+        and (terrain_barrier >= 0.54 or terrain_entropy >= 0.52)
+        and utterance_reason_preserve in {"", "do_not_overclaim"}
+        and (
+            joint_shared_tension >= 0.36
+            or joint_mode in {"strained_jointness", "repair_attunement"}
+            or joint_reentry_room <= 0.42
+        )
+    ):
+        return {
+            "applied": True,
+            "response_strategy": "respectful_wait",
+            "opening_move": "acknowledge_and_wait",
+            "followup_move": "offer_return_point",
+            "closing_move": "leave_space",
+            "reason": "field_relation_guard",
+            "hard_containment": hard_containment,
+            "joint_mode": joint_mode,
+            "joint_reentry_room": round(joint_reentry_room, 4),
+            "terrain_dominant_flow": terrain_flow,
+            "terrain_dominant_basin": terrain_basin,
+            "relation_frame": utterance_reason_relation_frame,
+            "causal_frame": utterance_reason_causal_frame,
+        }
+
+    progression_room = _clamp01(
+        external_continuity_pull * 0.34
+        + terrain_recovery * 0.24
+        + terrain_basin_pull * 0.12
+        + organism_play_window * 0.1
+        + organism_expressive_readiness * 0.08
+        + organism_attunement * 0.06
+        + live_score * 0.06
+    )
+    shared_progress_signal = (
+        shared_moment_name == "shared_moment"
+        and shared_moment_kind in {"laugh", "relief", "pleasant_surprise"}
+        and shared_moment_room >= 0.28
+        and utterance_reason_state == "active"
+        and utterance_reason_offer
+        in {"brief_shared_smile", "small_shared_relief", "tiny_shared_win"}
+        and utterance_reason_question_policy in {"", "none"}
+        and live_name in {"pickup_comment", "riff_with_comment", "seed_topic"}
+        and live_primary_move in {
+            "pick_up_comment",
+            "riff_current_comment",
+            "seed_small_topic",
+        }
+    )
+    if (
+        response_strategy in {"attune_then_extend", "respectful_wait"}
+        and not hard_containment
+        and external_field_name in {"continuity_field", "open_field", "shifting_field"}
+        and terrain_basin in {"recovery_basin", "steady_basin", "play_basin", "continuity_basin"}
+        and terrain_flow in {"recover", "reenter", "settle", "ignite"}
+        and terrain_barrier <= 0.5
+        and external_safety_envelope <= 0.58
+        and external_social_pressure <= 0.56
+        and progression_room >= 0.42
+        and joint_reentry_room >= 0.2
+        and shared_progress_signal
+        and organism_posture in {"play", "open", "attune"}
+    ):
+        return {
+            "applied": True,
+            "response_strategy": "shared_world_next_step",
+            "opening_move": "synchronize_then_propose",
+            "followup_move": "map_next_step",
+            "closing_move": "keep_pace_mutual",
+            "reason": "field_reentry_progression",
+            "hard_containment": hard_containment,
+            "progression_room": round(progression_room, 4),
+            "joint_mode": joint_mode,
+            "joint_reentry_room": round(joint_reentry_room, 4),
+            "external_field_state": external_field_name,
+            "terrain_dominant_flow": terrain_flow,
+        }
+
+    relation_progress_room = _clamp01(
+        progression_room * 0.58
+        + joint_reentry_room * 0.18
+        + terrain_recovery * 0.12
+        + terrain_basin_pull * 0.12
+        + (0.1 if relation_reentry_signal else 0.0)
+    )
+    if (
+        response_strategy in {"attune_then_extend", "respectful_wait"}
+        and not hard_containment
+        and relation_reentry_signal
+        and external_field_name in {"continuity_field", "open_field", "shifting_field"}
+        and terrain_basin in {"recovery_basin", "continuity_basin", "steady_basin"}
+        and terrain_flow in {"recover", "reenter", "settle", "ignite"}
+        and terrain_barrier <= 0.46
+        and terrain_entropy <= 0.5
+        and external_safety_envelope <= 0.58
+        and external_social_pressure <= 0.56
+        and relation_progress_room >= 0.44
+        and joint_reentry_room >= 0.22
+        and organism_posture in {"play", "open", "attune"}
+    ):
+        return {
+            "applied": True,
+            "response_strategy": "shared_world_next_step",
+            "opening_move": "synchronize_then_propose",
+            "followup_move": "map_next_step",
+            "closing_move": "keep_pace_mutual",
+            "reason": "field_relation_reentry_progression",
+            "hard_containment": hard_containment,
+            "progression_room": round(relation_progress_room, 4),
+            "joint_mode": joint_mode,
+            "joint_reentry_room": round(joint_reentry_room, 4),
+            "external_field_state": external_field_name,
+            "terrain_dominant_flow": terrain_flow,
+            "relation_frame": utterance_reason_relation_frame,
+            "causal_frame": utterance_reason_causal_frame,
+            "memory_frame": utterance_reason_memory_frame,
+        }
+
+    return {
+        "applied": False,
+        "reason": "",
+        "hard_containment": hard_containment,
+        "joint_mode": joint_mode,
+        "joint_reentry_room": round(joint_reentry_room, 4),
+    }
 
 
 def _derive_object_driven_moves(

@@ -72,3 +72,5 @@ def test_nightly_consolidate_writes_inner_os_sleep_snapshot_when_legacy_system_p
     payload = json.loads(sleep_path.read_text(encoding="utf-8"))
     assert payload["schema"] == "inner_os_sleep_consolidation_snapshot/v1"
     assert summary["inner_os_sleep_mode"] == payload["snapshot"]["mode"]
+    assert payload["snapshot"]["growth_state"]["relational_trust"] >= 0.0
+    assert payload["snapshot"]["growth_replay_axes"]["bond"]["value"] >= 0.0

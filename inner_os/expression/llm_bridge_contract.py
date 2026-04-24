@@ -1,0 +1,464 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import re
+from typing import Any, Mapping, Sequence
+
+
+_QUESTION_PHRASES: tuple[str, ...] = (
+    "ですか",
+    "ますか",
+    "でしょうか",
+    "いかがですか",
+    "どうでしたか",
+    "どうですか",
+    "ありますか",
+    "教えて",
+    "聞かせて",
+    "話して",
+)
+
+_UNCERTAINTY_META_PHRASES: tuple[str, ...] = (
+    "推定信頼度",
+    "不確実要因",
+)
+
+_ASSISTANT_ATTRACTOR_PHRASES: tuple[str, ...] = (
+    "さて、さっきの話の続きですね",
+    "お疲れ様です",
+    "お疲れ様でした",
+    "お久しぶりですね",
+    "お気持ち",
+    "とのこと",
+    "どんな出来事があったのか",
+    "どんなことですか",
+    "ぜひ教えて",
+    "聞かせてください",
+    "お聞かせいただけますか",
+    "気兼ねなく",
+    "今の状態をそのまま受け入れて",
+    "あなたのペースで",
+    "ゆっくり休んで",
+    "過ごしてみてください",
+    "体調管理も忘れずに",
+    "その後の様子はどうでしょうか",
+    "よろしければ",
+)
+
+_INTERPRETIVE_BRIGHT_PHRASES: tuple[str, ...] = (
+    "きっかけ",
+    "証拠",
+    "ように思える",
+    "のでしょうね",
+    "かもしれませんね",
+    "ただの出来事というより",
+    "少し和らげ",
+    "心にも光が差し込",
+    "重たいものから離れる一歩",
+    "現実にも向き合",
+    "受け止め方",
+    "どう影響しているのか",
+    "今の感覚は",
+    "気持ちをどう捉えて",
+    "少し軽くなったのかもしれません",
+    "心が少し緩んだ",
+    "心が少し軽くなった証拠",
+    "解放感",
+    "一歩かもしれません",
+    "今の不安やしんどさ",
+    "少し楽になったサイン",
+)
+
+_ELICITATION_PHRASES: tuple[str, ...] = (
+    "見守ってください",
+    "観察して",
+    "振り返って",
+    "整理して",
+    "受け止めてください",
+    "深く考えずに",
+    "共有してください",
+    "描写して",
+    "焦点を当てて",
+    "触れても良い",
+    "ゆっくりと見守って",
+    "今の感覚を",
+)
+
+_SPLIT_MARKERS: tuple[str, ...] = ("。", "！", "!", "？", "?", "\n")
+
+_ASSISTANT_ATTRACTOR_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^(?:おっしゃる通り|さて|昨日の続き|先ほどの(?:会話|話)|さっきの話の続き)"),
+    re.compile(r"^(?:お疲れ様(?:です|でした)|お久しぶりですね)"),
+    re.compile(r"(?:とのこと|よろしければ|聞かせて(?:ください|いただけますか)|教えていただけますか)"),
+    re.compile(r"(?:ぜひ|気兼ねなく|あなたのペース|体調管理も忘れずに)"),
+    re.compile(r"(?:今はどう(?:お過ごし|されて)|その後はどう(?:でした|でしょう|されて))"),
+)
+
+_INTERPRETIVE_BRIGHT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?:きっかけ|証拠|サイン|解放感|一歩)"),
+    re.compile(r"(?:ように思(?:える|えます)|かもしれません|のでしょう|んだろう)"),
+    re.compile(r"(?:心が少し(?:緩んだ|軽くなった)|少し(?:軽やかな気分|楽になった))"),
+    re.compile(r"(?:和らげ|重たいものから離れる|心の中に溜まっていく)"),
+    re.compile(r"(?:どう捉えて|どう影響して|受け止め方|気持ちをどう)"),
+)
+
+_ELICITATION_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?:見守って|観察して|振り返って|整理して|受け止めてください)"),
+    re.compile(r"(?:深く考えずに|共有してください|描写して|焦点を当てて|触れても良い)"),
+)
+
+_SMALL_SHARED_REACTION_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?:ふふ|笑える|笑えた|笑っちゃう)"),
+    re.compile(r"(?:ちょっと楽になる|少し気が楽になる|和む|ほっとする)"),
+)
+
+
+def _text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _source_state(
+    surface_context_packet: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(surface_context_packet, Mapping):
+        return {}
+    source_state = surface_context_packet.get("source_state")
+    return dict(source_state) if isinstance(source_state, Mapping) else {}
+
+
+def _constraints(
+    surface_context_packet: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(surface_context_packet, Mapping):
+        return {}
+    constraints = surface_context_packet.get("constraints")
+    return dict(constraints) if isinstance(constraints, Mapping) else {}
+
+
+def _reaction_contract(
+    reaction_contract: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(reaction_contract, Mapping):
+        return {}
+    return dict(reaction_contract)
+
+
+def _split_sentences(text: str) -> list[str]:
+    normalized = _text(text)
+    if not normalized:
+        return []
+    buffer: list[str] = []
+    current = ""
+    for char in normalized:
+        current += char
+        if char in _SPLIT_MARKERS:
+            sentence = current.strip()
+            if sentence:
+                buffer.append(sentence)
+            current = ""
+    if current.strip():
+        buffer.append(current.strip())
+    return buffer
+
+
+def _contains_any(text: str, patterns: Sequence[str]) -> bool:
+    normalized = _text(text)
+    return any(pattern in normalized for pattern in patterns)
+
+
+def _contains_question(sentence: str) -> bool:
+    text = _text(sentence)
+    if not text:
+        return False
+    if "?" in text or "？" in text:
+        return True
+    return any(pattern in text for pattern in _QUESTION_PHRASES)
+
+
+def _contains_uncertainty_meta(sentence: str) -> bool:
+    return _contains_any(sentence, _UNCERTAINTY_META_PHRASES)
+
+
+def _matches_any_pattern(
+    text: str,
+    patterns: Sequence[re.Pattern[str]],
+) -> bool:
+    normalized = _text(text)
+    return any(pattern.search(normalized) for pattern in patterns)
+
+
+def _classify_small_shared_moment_sentence(sentence: str) -> set[str]:
+    normalized = _text(sentence)
+    if not normalized:
+        return set()
+    classes: set[str] = set()
+    if _contains_uncertainty_meta(normalized):
+        classes.add("uncertainty_meta")
+    if _contains_question(normalized):
+        classes.add("question")
+    if _contains_any(normalized, _ELICITATION_PHRASES) or _matches_any_pattern(
+        normalized,
+        _ELICITATION_PATTERNS,
+    ):
+        classes.add("elicitation")
+    if _contains_any(normalized, _ASSISTANT_ATTRACTOR_PHRASES) or _matches_any_pattern(
+        normalized,
+        _ASSISTANT_ATTRACTOR_PATTERNS,
+    ):
+        classes.add("assistant_attractor")
+    if _contains_any(
+        normalized,
+        _INTERPRETIVE_BRIGHT_PHRASES,
+    ) or _matches_any_pattern(normalized, _INTERPRETIVE_BRIGHT_PATTERNS):
+        classes.add("interpretive_bright")
+    if _matches_any_pattern(normalized, _SMALL_SHARED_REACTION_PATTERNS):
+        classes.add("small_shared_reaction")
+    return classes
+
+
+def _is_small_shared_moment(
+    surface_context_packet: Mapping[str, Any] | None,
+    *,
+    fallback_text: str = "",
+) -> bool:
+    source_state = _source_state(surface_context_packet)
+    packet_surface_profile = (
+        surface_context_packet.get("surface_profile")
+        if isinstance(surface_context_packet, Mapping)
+        and isinstance(surface_context_packet.get("surface_profile"), Mapping)
+        else {}
+    )
+    conversation_phase = _text(
+        (surface_context_packet or {}).get("conversation_phase")
+        if isinstance(surface_context_packet, Mapping)
+        else ""
+    )
+    offer_mode = _text(source_state.get("utterance_reason_offer"))
+    preserve_mode = _text(source_state.get("utterance_reason_preserve"))
+    shared_moment_kind = _text(source_state.get("shared_moment_kind"))
+    turn_delta_kind = _text(source_state.get("turn_delta_kind"))
+    discourse_shape_id = _text(source_state.get("discourse_shape_id"))
+    if not discourse_shape_id:
+        discourse_shape_id = _text(packet_surface_profile.get("discourse_shape_id"))
+    if offer_mode == "brief_shared_smile":
+        return True
+    if preserve_mode == "keep_it_small":
+        return True
+    if conversation_phase == "bright_continuity":
+        return True
+    if turn_delta_kind == "bright_continuity":
+        return True
+    if discourse_shape_id == "bright_bounce":
+        return True
+    fallback = _text(fallback_text)
+    if fallback:
+        fallback_sentences = _split_sentences(fallback)
+        fallback_is_small = len(fallback_sentences) <= 2
+        fallback_is_reaction = _matches_any_pattern(
+            fallback,
+            _SMALL_SHARED_REACTION_PATTERNS,
+        )
+        if fallback_is_small and fallback_is_reaction:
+            return True
+    return (
+        conversation_phase in {"continuing_thread", "reopening_thread"}
+        and shared_moment_kind in {"laugh", "smile", "relief"}
+    )
+
+
+@dataclass(frozen=True)
+class LLMBridgeContractViolation:
+    code: str
+    detail: str
+
+
+@dataclass(frozen=True)
+class LLMBridgeContractReview:
+    ok: bool
+    raw_text: str
+    sanitized_text: str
+    violations: tuple[LLMBridgeContractViolation, ...] = ()
+
+    def violation_codes(self) -> list[str]:
+        return [violation.code for violation in self.violations]
+
+
+def review_llm_bridge_text(
+    *,
+    raw_text: str,
+    surface_context_packet: Mapping[str, Any] | None = None,
+    reaction_contract: Mapping[str, Any] | None = None,
+    fallback_text: str = "",
+) -> LLMBridgeContractReview:
+    normalized_raw_text = _text(raw_text)
+    normalized_fallback_text = _text(fallback_text)
+    if not normalized_raw_text:
+        return LLMBridgeContractReview(
+            ok=True,
+            raw_text="",
+            sanitized_text=normalized_fallback_text,
+            violations=(),
+        )
+
+    constraints = _constraints(surface_context_packet)
+    source_state = _source_state(surface_context_packet)
+    reaction = _reaction_contract(reaction_contract)
+    question_policy = _text(source_state.get("utterance_reason_question_policy"))
+    if not question_policy and int(constraints.get("max_questions") or 0) <= 0:
+        question_policy = "none"
+    if not question_policy and int(reaction.get("question_budget") or 0) <= 0:
+        question_policy = "none"
+    is_small_shared_moment = _is_small_shared_moment(
+        surface_context_packet,
+        fallback_text=normalized_fallback_text,
+    )
+    scale = _text(reaction.get("scale"))
+    interpretation_budget = _text(reaction.get("interpretation_budget"))
+    if not is_small_shared_moment and scale in {"micro", "small"}:
+        is_small_shared_moment = True
+
+    violations: list[LLMBridgeContractViolation] = []
+    sentences = _split_sentences(normalized_raw_text)
+    sentence_classes = [
+        _classify_small_shared_moment_sentence(sentence)
+        for sentence in sentences
+    ]
+    sentence_cap = 0
+    if scale == "micro":
+        sentence_cap = 1
+    elif scale == "small":
+        sentence_cap = 2
+    elif scale == "medium":
+        sentence_cap = 3
+
+    if _contains_any(normalized_raw_text, _UNCERTAINTY_META_PHRASES):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="uncertainty_meta_violation",
+                detail="raw に推定信頼度や不確実要因の meta text が混ざっています。",
+            )
+        )
+
+    if not is_small_shared_moment:
+        if question_policy == "none" and any("question" in classes for classes in sentence_classes):
+            violations.append(
+                LLMBridgeContractViolation(
+                    code="question_block_violation",
+                    detail="reaction_contract では質問しない場面だが、follow-up question が含まれています。",
+                )
+            )
+        if interpretation_budget == "none" and any("interpretive_bright" in classes for classes in sentence_classes):
+            violations.append(
+                LLMBridgeContractViolation(
+                    code="interpretation_budget_violation",
+                    detail="reaction_contract では解釈を足さない場面だが、解釈文が含まれています。",
+                )
+            )
+        non_meta_sentence_count = len(
+            [classes for classes in sentence_classes if "uncertainty_meta" not in classes]
+        )
+        if sentence_cap and non_meta_sentence_count > sentence_cap:
+            violations.append(
+                LLMBridgeContractViolation(
+                    code="too_many_sentences",
+                    detail="reaction_contract の scale より文数が多すぎます。",
+                )
+            )
+        if violations:
+            return LLMBridgeContractReview(
+                ok=False,
+                raw_text=normalized_raw_text,
+                sanitized_text=normalized_fallback_text or normalized_raw_text,
+                violations=tuple(violations),
+            )
+        return LLMBridgeContractReview(
+            ok=True,
+            raw_text=normalized_raw_text,
+            sanitized_text=normalized_raw_text,
+            violations=(),
+        )
+
+    if question_policy == "none" and any("question" in classes for classes in sentence_classes):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="question_block_violation",
+                detail="question_policy=none なのに follow-up question が出ています。",
+            )
+        )
+    if any("elicitation" in classes for classes in sentence_classes):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="elicitation_violation",
+                detail="小さい共有モーメントを広げる促し文が混ざっています。",
+            )
+        )
+    if any("assistant_attractor" in classes for classes in sentence_classes):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="assistant_attractor_violation",
+                detail="assistant/counselor phrasing に引っ張られています。",
+            )
+        )
+    if any("interpretive_bright" in classes for classes in sentence_classes):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="interpretive_bright_violation",
+                detail="小さい共有モーメントを解釈文へ広げています。",
+            )
+        )
+    non_meta_sentence_count = len(
+        [classes for classes in sentence_classes if "uncertainty_meta" not in classes]
+    )
+    allowed_sentence_count = sentence_cap or 2
+    if non_meta_sentence_count > allowed_sentence_count:
+        violations.append(
+            LLMBridgeContractViolation(
+                code="too_many_sentences",
+                detail="keep_it_small の場面で 3 文以上に広がっています。",
+            )
+        )
+
+    if not violations:
+        return LLMBridgeContractReview(
+            ok=True,
+            raw_text=normalized_raw_text,
+            sanitized_text=normalized_raw_text,
+            violations=(),
+        )
+
+    sanitized_sentences: list[str] = []
+    blocked_patterns: tuple[str, ...] = (
+        *_ASSISTANT_ATTRACTOR_PHRASES,
+        *_INTERPRETIVE_BRIGHT_PHRASES,
+        *_ELICITATION_PHRASES,
+        *_UNCERTAINTY_META_PHRASES,
+    )
+    blocked_sentence_classes = {
+        "question",
+        "elicitation",
+        "assistant_attractor",
+        "interpretive_bright",
+        "uncertainty_meta",
+    }
+    for sentence, classes in zip(sentences, sentence_classes):
+        if question_policy == "none" and "question" in classes:
+            continue
+        if classes.intersection(blocked_sentence_classes):
+            continue
+        if _contains_any(sentence, blocked_patterns):
+            continue
+        sanitized_sentences.append(sentence)
+
+    sanitized_sentences = sanitized_sentences[: max(1, allowed_sentence_count)]
+    sanitized_text = " ".join(sentence.strip() for sentence in sanitized_sentences).strip()
+    if normalized_fallback_text:
+        sanitized_text = normalized_fallback_text
+    elif not sanitized_text:
+        sanitized_text = normalized_raw_text
+
+    return LLMBridgeContractReview(
+        ok=False,
+        raw_text=normalized_raw_text,
+        sanitized_text=sanitized_text,
+        violations=tuple(violations),
+    )

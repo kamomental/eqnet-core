@@ -2553,6 +2553,66 @@ def _generate_telemetry_section(
                 report["inner_os_sleep_banter_style_focus"] = str(snapshot["banter_style_focus"])
             if snapshot.get("lexical_variation_carry_bias") is not None:
                 report["inner_os_sleep_lexical_variation_carry_bias"] = float(snapshot["lexical_variation_carry_bias"] or 0.0)
+            growth_state = snapshot.get("growth_state") or {}
+            if isinstance(growth_state, dict):
+                if growth_state.get("relational_trust") is not None:
+                    report["inner_os_sleep_growth_relational_trust"] = float(growth_state["relational_trust"] or 0.0)
+                if growth_state.get("epistemic_maturity") is not None:
+                    report["inner_os_sleep_growth_epistemic_maturity"] = float(growth_state["epistemic_maturity"] or 0.0)
+                if growth_state.get("expressive_range") is not None:
+                    report["inner_os_sleep_growth_expressive_range"] = float(growth_state["expressive_range"] or 0.0)
+                if growth_state.get("residue_integration") is not None:
+                    report["inner_os_sleep_growth_residue_integration"] = float(growth_state["residue_integration"] or 0.0)
+                if growth_state.get("playfulness_range") is not None:
+                    report["inner_os_sleep_growth_playfulness_range"] = float(growth_state["playfulness_range"] or 0.0)
+                if growth_state.get("self_coherence") is not None:
+                    report["inner_os_sleep_growth_self_coherence"] = float(growth_state["self_coherence"] or 0.0)
+                if growth_state.get("dominant_transition"):
+                    report["inner_os_sleep_growth_dominant_transition"] = str(growth_state["dominant_transition"])
+            growth_replay_axes = snapshot.get("growth_replay_axes") or {}
+            if isinstance(growth_replay_axes, dict):
+                bond_axis = growth_replay_axes.get("bond") or {}
+                stability_axis = growth_replay_axes.get("stability") or {}
+                curiosity_axis = growth_replay_axes.get("curiosity") or {}
+                if isinstance(bond_axis, dict) and bond_axis.get("value") is not None:
+                    report["inner_os_sleep_growth_bond_axis"] = float(bond_axis["value"] or 0.0)
+                if isinstance(stability_axis, dict) and stability_axis.get("value") is not None:
+                    report["inner_os_sleep_growth_stability_axis"] = float(stability_axis["value"] or 0.0)
+                if isinstance(curiosity_axis, dict) and curiosity_axis.get("value") is not None:
+                    report["inner_os_sleep_growth_curiosity_axis"] = float(curiosity_axis["value"] or 0.0)
+            memory_dynamics_state = snapshot.get("memory_dynamics_state") or {}
+            if isinstance(memory_dynamics_state, dict):
+                if memory_dynamics_state.get("dominant_mode"):
+                    report["inner_os_sleep_memory_dynamics_mode"] = str(memory_dynamics_state["dominant_mode"])
+                if memory_dynamics_state.get("dominant_link_key"):
+                    report["inner_os_sleep_memory_dominant_link"] = str(memory_dynamics_state["dominant_link_key"])
+                if memory_dynamics_state.get("monument_kind"):
+                    report["inner_os_sleep_memory_monument_kind"] = str(memory_dynamics_state["monument_kind"])
+                if memory_dynamics_state.get("monument_salience") is not None:
+                    report["inner_os_sleep_memory_monument_salience"] = float(memory_dynamics_state["monument_salience"] or 0.0)
+                if memory_dynamics_state.get("ignition_readiness") is not None:
+                    report["inner_os_sleep_memory_ignition_readiness"] = float(memory_dynamics_state["ignition_readiness"] or 0.0)
+                if memory_dynamics_state.get("consolidation_pull") is not None:
+                    report["inner_os_sleep_memory_consolidation_pull"] = float(memory_dynamics_state["consolidation_pull"] or 0.0)
+                if memory_dynamics_state.get("memory_tension") is not None:
+                    report["inner_os_sleep_memory_tension"] = float(memory_dynamics_state["memory_tension"] or 0.0)
+            memory_dynamics_axes = snapshot.get("memory_dynamics_axes") or {}
+            if isinstance(memory_dynamics_axes, dict):
+                topology_axis = memory_dynamics_axes.get("topology") or {}
+                salience_axis = memory_dynamics_axes.get("salience") or {}
+                ignition_axis = memory_dynamics_axes.get("ignition") or {}
+                consolidation_axis = memory_dynamics_axes.get("consolidation") or {}
+                tension_axis = memory_dynamics_axes.get("tension") or {}
+                if isinstance(topology_axis, dict) and topology_axis.get("value") is not None:
+                    report["inner_os_sleep_memory_topology_axis"] = float(topology_axis["value"] or 0.0)
+                if isinstance(salience_axis, dict) and salience_axis.get("value") is not None:
+                    report["inner_os_sleep_memory_salience_axis"] = float(salience_axis["value"] or 0.0)
+                if isinstance(ignition_axis, dict) and ignition_axis.get("value") is not None:
+                    report["inner_os_sleep_memory_ignition_axis"] = float(ignition_axis["value"] or 0.0)
+                if isinstance(consolidation_axis, dict) and consolidation_axis.get("value") is not None:
+                    report["inner_os_sleep_memory_consolidation_axis"] = float(consolidation_axis["value"] or 0.0)
+                if isinstance(tension_axis, dict) and tension_axis.get("value") is not None:
+                    report["inner_os_sleep_memory_tension_axis"] = float(tension_axis["value"] or 0.0)
     daily_carry_summary = DailyCarrySummaryBuilder().build(report).to_dict()
     if daily_carry_summary.get("same_turn_focus") or daily_carry_summary.get("active_carry_channels"):
         report["inner_os_daily_carry_summary"] = daily_carry_summary
@@ -4988,6 +5048,50 @@ def _write_json_summary(report: Dict[str, Any], out_dir: str = "reports") -> Pat
         payload["inner_os_sleep_banter_style_focus"] = report["inner_os_sleep_banter_style_focus"]
     if report.get("inner_os_sleep_lexical_variation_carry_bias") is not None:
         payload["inner_os_sleep_lexical_variation_carry_bias"] = report["inner_os_sleep_lexical_variation_carry_bias"]
+    if report.get("inner_os_sleep_growth_relational_trust") is not None:
+        payload["inner_os_sleep_growth_relational_trust"] = report["inner_os_sleep_growth_relational_trust"]
+    if report.get("inner_os_sleep_growth_epistemic_maturity") is not None:
+        payload["inner_os_sleep_growth_epistemic_maturity"] = report["inner_os_sleep_growth_epistemic_maturity"]
+    if report.get("inner_os_sleep_growth_expressive_range") is not None:
+        payload["inner_os_sleep_growth_expressive_range"] = report["inner_os_sleep_growth_expressive_range"]
+    if report.get("inner_os_sleep_growth_residue_integration") is not None:
+        payload["inner_os_sleep_growth_residue_integration"] = report["inner_os_sleep_growth_residue_integration"]
+    if report.get("inner_os_sleep_growth_playfulness_range") is not None:
+        payload["inner_os_sleep_growth_playfulness_range"] = report["inner_os_sleep_growth_playfulness_range"]
+    if report.get("inner_os_sleep_growth_self_coherence") is not None:
+        payload["inner_os_sleep_growth_self_coherence"] = report["inner_os_sleep_growth_self_coherence"]
+    if report.get("inner_os_sleep_growth_dominant_transition"):
+        payload["inner_os_sleep_growth_dominant_transition"] = report["inner_os_sleep_growth_dominant_transition"]
+    if report.get("inner_os_sleep_growth_bond_axis") is not None:
+        payload["inner_os_sleep_growth_bond_axis"] = report["inner_os_sleep_growth_bond_axis"]
+    if report.get("inner_os_sleep_growth_stability_axis") is not None:
+        payload["inner_os_sleep_growth_stability_axis"] = report["inner_os_sleep_growth_stability_axis"]
+    if report.get("inner_os_sleep_growth_curiosity_axis") is not None:
+        payload["inner_os_sleep_growth_curiosity_axis"] = report["inner_os_sleep_growth_curiosity_axis"]
+    if report.get("inner_os_sleep_memory_dynamics_mode"):
+        payload["inner_os_sleep_memory_dynamics_mode"] = report["inner_os_sleep_memory_dynamics_mode"]
+    if report.get("inner_os_sleep_memory_dominant_link"):
+        payload["inner_os_sleep_memory_dominant_link"] = report["inner_os_sleep_memory_dominant_link"]
+    if report.get("inner_os_sleep_memory_monument_kind"):
+        payload["inner_os_sleep_memory_monument_kind"] = report["inner_os_sleep_memory_monument_kind"]
+    if report.get("inner_os_sleep_memory_monument_salience") is not None:
+        payload["inner_os_sleep_memory_monument_salience"] = report["inner_os_sleep_memory_monument_salience"]
+    if report.get("inner_os_sleep_memory_ignition_readiness") is not None:
+        payload["inner_os_sleep_memory_ignition_readiness"] = report["inner_os_sleep_memory_ignition_readiness"]
+    if report.get("inner_os_sleep_memory_consolidation_pull") is not None:
+        payload["inner_os_sleep_memory_consolidation_pull"] = report["inner_os_sleep_memory_consolidation_pull"]
+    if report.get("inner_os_sleep_memory_tension") is not None:
+        payload["inner_os_sleep_memory_tension"] = report["inner_os_sleep_memory_tension"]
+    if report.get("inner_os_sleep_memory_topology_axis") is not None:
+        payload["inner_os_sleep_memory_topology_axis"] = report["inner_os_sleep_memory_topology_axis"]
+    if report.get("inner_os_sleep_memory_salience_axis") is not None:
+        payload["inner_os_sleep_memory_salience_axis"] = report["inner_os_sleep_memory_salience_axis"]
+    if report.get("inner_os_sleep_memory_ignition_axis") is not None:
+        payload["inner_os_sleep_memory_ignition_axis"] = report["inner_os_sleep_memory_ignition_axis"]
+    if report.get("inner_os_sleep_memory_consolidation_axis") is not None:
+        payload["inner_os_sleep_memory_consolidation_axis"] = report["inner_os_sleep_memory_consolidation_axis"]
+    if report.get("inner_os_sleep_memory_tension_axis") is not None:
+        payload["inner_os_sleep_memory_tension_axis"] = report["inner_os_sleep_memory_tension_axis"]
     json_path = out_path / "nightly.json"
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return json_path

@@ -1,7 +1,9 @@
 ﻿from __future__ import annotations
 
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field, asdict, replace
-from typing import Any, Dict, Mapping, Optional
+from types import SimpleNamespace
+from typing import Any, Dict, Mapping, MutableMapping, Optional
 
 import numpy as np
 
@@ -14,6 +16,13 @@ from .hook_contracts import (
 )
 from .memory_core import MemoryCore
 from .development_core import DevelopmentCore
+from .development_transition_policy import derive_growth_state
+from .epistemic_update_policy import derive_epistemic_state
+from .external_field_state import derive_external_field_state
+from .memory_dynamics import derive_memory_dynamics_state
+from .joint_state import derive_joint_state
+from .organism_state import derive_organism_state
+from .terrain_dynamics import derive_terrain_dynamics_state
 from .reinterpretation_core import ReinterpretationCore
 from .environment_pressure_core import EnvironmentPressureCore
 from .relationship_core import RelationshipCore
@@ -36,8 +45,8 @@ from .interaction import (
 )
 from .interaction.models import SituationState
 from .interaction_option_search import generate_interaction_option_candidates
-from .action_posture import derive_action_posture
-from .actuation_plan import derive_actuation_plan
+from .action_posture import coerce_action_posture_contract, derive_action_posture
+from .actuation_plan import coerce_actuation_plan_contract, derive_actuation_plan
 from .access_dynamics import advance_access_dynamics
 from .access_projection import project_access_regions
 from .affect_blend import derive_affect_blend_state
@@ -77,15 +86,29 @@ from .interaction_inspection_report import build_interaction_inspection_report
 from .interaction_judgement_summary import derive_interaction_judgement_summary
 from .interaction_judgement_view import derive_interaction_judgement_view
 from .issue_state import derive_issue_state
-from .policy_packet import derive_interaction_policy_packet
+from .policy_packet import coerce_interaction_policy_packet, derive_interaction_policy_packet
 from .discussion_thread_state import derive_discussion_thread_state
 from .object_operations import derive_object_operations
 from .qualia_membrane_operator import derive_qualia_membrane_temporal_bias
+from .qualia_structure_state import derive_qualia_structure_state
 from .qualia_kernel_adapter import RuntimeQualiaKernelAdapter
 from .recent_dialogue_state import derive_recent_dialogue_state
 from .resonance_evaluator import (
     evaluate_interaction_resonance,
     rerank_interaction_option_candidates,
+)
+from .expression_hints_contract import (
+    ExpressionHintsContract,
+    coerce_expression_hints_contract,
+)
+from .expression_hint_bundles import (
+    coerce_field_regulation_hint_bundle_contract,
+    coerce_interaction_audit_hint_bundle_contract,
+    coerce_interaction_reasoning_hint_bundle_contract,
+    coerce_qualia_hint_bundle_contract,
+    coerce_scene_hint_bundle_contract,
+    coerce_terrain_insight_hint_bundle_contract,
+    coerce_workspace_hint_bundle_contract,
 )
 from .relational_world import RelationalWorldCore
 from .scene_state import derive_scene_state
@@ -100,6 +123,7 @@ from .relation_competition import (
     derive_relation_competition_state,
     summarize_person_registry_snapshot,
 )
+from .risk_token_policy import derive_current_risk_token_policy
 from .terrain_plasticity import (
     TerrainPlasticityUpdate,
     apply_terrain_plasticity,
@@ -202,6 +226,476 @@ CORE_AXIS_WEIGHTS = {
     "inertia_clarity_gap": 0.14,
     "inertia_continuity_relief": 0.06,
 }
+
+
+def _export_hook_value(value: Any) -> Any:
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        return _export_hook_value(to_dict())
+    if isinstance(value, MappingABC):
+        return {str(key): _export_hook_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_export_hook_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_export_hook_value(item) for item in value]
+    return value
+
+
+def _export_hook_mapping(value: Mapping[str, Any] | None) -> Dict[str, Any]:
+    return {
+        str(key): _export_hook_value(item)
+        for key, item in (value or {}).items()
+    }
+
+
+def _apply_scene_hint_bundle_views(
+    expression_hints: MutableMapping[str, Any],
+    scene_hint_bundle: Mapping[str, Any],
+) -> None:
+    bundle = coerce_scene_hint_bundle_contract(scene_hint_bundle)
+    expression_hints["scene_hint_bundle"] = bundle
+    expression_hints["scene_state"] = dict(bundle.get("scene_state") or {})
+    expression_hints["scene_family"] = str(bundle.get("scene_family") or "")
+    expression_hints["interaction_option_candidates"] = list(
+        bundle.get("interaction_option_candidates") or []
+    )
+    expression_hints["top_interaction_option_family"] = str(
+        bundle.get("top_interaction_option_family") or ""
+    )
+
+
+def _apply_workspace_hint_bundle_views(
+    expression_hints: MutableMapping[str, Any],
+    workspace_hint_bundle: Mapping[str, Any],
+) -> None:
+    bundle = coerce_workspace_hint_bundle_contract(workspace_hint_bundle)
+    expression_hints["workspace_hint_bundle"] = bundle
+    expression_hints["conscious_workspace"] = dict(
+        bundle.get("conscious_workspace") or {}
+    )
+    expression_hints["conscious_workspace_mode"] = bundle.get(
+        "conscious_workspace_mode"
+    )
+    expression_hints["conscious_workspace_reportable_slice"] = list(
+        bundle.get("conscious_workspace_reportable_slice") or []
+    )
+    expression_hints["conscious_workspace_withheld_slice"] = list(
+        bundle.get("conscious_workspace_withheld_slice") or []
+    )
+    expression_hints["conscious_workspace_actionable_slice"] = list(
+        bundle.get("conscious_workspace_actionable_slice") or []
+    )
+    expression_hints["conscious_workspace_ignition_phase"] = str(
+        bundle.get("conscious_workspace_ignition_phase") or ""
+    )
+    expression_hints["conscious_workspace_slot_scores"] = dict(
+        bundle.get("conscious_workspace_slot_scores") or {}
+    )
+    expression_hints["conscious_workspace_winner_margin"] = float(
+        bundle.get("conscious_workspace_winner_margin") or 0.0
+    )
+    expression_hints["conscious_workspace_dominant_inputs"] = list(
+        bundle.get("conscious_workspace_dominant_inputs") or []
+    )
+
+
+def _apply_interaction_reasoning_hint_bundle_views(
+    expression_hints: MutableMapping[str, Any],
+    interaction_reasoning_hint_bundle: Mapping[str, Any],
+) -> None:
+    bundle = coerce_interaction_reasoning_hint_bundle_contract(
+        interaction_reasoning_hint_bundle
+    )
+    expression_hints["interaction_reasoning_hint_bundle"] = bundle
+    expression_hints["conversational_objects"] = dict(
+        bundle.get("conversational_objects") or {}
+    )
+    expression_hints["conversational_object_labels"] = list(
+        bundle.get("conversational_object_labels") or []
+    )
+    expression_hints["conversational_object_pressure_balance"] = float(
+        bundle.get("conversational_object_pressure_balance") or 0.0
+    )
+    expression_hints["object_operations"] = dict(
+        bundle.get("object_operations") or {}
+    )
+    expression_hints["object_operation_question_budget"] = float(
+        bundle.get("object_operation_question_budget") or 0.0
+    )
+    expression_hints["object_operation_question_pressure"] = float(
+        bundle.get("object_operation_question_pressure") or 0.0
+    )
+    expression_hints["object_operation_defer_dominance"] = float(
+        bundle.get("object_operation_defer_dominance") or 0.0
+    )
+    expression_hints["interaction_effects"] = dict(
+        bundle.get("interaction_effects") or {}
+    )
+    expression_hints["interaction_judgement_view"] = dict(
+        bundle.get("interaction_judgement_view") or {}
+    )
+    expression_hints["interaction_judgement_summary"] = dict(
+        bundle.get("interaction_judgement_summary") or {}
+    )
+    expression_hints["interaction_condition_report"] = dict(
+        bundle.get("interaction_condition_report") or {}
+    )
+    expression_hints["interaction_inspection_report"] = dict(
+        bundle.get("interaction_inspection_report") or {}
+    )
+
+
+def _apply_interaction_audit_hint_bundle_views(
+    expression_hints: MutableMapping[str, Any],
+    interaction_audit_hint_bundle: Mapping[str, Any],
+) -> None:
+    bundle = coerce_interaction_audit_hint_bundle_contract(
+        interaction_audit_hint_bundle
+    )
+    expression_hints["interaction_audit_hint_bundle"] = bundle
+    expression_hints["interaction_audit_bundle"] = dict(
+        bundle.get("interaction_audit_bundle") or {}
+    )
+    expression_hints["interaction_audit_casebook"] = dict(
+        bundle.get("interaction_audit_casebook") or {}
+    )
+    expression_hints["interaction_audit_report"] = dict(
+        bundle.get("interaction_audit_report") or {}
+    )
+    expression_hints["interaction_audit_reference_case_ids"] = list(
+        bundle.get("interaction_audit_reference_case_ids") or []
+    )
+    expression_hints["interaction_audit_reference_case_meta"] = dict(
+        bundle.get("interaction_audit_reference_case_meta") or {}
+    )
+
+
+def _apply_qualia_hint_bundle_views(
+    expression_hints: MutableMapping[str, Any],
+    qualia_hint_bundle: Mapping[str, Any],
+) -> None:
+    bundle = coerce_qualia_hint_bundle_contract(qualia_hint_bundle)
+    expression_hints["qualia_hint_bundle"] = bundle
+    expression_hints["qualia_state"] = dict(bundle.get("qualia_state") or {})
+    expression_hints["qualia_estimator_health"] = dict(
+        bundle.get("qualia_estimator_health") or {}
+    )
+    expression_hints["qualia_protection_grad_x"] = list(
+        bundle.get("qualia_protection_grad_x") or []
+    )
+    expression_hints["qualia_axis_labels"] = list(
+        bundle.get("qualia_axis_labels") or []
+    )
+    expression_hints["qualia_planner_view"] = dict(
+        bundle.get("qualia_planner_view") or {}
+    )
+    expression_hints["qualia_hint_source"] = str(
+        bundle.get("qualia_hint_source") or "none"
+    )
+    expression_hints["qualia_hint_version"] = str(
+        bundle.get("qualia_hint_version") or ""
+    )
+    expression_hints["qualia_hint_fallback_reason"] = str(
+        bundle.get("qualia_hint_fallback_reason") or ""
+    )
+    expression_hints["qualia_hint_expected_source"] = str(
+        bundle.get("qualia_hint_expected_source") or ""
+    )
+    expression_hints["qualia_hint_expected_mismatch"] = bool(
+        bundle.get("qualia_hint_expected_mismatch", False)
+    )
+
+
+def _apply_field_regulation_hint_bundle_views(
+    expression_hints: MutableMapping[str, Any],
+    field_regulation_hint_bundle: Mapping[str, Any],
+) -> None:
+    bundle = coerce_field_regulation_hint_bundle_contract(
+        field_regulation_hint_bundle
+    )
+    expression_hints["field_regulation_hint_bundle"] = bundle
+    expression_hints["contact_field"] = dict(bundle.get("contact_field") or {})
+    expression_hints["contact_dynamics"] = dict(
+        bundle.get("contact_dynamics") or {}
+    )
+    expression_hints["contact_dynamics_mode"] = str(
+        bundle.get("contact_dynamics_mode") or ""
+    )
+    expression_hints["contact_reflection_state"] = dict(
+        bundle.get("contact_reflection_state") or {}
+    )
+    expression_hints["access_projection"] = dict(
+        bundle.get("access_projection") or {}
+    )
+    expression_hints["access_dynamics"] = dict(
+        bundle.get("access_dynamics") or {}
+    )
+    expression_hints["access_dynamics_mode"] = str(
+        bundle.get("access_dynamics_mode") or ""
+    )
+    expression_hints["affect_blend_state"] = dict(
+        bundle.get("affect_blend_state") or {}
+    )
+    expression_hints["constraint_field"] = dict(
+        bundle.get("constraint_field") or {}
+    )
+
+
+def _apply_terrain_insight_hint_bundle_views(
+    expression_hints: MutableMapping[str, Any],
+    terrain_insight_hint_bundle: Mapping[str, Any],
+) -> None:
+    bundle = coerce_terrain_insight_hint_bundle_contract(
+        terrain_insight_hint_bundle
+    )
+    expression_hints["terrain_insight_hint_bundle"] = bundle
+    expression_hints["affective_position"] = dict(
+        bundle.get("affective_position") or {}
+    )
+    expression_hints["affective_position_confidence"] = float(
+        bundle.get("affective_position_confidence") or 0.0
+    )
+    expression_hints["affective_terrain_state"] = dict(
+        bundle.get("affective_terrain_state") or {}
+    )
+    expression_hints["terrain_readout"] = dict(bundle.get("terrain_readout") or {})
+    expression_hints["terrain_active_patch_label"] = str(
+        bundle.get("terrain_active_patch_label") or ""
+    )
+    expression_hints["protection_mode"] = dict(bundle.get("protection_mode") or {})
+    expression_hints["protection_mode_name"] = str(
+        bundle.get("protection_mode_name") or ""
+    )
+    expression_hints["protection_mode_strength"] = float(
+        bundle.get("protection_mode_strength") or 0.0
+    )
+    expression_hints["association_graph"] = dict(
+        bundle.get("association_graph") or {}
+    )
+    expression_hints["association_graph_winner_margin"] = float(
+        bundle.get("association_graph_winner_margin") or 0.0
+    )
+    expression_hints["association_graph_dominant_inputs"] = list(
+        bundle.get("association_graph_dominant_inputs") or []
+    )
+    expression_hints["insight_event"] = dict(bundle.get("insight_event") or {})
+    expression_hints["resonance_evaluation"] = dict(
+        bundle.get("resonance_evaluation") or {}
+    )
+
+
+def _apply_interaction_policy_packet_views(
+    expression_hints: MutableMapping[str, Any],
+    interaction_policy_packet: Mapping[str, Any],
+) -> None:
+    packet = coerce_interaction_policy_packet(interaction_policy_packet)
+    expressive_style_state = dict(packet.get("expressive_style_state") or {})
+    relational_style_memory_state = dict(
+        packet.get("relational_style_memory_state") or {}
+    )
+    cultural_conversation_state = dict(
+        packet.get("cultural_conversation_state") or {}
+    )
+    lightness_budget_state = dict(packet.get("lightness_budget_state") or {})
+    shared_moment_state = dict(packet.get("shared_moment_state") or {})
+    appraisal_state = dict(packet.get("appraisal_state") or {})
+    listener_action_state = dict(packet.get("listener_action_state") or {})
+    learning_mode_state = dict(packet.get("learning_mode_state") or {})
+    social_experiment_loop_state = dict(
+        packet.get("social_experiment_loop_state") or {}
+    )
+    utterance_reason_packet = dict(packet.get("utterance_reason_packet") or {})
+
+    expression_hints["interaction_policy_packet"] = packet
+    expression_hints["interaction_policy_dialogue_act"] = packet["dialogue_act"]
+    expression_hints["interaction_policy_strategy"] = packet["response_strategy"]
+    expression_hints["interaction_policy_opening_move"] = packet["opening_move"]
+    expression_hints["interaction_policy_followup_move"] = packet["followup_move"]
+    expression_hints["interaction_policy_closing_move"] = packet["closing_move"]
+    expression_hints["interaction_policy_disclosure_depth"] = packet[
+        "disclosure_depth"
+    ]
+    expression_hints["interaction_policy_memory_write_priority"] = packet[
+        "memory_write_priority"
+    ]
+    expression_hints["interaction_policy_memory_write_class"] = packet[
+        "memory_write_class"
+    ]
+    expression_hints["interaction_policy_memory_write_class_reason"] = packet[
+        "memory_write_class_reason"
+    ]
+    expression_hints["interaction_policy_memory_write_class_bias"] = packet[
+        "memory_write_class_bias"
+    ]
+    expression_hints["interaction_policy_protection_mode_decision"] = packet[
+        "protection_mode_decision"
+    ]
+    expression_hints["interaction_policy_body_recovery_guard"] = packet[
+        "body_recovery_guard"
+    ]
+    expression_hints["interaction_policy_body_homeostasis_state"] = packet[
+        "body_homeostasis_state"
+    ]
+    expression_hints["interaction_policy_homeostasis_budget_state"] = packet[
+        "homeostasis_budget_state"
+    ]
+    expression_hints["interaction_policy_initiative_readiness"] = packet[
+        "initiative_readiness"
+    ]
+    expression_hints["interaction_policy_agenda_state"] = packet["agenda_state"]
+    expression_hints["interaction_policy_agenda_window_state"] = packet[
+        "agenda_window_state"
+    ]
+    expression_hints["interaction_policy_commitment_state"] = packet[
+        "commitment_state"
+    ]
+    expression_hints["interaction_policy_learning_mode_state"] = packet[
+        "learning_mode_state"
+    ]
+    expression_hints["interaction_policy_social_experiment_loop_state"] = packet[
+        "social_experiment_loop_state"
+    ]
+    expression_hints["interaction_policy_identity_arc_kind"] = packet[
+        "identity_arc_kind"
+    ]
+    expression_hints["interaction_policy_identity_arc_phase"] = packet[
+        "identity_arc_phase"
+    ]
+    expression_hints["interaction_policy_identity_arc_summary"] = packet[
+        "identity_arc_summary"
+    ]
+    expression_hints["interaction_policy_identity_arc_open_tension"] = packet[
+        "identity_arc_open_tension"
+    ]
+    expression_hints["interaction_policy_identity_arc_stability"] = packet[
+        "identity_arc_stability"
+    ]
+    expression_hints["interaction_policy_contact_reflection_state"] = dict(
+        packet.get("contact_reflection_state") or {}
+    )
+    expression_hints["interaction_policy_relational_style_memory_state"] = packet[
+        "relational_style_memory_state"
+    ]
+    expression_hints["interaction_policy_cultural_conversation_state"] = packet[
+        "cultural_conversation_state"
+    ]
+    expression_hints["interaction_policy_expressive_style_state"] = packet[
+        "expressive_style_state"
+    ]
+    expression_hints["interaction_policy_lightness_budget_state"] = packet[
+        "lightness_budget_state"
+    ]
+    expression_hints["interaction_policy_shared_moment_state"] = packet[
+        "shared_moment_state"
+    ]
+    expression_hints["interaction_policy_appraisal_state"] = packet[
+        "appraisal_state"
+    ]
+    expression_hints["interaction_policy_listener_action_state"] = packet[
+        "listener_action_state"
+    ]
+    expression_hints["interaction_policy_meaning_update_state"] = packet[
+        "meaning_update_state"
+    ]
+    expression_hints["interaction_policy_utterance_reason_packet"] = packet[
+        "utterance_reason_packet"
+    ]
+    expression_hints["interaction_policy_relational_continuity_state"] = packet[
+        "relational_continuity_state"
+    ]
+    expression_hints["interaction_policy_relation_competition_state"] = packet[
+        "relation_competition_state"
+    ]
+    expression_hints["interaction_policy_social_topology_state"] = packet[
+        "social_topology_state"
+    ]
+    expression_hints["interaction_policy_active_relation_table"] = packet[
+        "active_relation_table"
+    ]
+    expression_hints["interaction_policy_association_reweighting_focus"] = packet[
+        "association_reweighting_focus"
+    ]
+    expression_hints["interaction_policy_association_reweighting_reason"] = packet[
+        "association_reweighting_reason"
+    ]
+    expression_hints["interaction_policy_insight_terrain_shape_target"] = packet[
+        "insight_terrain_shape_target"
+    ]
+    expression_hints["interaction_policy_overnight_bias_roles"] = packet[
+        "overnight_bias_roles"
+    ]
+    expression_hints["interaction_policy_reaction_vs_overnight_bias"] = packet[
+        "reaction_vs_overnight_bias"
+    ]
+
+    expression_hints["surface_voice_texture"] = str(
+        expressive_style_state.get("state") or "grounded_gentle"
+    )
+    expression_hints["surface_lightness_room"] = round(
+        float(expressive_style_state.get("lightness_room") or 0.0),
+        4,
+    )
+    expression_hints["surface_continuity_weight"] = round(
+        float(expressive_style_state.get("continuity_weight") or 0.0),
+        4,
+    )
+    expression_hints["surface_relational_voice_texture"] = str(
+        relational_style_memory_state.get("state") or "grounded_gentle"
+    )
+    expression_hints["surface_relational_playful_ceiling"] = round(
+        float(relational_style_memory_state.get("playful_ceiling") or 0.0),
+        4,
+    )
+    expression_hints["surface_cultural_register"] = str(
+        cultural_conversation_state.get("state") or "careful_polite"
+    )
+    expression_hints["surface_cultural_joke_ratio_ceiling"] = round(
+        float(cultural_conversation_state.get("joke_ratio_ceiling") or 0.0),
+        4,
+    )
+    expression_hints["surface_lightness_budget_state"] = str(
+        lightness_budget_state.get("state") or "grounded_only"
+    )
+    expression_hints["surface_lightness_banter_room"] = round(
+        float(lightness_budget_state.get("banter_room") or 0.0),
+        4,
+    )
+    expression_hints["surface_shared_moment_state"] = str(
+        shared_moment_state.get("state") or "none"
+    )
+    expression_hints["surface_shared_moment_kind"] = str(
+        shared_moment_state.get("moment_kind") or ""
+    )
+    expression_hints["surface_appraisal_state"] = str(
+        appraisal_state.get("state") or "none"
+    )
+    expression_hints["surface_appraisal_shared_shift"] = str(
+        appraisal_state.get("shared_shift") or ""
+    )
+    expression_hints["surface_listener_action_state"] = str(
+        listener_action_state.get("state") or "none"
+    )
+    expression_hints["surface_listener_token_profile"] = str(
+        listener_action_state.get("token_profile") or ""
+    )
+    expression_hints["surface_utterance_reason_offer"] = str(
+        utterance_reason_packet.get("offer") or ""
+    )
+    expression_hints["surface_learning_mode_state"] = str(
+        learning_mode_state.get("state") or "observe_only"
+    )
+    expression_hints["surface_social_experiment_state"] = str(
+        social_experiment_loop_state.get("state") or "watch_and_read"
+    )
+    expression_hints["surface_identity_arc_kind"] = str(
+        packet.get("identity_arc_kind") or ""
+    )
+    expression_hints["surface_identity_arc_phase"] = str(
+        packet.get("identity_arc_phase") or ""
+    )
+    expression_hints["surface_identity_arc_open_tension"] = str(
+        packet.get("identity_arc_open_tension") or ""
+    )
 
 RESPONSE_GATE_WEIGHTS = {
     "hesitation_stress": 0.45,
@@ -379,28 +873,28 @@ class HookState:
 @dataclass
 class PreTurnUpdateResult:
     state: HookState
-    interaction_hints: Dict[str, Any] = field(default_factory=dict)
+    interaction_hints: Mapping[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "state": self.state.to_dict(),
-            "interaction_hints": dict(self.interaction_hints),
+            "interaction_hints": _export_hook_mapping(self.interaction_hints),
         }
 
 
 @dataclass
 class MemoryRecallResult:
-    recall_payload: Dict[str, Any] = field(default_factory=dict)
-    retrieval_summary: Dict[str, Any] = field(default_factory=dict)
-    ignition_hints: Dict[str, Any] = field(default_factory=dict)
-    memory_evidence_bundle: Dict[str, Any] = field(default_factory=dict)
+    recall_payload: Mapping[str, Any] = field(default_factory=dict)
+    retrieval_summary: Mapping[str, Any] = field(default_factory=dict)
+    ignition_hints: Mapping[str, Any] = field(default_factory=dict)
+    memory_evidence_bundle: Mapping[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "recall_payload": dict(self.recall_payload),
-            "retrieval_summary": dict(self.retrieval_summary),
-            "ignition_hints": dict(self.ignition_hints),
-            "memory_evidence_bundle": dict(self.memory_evidence_bundle),
+            "recall_payload": _export_hook_mapping(self.recall_payload),
+            "retrieval_summary": _export_hook_mapping(self.retrieval_summary),
+            "ignition_hints": _export_hook_mapping(self.ignition_hints),
+            "memory_evidence_bundle": _export_hook_mapping(self.memory_evidence_bundle),
         }
 
 
@@ -410,8 +904,15 @@ class ResponseGateResult:
     route: str
     allowed_surface_intensity: float
     hesitation_bias: float
-    conscious_access: Dict[str, Any] = field(default_factory=dict)
-    expression_hints: Dict[str, Any] = field(default_factory=dict)
+    conscious_access: Mapping[str, Any] = field(default_factory=dict)
+    expression_hints: MutableMapping[str, Any] = field(
+        default_factory=ExpressionHintsContract
+    )
+
+    def __post_init__(self) -> None:
+        self.expression_hints = coerce_expression_hints_contract(
+            self.expression_hints
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -419,26 +920,26 @@ class ResponseGateResult:
             "route": self.route,
             "allowed_surface_intensity": float(self.allowed_surface_intensity),
             "hesitation_bias": float(self.hesitation_bias),
-            "conscious_access": dict(self.conscious_access),
-            "expression_hints": dict(self.expression_hints),
+            "conscious_access": _export_hook_mapping(self.conscious_access),
+            "expression_hints": _export_hook_mapping(self.expression_hints),
         }
 
 
 @dataclass
 class PostTurnUpdateResult:
     state: HookState
-    memory_appends: list[Dict[str, Any]] = field(default_factory=list)
-    audit_record: Dict[str, Any] = field(default_factory=dict)
-    person_registry_snapshot: Dict[str, Any] = field(default_factory=dict)
-    group_thread_registry_snapshot: Dict[str, Any] = field(default_factory=dict)
+    memory_appends: list[Mapping[str, Any]] = field(default_factory=list)
+    audit_record: Mapping[str, Any] = field(default_factory=dict)
+    person_registry_snapshot: Mapping[str, Any] = field(default_factory=dict)
+    group_thread_registry_snapshot: Mapping[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "state": self.state.to_dict(),
-            "memory_appends": list(self.memory_appends),
-            "audit_record": dict(self.audit_record),
-            "person_registry_snapshot": dict(self.person_registry_snapshot),
-            "group_thread_registry_snapshot": dict(self.group_thread_registry_snapshot),
+            "memory_appends": [_export_hook_value(item) for item in self.memory_appends],
+            "audit_record": _export_hook_mapping(self.audit_record),
+            "person_registry_snapshot": _export_hook_mapping(self.person_registry_snapshot),
+            "group_thread_registry_snapshot": _export_hook_mapping(self.group_thread_registry_snapshot),
         }
 
 
@@ -899,7 +1400,7 @@ class IntegrationHooks:
             partner_address_hint=partner_address_hint,
             partner_timing_hint=partner_timing_hint,
             partner_stance_hint=partner_stance_hint,
-            partner_social_interpretation=partner_social_interpretation,
+            partner_social_interpretation=str(partner_social_interpretation or "").strip(),
             long_term_theme_focus=working_memory.long_term_theme_focus,
             long_term_theme_anchor=working_memory.long_term_theme_anchor,
             long_term_theme_kind=working_memory.long_term_theme_kind,
@@ -910,6 +1411,177 @@ class IntegrationHooks:
             conscious_residue_summary=working_memory.conscious_residue_summary,
             conscious_residue_strength=working_memory.conscious_residue_strength,
         )
+        growth_state = derive_growth_state(
+            previous_growth=(current_state or {}).get("growth_state"),
+            development_state=development.to_dict(),
+        )
+        epistemic_state = derive_epistemic_state(
+            previous_epistemic=(current_state or {}).get("epistemic_state"),
+            current_state=current_state,
+        )
+        memory_dynamics_state = derive_memory_dynamics_state(
+            previous_state=(current_state or {}).get("memory_dynamics_state"),
+            memory_orchestration={
+                "monument_salience": (current_state or {}).get("monument_salience"),
+                "monument_kind": (current_state or {}).get("monument_kind"),
+                "reuse_trajectory": (current_state or {}).get("reuse_trajectory"),
+                "interference_pressure": (current_state or {}).get("interference_pressure"),
+                "consolidation_priority": (current_state or {}).get("consolidation_priority"),
+                "prospective_memory_pull": (current_state or {}).get("prospective_memory_pull"),
+            },
+            association_graph=(current_state or {}).get("association_graph_state"),
+            forgetting_snapshot={
+                "forgetting_pressure": (current_state or {}).get("forgetting_pressure"),
+            },
+            activation_trace=local_context.get("activation_trace") or (current_state or {}).get("activation_trace"),
+            memory_palace_state=local_context.get("memory_palace_state") or (current_state or {}).get("memory_palace_state"),
+            recall_payload={
+                "memory_anchor": (current_state or {}).get("memory_anchor"),
+            },
+        )
+        external_field_state = derive_external_field_state(
+            previous_state=(current_state or {}).get("external_field_state"),
+            environment_pressure=environment_pressure.to_dict(),
+            social_topology_state=(current_state or {}).get("social_topology_state"),
+            relation_competition_state=(current_state or {}).get("relation_competition_state"),
+            recent_dialogue_state=(current_state or {}).get("recent_dialogue_state"),
+            discussion_thread_state=(current_state or {}).get("discussion_thread_state"),
+            issue_state=(current_state or {}).get("issue_state"),
+            transition_signal=transition_signal,
+            organism_state=(current_state or {}).get("organism_state"),
+        )
+        organism_state = derive_organism_state(
+            previous_state=(current_state or {}).get("organism_state"),
+            growth_state=growth_state.to_dict(),
+            epistemic_state=epistemic_state.to_dict(),
+            qualia_structure_state=(current_state or {}).get("qualia_structure_state"),
+            heartbeat_structure_state=(current_state or {}).get("heartbeat_structure_state"),
+            relation_competition_state=(current_state or {}).get("relation_competition_state"),
+            social_topology_state=(current_state or {}).get("social_topology_state"),
+        )
+        terrain_dynamics_state = derive_terrain_dynamics_state(
+            previous_state=(current_state or {}).get("terrain_dynamics_state"),
+            organism_state=organism_state.to_dict(),
+            external_field_state=external_field_state.to_dict(),
+            memory_dynamics_state=memory_dynamics_state.to_dict(),
+            qualia_structure_state=(current_state or {}).get("qualia_structure_state"),
+            heartbeat_structure_state=(current_state or {}).get("heartbeat_structure_state"),
+            terrain_readout=(current_state or {}).get("terrain_readout"),
+        )
+        joint_state = derive_joint_state(
+            previous_state=(current_state or {}).get("joint_state"),
+            shared_moment_state=(current_state or {}).get("shared_moment_state"),
+            listener_action_state=(current_state or {}).get("listener_action_state"),
+            live_engagement_state=(current_state or {}).get("live_engagement_state"),
+            meaning_update_state=(current_state or {}).get("meaning_update_state"),
+            organism_state=organism_state.to_dict(),
+            external_field_state=external_field_state.to_dict(),
+            terrain_dynamics_state=terrain_dynamics_state.to_dict(),
+            memory_dynamics_state=memory_dynamics_state.to_dict(),
+        )
+        preturn_surface_profile = {
+            "opening_pace_windowed": (
+                "cautious"
+                if talk_mode in {"watch", "ask", "soothe"}
+                else "ready"
+            ),
+            "return_gaze_expectation": str(predicted_nonverbal.gaze_mode or "soft_return"),
+            "response_length": "short",
+            "sentence_temperature": "steady",
+            "pause_insertion": str(predicted_nonverbal.pause_mode or "soft"),
+            "certainty_style": "tentative"
+            if bool(expression_hints.get("avoid_definitive_interpretation", False))
+            else "clear",
+            "voice_texture": "grounded_gentle",
+            "cultural_register": "careful_polite",
+            "lightness_room": 0.0,
+            "continuity_weight": round(float(persistence.continuity_score), 4),
+            "banter_move": "",
+            "lexical_variation_mode": "steady",
+            "group_register": "one_to_one" if counterpart_person_id else "ambient",
+        }
+        preturn_policy_state = {
+            **dict(merged_state),
+            "requested_dialogue_act": str(current_state.get("requested_dialogue_act") or "").strip() or None,
+            "surface_user_text": str(user_input.get("text") or "").strip(),
+            "related_person_id": counterpart_person_id or "",
+            "related_person_ids": list(related_person_ids),
+            "partner_social_interpretation": partner_social_interpretation,
+            "growth_state": growth_state.to_dict(),
+            "epistemic_state": epistemic_state.to_dict(),
+            "memory_dynamics_state": memory_dynamics_state.to_dict(),
+            "external_field_state": external_field_state.to_dict(),
+            "organism_state": organism_state.to_dict(),
+            "joint_state": joint_state.to_dict(),
+            "terrain_dynamics_state": terrain_dynamics_state.to_dict(),
+        }
+        preturn_policy_packet = coerce_interaction_policy_packet(
+            derive_interaction_policy_packet(
+                dialogue_act=str(current_state.get("requested_dialogue_act") or "report"),
+                observed_text=str(user_input.get("text") or "").strip(),
+                locale="ja-JP",
+                current_focus=working_memory.current_focus,
+                current_risks=[],
+                reportable_facts=[working_memory.current_focus]
+                if working_memory.current_focus and working_memory.current_focus != "ambient"
+                else [],
+                relation_bias_strength=predicted_relation_bias,
+                related_person_ids=related_person_ids,
+                partner_address_hint=partner_address_hint,
+                partner_timing_hint=partner_timing_hint,
+                partner_stance_hint=partner_stance_hint,
+                partner_social_interpretation=str(partner_social_interpretation or "").strip(),
+                recent_strain=persistence.recent_strain,
+                orchestration={
+                    "orchestration_mode": "attune" if talk_mode in {"watch", "soothe", "ask"} else "advance",
+                    "dominant_driver": "shared_attention" if counterpart_person_id else "ambient_presence",
+                    "contact_readiness": predicted_situation_state.shared_attention,
+                    "coherence_score": persistence.continuity_score,
+                    "human_presence_signal": 1.0 if counterpart_person_id or person_count > 0 else 0.0,
+                    "distance_strategy": predicted_nonverbal.proximity_mode,
+                    "repair_bias": predicted_situation_state.repair_window_open,
+                },
+                surface_profile=preturn_surface_profile,
+                live_regulation=SimpleNamespace(
+                    repair_window_open=predicted_situation_state.repair_window_open,
+                    strained_pause=max(float(temporal_pressure) - 0.28, 0.0),
+                    future_loop_pull=max(float(future_signal), 0.0),
+                    fantasy_loop_pull=0.0,
+                    distance_expectation=predicted_nonverbal.proximity_mode,
+                ),
+                scene_state={
+                    "scene_mode": predicted_situation_state.scene_mode,
+                    "current_phase": predicted_situation_state.current_phase,
+                    "repair_window_open": predicted_situation_state.repair_window_open,
+                    "shared_attention": predicted_situation_state.shared_attention,
+                    "social_pressure": predicted_situation_state.social_pressure,
+                    "continuity_weight": predicted_situation_state.continuity_weight,
+                },
+                interaction_option_candidates=[],
+                affect_blend_state={},
+                constraint_field={},
+                conscious_workspace={},
+                resonance_evaluation={},
+                conversational_objects={},
+                object_operations={},
+                interaction_effects={},
+                interaction_judgement_view={},
+                qualia_planner_view={},
+                affective_position={},
+                terrain_readout={},
+                protection_mode={},
+                insight_event={},
+                external_field_state=external_field_state.to_dict(),
+                terrain_dynamics_state=terrain_dynamics_state.to_dict(),
+                self_state=preturn_policy_state,
+            )
+        )
+        expression_hints["interaction_policy_packet"] = preturn_policy_packet
+        expression_hints["interaction_policy_dialogue_act"] = preturn_policy_packet["dialogue_act"]
+        expression_hints["interaction_policy_strategy"] = preturn_policy_packet["response_strategy"]
+        expression_hints["interaction_policy_opening_move"] = preturn_policy_packet["opening_move"]
+        expression_hints["interaction_policy_followup_move"] = preturn_policy_packet["followup_move"]
+        expression_hints["interaction_policy_closing_move"] = preturn_policy_packet["closing_move"]
         return PreTurnUpdateResult(
             state=state,
             interaction_hints={
@@ -946,6 +1618,34 @@ class IntegrationHooks:
                 "working_memory": working_memory.to_dict(),
                 "working_memory_trace": working_memory_trace,
                 "working_memory_seed": dict(working_memory_seed),
+                "growth_state": growth_state.to_dict(),
+                "growth_replay_axes": growth_state.to_replay_axes(
+                    (current_state or {}).get("growth_state")
+                ),
+                "epistemic_state": epistemic_state.to_dict(),
+                "epistemic_packet_axes": epistemic_state.to_packet_axes(
+                    (current_state or {}).get("epistemic_state")
+                ),
+                "memory_dynamics_state": memory_dynamics_state.to_dict(),
+                "memory_dynamics_axes": memory_dynamics_state.to_packet_axes(
+                    (current_state or {}).get("memory_dynamics_state")
+                ),
+                "external_field_state": external_field_state.to_dict(),
+                "external_field_axes": external_field_state.to_packet_axes(
+                    (current_state or {}).get("external_field_state")
+                ),
+                "organism_state": organism_state.to_dict(),
+                "organism_axes": organism_state.to_packet_axes(
+                    (current_state or {}).get("organism_state")
+                ),
+                "joint_state": joint_state.to_dict(),
+                "joint_axes": joint_state.to_packet_axes(
+                    (current_state or {}).get("joint_state")
+                ),
+                "terrain_dynamics_state": terrain_dynamics_state.to_dict(),
+                "terrain_dynamics_axes": terrain_dynamics_state.to_packet_axes(
+                    (current_state or {}).get("terrain_dynamics_state")
+                ),
                 "predicted_relational_mood": {
                     "future_pull": predicted_relational_mood.future_pull,
                     "reverence": predicted_relational_mood.reverence,
@@ -1406,6 +2106,67 @@ class IntegrationHooks:
                 "temporal_membrane_mode": qualia_membrane_temporal.dominant_mode,
             }
         )
+        growth_state = derive_growth_state(
+            previous_growth=(current_state or {}).get("growth_state"),
+            development_state=development.to_dict(),
+            forgetting_snapshot=forgetting_snapshot,
+        )
+        epistemic_state = derive_epistemic_state(
+            previous_epistemic=(current_state or {}).get("epistemic_state"),
+            current_state=current_state,
+            memory_evidence=recall_payload,
+            observation_state=retrieval,
+        )
+        memory_dynamics_state = derive_memory_dynamics_state(
+            previous_state=(current_state or {}).get("memory_dynamics_state"),
+            memory_orchestration=memory_orchestration,
+            association_graph=(current_state or {}).get("association_graph_state"),
+            forgetting_snapshot=forgetting_snapshot,
+            activation_trace=(current_state or {}).get("activation_trace"),
+            memory_palace_state=(current_state or {}).get("memory_palace_state"),
+            recall_payload=recall_payload,
+            recall_active=True,
+        )
+        external_field_state = derive_external_field_state(
+            previous_state=(current_state or {}).get("external_field_state"),
+            environment_pressure=environment_pressure.to_dict(),
+            social_topology_state=(current_state or {}).get("social_topology_state"),
+            relation_competition_state=(current_state or {}).get("relation_competition_state"),
+            recent_dialogue_state=(current_state or {}).get("recent_dialogue_state"),
+            discussion_thread_state=(current_state or {}).get("discussion_thread_state"),
+            issue_state=(current_state or {}).get("issue_state"),
+            transition_signal=(current_state or {}).get("context_shift"),
+            organism_state=(current_state or {}).get("organism_state"),
+        )
+        organism_state = derive_organism_state(
+            previous_state=(current_state or {}).get("organism_state"),
+            growth_state=growth_state.to_dict(),
+            epistemic_state=epistemic_state.to_dict(),
+            qualia_structure_state=(current_state or {}).get("qualia_structure_state"),
+            heartbeat_structure_state=(current_state or {}).get("heartbeat_structure_state"),
+            relation_competition_state=(current_state or {}).get("relation_competition_state"),
+            social_topology_state=(current_state or {}).get("social_topology_state"),
+        )
+        terrain_dynamics_state = derive_terrain_dynamics_state(
+            previous_state=(current_state or {}).get("terrain_dynamics_state"),
+            organism_state=organism_state.to_dict(),
+            external_field_state=external_field_state.to_dict(),
+            memory_dynamics_state=memory_dynamics_state.to_dict(),
+            qualia_structure_state=(current_state or {}).get("qualia_structure_state"),
+            heartbeat_structure_state=(current_state or {}).get("heartbeat_structure_state"),
+            terrain_readout=(current_state or {}).get("terrain_readout"),
+        )
+        joint_state = derive_joint_state(
+            previous_state=(current_state or {}).get("joint_state"),
+            shared_moment_state=(current_state or {}).get("shared_moment_state"),
+            listener_action_state=(current_state or {}).get("listener_action_state"),
+            live_engagement_state=(current_state or {}).get("live_engagement_state"),
+            meaning_update_state=(current_state or {}).get("meaning_update_state"),
+            organism_state=organism_state.to_dict(),
+            external_field_state=external_field_state.to_dict(),
+            terrain_dynamics_state=terrain_dynamics_state.to_dict(),
+            memory_dynamics_state=memory_dynamics_state.to_dict(),
+        )
 
         return MemoryRecallResult(
             recall_payload=recall_payload,
@@ -1437,6 +2198,34 @@ class IntegrationHooks:
                 "context_shift_trace": context_shift_trace,
                 "working_memory": working_memory.to_dict(),
                 "relation_seed_summary": relation_seed_summary,
+                "growth_state": growth_state.to_dict(),
+                "growth_replay_axes": growth_state.to_replay_axes(
+                    (current_state or {}).get("growth_state")
+                ),
+                "epistemic_state": epistemic_state.to_dict(),
+                "epistemic_packet_axes": epistemic_state.to_packet_axes(
+                    (current_state or {}).get("epistemic_state")
+                ),
+                "memory_dynamics_state": memory_dynamics_state.to_dict(),
+                "memory_dynamics_axes": memory_dynamics_state.to_packet_axes(
+                    (current_state or {}).get("memory_dynamics_state")
+                ),
+                "external_field_state": external_field_state.to_dict(),
+                "external_field_axes": external_field_state.to_packet_axes(
+                    (current_state or {}).get("external_field_state")
+                ),
+                "organism_state": organism_state.to_dict(),
+                "organism_axes": organism_state.to_packet_axes(
+                    (current_state or {}).get("organism_state")
+                ),
+                "joint_state": joint_state.to_dict(),
+                "joint_axes": joint_state.to_packet_axes(
+                    (current_state or {}).get("joint_state")
+                ),
+                "terrain_dynamics_state": terrain_dynamics_state.to_dict(),
+                "terrain_dynamics_axes": terrain_dynamics_state.to_packet_axes(
+                    (current_state or {}).get("terrain_dynamics_state")
+                ),
                 "qualia_membrane_temporal": qualia_membrane_temporal.to_dict(),
             },
             memory_evidence_bundle=memory_evidence_bundle,
@@ -1611,8 +2400,52 @@ class IntegrationHooks:
             relational_mood=relational_mood,
             interaction_trace=observed_trace,
         )
+        scene_social_topology = str(
+            current_state.get("social_topology") or ("one_to_one" if related_person_id else "ambient")
+        )
+        scene_norm_pressure = _clamp01(
+            norm_pressure
+            + (0.28 if partner_stance_hint == "respectful" else 0.0)
+            + (0.18 if partner_timing_hint == "delayed" else 0.0)
+        )
+        scene_privacy_level = _clamp01(
+            _float_from(
+                current_state,
+                "privacy_level",
+                default=max(0.0, min(1.0, 0.48 + relation_bias_strength * 0.28 - scene_norm_pressure * 0.22)),
+            )
+        )
+        scene_safety_margin = _clamp01(
+            _float_from(
+                current_state,
+                "safety_margin",
+                default=max(0.0, 0.82 - safety_bias * 0.46 - recent_strain * 0.18),
+            )
+        )
+        scene_environmental_load = _clamp01(
+            _float_from(
+                current_state,
+                "environmental_load",
+                default=max(stress * 0.48, recovery_need * 0.4, recent_strain * 0.38, safety_bias * 0.44),
+            )
+        )
+        scene_mobility_context = str(current_state.get("mobility_context") or "stationary")
+        risk_token_policy = derive_current_risk_token_policy(
+            safety_bias=safety_bias,
+            stress=stress,
+            recovery_need=recovery_need,
+            recent_strain=recent_strain,
+            privacy_level=scene_privacy_level,
+            social_topology=scene_social_topology,
+            norm_pressure=scene_norm_pressure,
+            safety_margin=scene_safety_margin,
+            environmental_load=scene_environmental_load,
+            mobility_context=scene_mobility_context,
+            task_phase=str(current_state.get("task_phase") or situation_state.current_phase or "ongoing"),
+        )
+        current_risks = list(risk_token_policy.tokens)
         orchestration = orchestrate_interaction(
-            current_risks=["danger"] if safety_bias > 0.32 else [],
+            current_risks=current_risks,
             situation_state=situation_state,
             relational_mood=relational_mood,
             nonverbal_profile=nonverbal_profile,
@@ -1718,6 +2551,9 @@ class IntegrationHooks:
             expression_hints["avoid_definitive_interpretation"] = True
             expression_hints["favor_grounded_observation"] = True
         access_payload = access.to_dict()
+        requested_dialogue_act = _text_or_none(
+            (current_state or {}).get("requested_dialogue_act")
+        )
         if identity_update_strength <= INTENT_THRESHOLDS["identity_clarify"] and access_payload.get("intent") in {"engage", "remember", "answer"}:
             access_payload["intent"] = "clarify"
         elif recalled_reinterpretation_mode == "grounding_deferral" and access_payload.get("intent") in {"engage", "remember", "answer", "listen"}:
@@ -1734,10 +2570,13 @@ class IntegrationHooks:
             access_payload["intent"] = "clarify"
         elif current_focus == "body" and access_payload.get("intent") in {"engage", "answer"}:
             access_payload["intent"] = "soften"
+        if requested_dialogue_act:
+            access_payload["intent"] = requested_dialogue_act
         expression_hints["social_update_strength"] = round(social_update_strength, 4)
         expression_hints["identity_update_strength"] = round(identity_update_strength, 4)
         expression_hints["interaction_afterglow"] = round(interaction_afterglow, 4)
         expression_hints["interaction_afterglow_intent"] = interaction_afterglow_intent
+        expression_hints["requested_dialogue_act"] = requested_dialogue_act
         expression_hints["working_memory_pressure"] = round(working_memory_pressure, 4)
         expression_hints["current_focus"] = current_focus
         expression_hints["pending_meaning"] = round(pending_meaning, 4)
@@ -1810,24 +2649,14 @@ class IntegrationHooks:
         expression_hints["surface_sentence_temperature"] = surface_profile["sentence_temperature"]
         expression_hints["surface_pause_insertion"] = surface_profile["pause_insertion"]
         expression_hints["surface_certainty_style"] = surface_profile["certainty_style"]
+        expression_hints["current_risks"] = list(current_risks)
+        expression_hints["risk_token_policy"] = risk_token_policy.to_dict()
         expression_hints["surface_banter_move"] = str(surface_profile.get("banter_move") or "")
         expression_hints["surface_lexical_variation_mode"] = str(
             surface_profile.get("lexical_variation_mode") or ""
         )
         expression_hints["surface_group_register"] = str(
             surface_profile.get("group_register") or ""
-        )
-        scene_norm_pressure = _clamp01(
-            norm_pressure
-            + (0.28 if partner_stance_hint == "respectful" else 0.0)
-            + (0.18 if partner_timing_hint == "delayed" else 0.0)
-        )
-        scene_privacy_level = _clamp01(
-            _float_from(
-                current_state,
-                "privacy_level",
-                default=max(0.0, min(1.0, 0.48 + relation_bias_strength * 0.28 - scene_norm_pressure * 0.22)),
-            )
         )
         scene_task_phase = (
             str(current_state.get("task_phase") or "")
@@ -1853,22 +2682,14 @@ class IntegrationHooks:
         scene_state = derive_scene_state(
             place_mode=str(current_state.get("place_mode") or "unspecified"),
             privacy_level=scene_privacy_level,
-            social_topology=str(current_state.get("social_topology") or ("one_to_one" if related_person_id else "ambient")),
+            social_topology=scene_social_topology,
             task_phase=scene_task_phase,
             temporal_phase=str(current_state.get("temporal_phase") or situation_state.current_phase or "ongoing"),
             norm_pressure=scene_norm_pressure,
-            safety_margin=_clamp01(
-                _float_from(current_state, "safety_margin", default=max(0.0, 0.82 - safety_bias * 0.46 - recent_strain * 0.18))
-            ),
-            environmental_load=_clamp01(
-                _float_from(
-                    current_state,
-                    "environmental_load",
-                    default=max(stress * 0.48, recovery_need * 0.4, recent_strain * 0.38, safety_bias * 0.44),
-                )
-            ),
-            mobility_context=str(current_state.get("mobility_context") or "stationary"),
-            current_risks=["danger"] if safety_bias > 0.32 else [],
+            safety_margin=scene_safety_margin,
+            environmental_load=scene_environmental_load,
+            mobility_context=scene_mobility_context,
+            current_risks=current_risks,
             active_goals=(["repair"] if scene_task_phase == "repair" else (["coordinate"] if scene_task_phase == "coordination" else [])),
         )
         affect_blend_state = derive_affect_blend_state(
@@ -1900,7 +2721,7 @@ class IntegrationHooks:
             recovery_need=recovery_need,
             safety_bias=safety_bias,
             recent_strain=recent_strain,
-            current_risks=["danger"] if safety_bias > 0.32 else [],
+            current_risks=current_risks,
         )
         qualia_kernel = self.runtime_qualia_adapter.step(
             current_state=current_state,
@@ -1959,7 +2780,7 @@ class IntegrationHooks:
             scene_state=asdict(scene_state),
             current_focus=current_focus,
             reportable_facts=[current_focus] if current_focus and current_focus != "ambient" else [],
-            current_risks=["danger"] if safety_bias > 0.32 else [],
+            current_risks=current_risks,
             related_person_ids=[related_person_id] if related_person_id else [],
             memory_anchor=memory_anchor or current_focus,
             previous_residue=_float_from(current_state, "conscious_residue_strength", default=0.0),
@@ -1984,14 +2805,14 @@ class IntegrationHooks:
             contact_dynamics=contact_dynamics.to_dict(),
             access_projection=access_projection.to_dict(),
             constraint_field=constraint_field.to_dict(),
-            current_risks=["danger"] if safety_bias > 0.32 else [],
+            current_risks=current_risks,
         )
         access_dynamics = advance_access_dynamics(
             access_projection=access_projection.to_dict(),
             previous_access_dynamics=_mapping_or_none(current_state.get("access_dynamics")),
             previous_workspace=_mapping_or_none(current_state.get("conscious_workspace")),
             previous_residue=_float_from(current_state, "conscious_residue_strength", default=0.0),
-            current_risks=["danger"] if safety_bias > 0.32 else [],
+            current_risks=current_risks,
         )
         interaction_option_candidates = generate_interaction_option_candidates(
             scene_state=scene_state,
@@ -2005,7 +2826,7 @@ class IntegrationHooks:
             constraint_field=constraint_field,
             current_focus=current_focus,
             reportable_facts=[current_focus] if current_focus and current_focus != "ambient" else [],
-            current_risks=["danger"] if safety_bias > 0.32 else [],
+            current_risks=current_risks,
             related_person_ids=[related_person_id] if related_person_id else [],
             interaction_option_candidates=interaction_option_candidates,
             memory_anchor=memory_anchor or current_focus,
@@ -2022,7 +2843,7 @@ class IntegrationHooks:
             constraint_field=constraint_field,
             conscious_workspace=provisional_workspace,
             interaction_option_candidates=interaction_option_candidates,
-            current_risks=["danger"] if safety_bias > 0.32 else [],
+            current_risks=current_risks,
         )
         interaction_option_candidates = rerank_interaction_option_candidates(
             interaction_option_candidates=interaction_option_candidates,
@@ -2033,7 +2854,7 @@ class IntegrationHooks:
             constraint_field=constraint_field,
             current_focus=current_focus,
             reportable_facts=[current_focus] if current_focus and current_focus != "ambient" else [],
-            current_risks=["danger"] if safety_bias > 0.32 else [],
+            current_risks=current_risks,
             related_person_ids=[related_person_id] if related_person_id else [],
             interaction_option_candidates=interaction_option_candidates,
             memory_anchor=memory_anchor or current_focus,
@@ -2145,9 +2966,21 @@ class IntegrationHooks:
                 **dict(reference_cases.get("audit_bundle_cases") or {}),
             }
         )
-        expression_hints["scene_state"] = asdict(scene_state)
-        expression_hints["scene_family"] = scene_state.scene_family
-        expression_hints["interaction_option_candidates"] = [asdict(candidate) for candidate in interaction_option_candidates]
+        scene_state_dict = asdict(scene_state)
+        interaction_option_candidate_packets = [
+            asdict(candidate) for candidate in interaction_option_candidates
+        ]
+        _apply_scene_hint_bundle_views(
+            expression_hints,
+            {
+                "scene_state": scene_state_dict,
+                "scene_family": scene_state.scene_family,
+                "interaction_option_candidates": interaction_option_candidate_packets,
+                "top_interaction_option_family": interaction_option_candidates[0].family_id
+                if interaction_option_candidates
+                else "",
+            },
+        )
         expression_hints["contact_field"] = contact_field.to_dict()
         expression_hints["contact_dynamics"] = contact_dynamics.to_dict()
         expression_hints["contact_dynamics_mode"] = contact_dynamics.dynamics_mode
@@ -2159,6 +2992,24 @@ class IntegrationHooks:
         qualia_planner_view = build_qualia_planner_view_hint(expression_hints)
         if qualia_planner_view is not None:
             expression_hints["qualia_planner_view"] = qualia_planner_view
+        qualia_structure_state = derive_qualia_structure_state(
+            previous_state=current_state.get("qualia_structure_state"),
+            qualia_state=qualia_state,
+            temporal_membrane_bias={
+                "timeline_coherence": _float_from(current_state, "temporal_timeline_coherence", default=0.0),
+                "reentry_pull": _float_from(current_state, "temporal_reentry_pull", default=0.0),
+                "supersession_pressure": _float_from(current_state, "temporal_supersession_pressure", default=0.0),
+                "continuity_pressure": _float_from(current_state, "temporal_continuity_pressure", default=0.0),
+                "relation_reentry_pull": _float_from(current_state, "temporal_relation_reentry_pull", default=0.0),
+                "dominant_mode": _text_or_none(current_state.get("temporal_membrane_mode")) or "",
+            },
+            qualia_planner_view=expression_hints.get("qualia_planner_view"),
+        )
+        expression_hints["qualia_structure_state"] = qualia_structure_state.to_dict()
+        expression_hints["qualia_structure_axes"] = qualia_structure_state.to_packet_axes(
+            current_state.get("qualia_structure_state")
+        )
+        expression_hints["qualia_structure_phase"] = qualia_structure_state.phase
         expression_hints = build_expression_hints_from_gate_result(
             expression_hints,
             existing_hints=expression_hints,
@@ -2181,61 +3032,225 @@ class IntegrationHooks:
         )
         expression_hints["qualia_trust"] = float(qualia_kernel.qualia_state.trust_applied)
         expression_hints["qualia_degraded"] = bool(qualia_kernel.qualia_state.degraded)
+        _apply_qualia_hint_bundle_views(
+            expression_hints,
+            {
+                "qualia_state": qualia_state,
+                "qualia_estimator_health": qualia_kernel.health.to_dict(),
+                "qualia_protection_grad_x": qualia_kernel.protection_grad_x.astype(
+                    "float32"
+                ).tolist(),
+                "qualia_axis_labels": list(qualia_kernel.axis_labels),
+                "qualia_planner_view": expression_hints.get("qualia_planner_view"),
+                "qualia_hint_source": expression_hints.get("qualia_hint_source"),
+                "qualia_hint_version": expression_hints.get("qualia_hint_version"),
+                "qualia_hint_fallback_reason": expression_hints.get(
+                    "qualia_hint_fallback_reason"
+                ),
+                "qualia_hint_expected_source": expression_hints.get(
+                    "qualia_hint_expected_source"
+                ),
+                "qualia_hint_expected_mismatch": expression_hints.get(
+                    "qualia_hint_expected_mismatch"
+                ),
+            },
+        )
         expression_hints["dot_seeds"] = dot_seeds.to_dict()
-        expression_hints["association_graph"] = association_graph.to_dict()
-        expression_hints["association_graph_winner_margin"] = float(association_graph.winner_margin)
-        expression_hints["association_graph_dominant_inputs"] = list(association_graph.dominant_inputs)
-        expression_hints["insight_event"] = insight_event.to_dict()
-        expression_hints["affective_position"] = affective_position.to_dict()
-        expression_hints["affective_position_confidence"] = float(affective_position.confidence)
-        expression_hints["affective_terrain_state"] = affective_terrain_state.to_dict()
-        expression_hints["terrain_readout"] = terrain_readout.to_dict()
-        expression_hints["terrain_active_patch_label"] = terrain_readout.active_patch_label
-        expression_hints["protection_mode"] = protection_mode.to_dict()
-        expression_hints["protection_mode_name"] = protection_mode.mode
-        expression_hints["protection_mode_strength"] = float(protection_mode.strength)
-        expression_hints["access_projection"] = access_projection.to_dict()
-        expression_hints["access_dynamics"] = access_dynamics.to_dict()
-        expression_hints["access_dynamics_mode"] = access_dynamics.dynamics_mode
-        expression_hints["affect_blend_state"] = affect_blend_state.to_dict()
-        expression_hints["constraint_field"] = constraint_field.to_dict()
-        expression_hints["conscious_workspace"] = conscious_workspace.to_dict()
-        expression_hints["conscious_workspace_mode"] = conscious_workspace.workspace_mode
-        expression_hints["conscious_workspace_reportable_slice"] = list(conscious_workspace.reportable_slice)
-        expression_hints["conscious_workspace_withheld_slice"] = list(conscious_workspace.withheld_slice)
-        expression_hints["conscious_workspace_actionable_slice"] = list(conscious_workspace.actionable_slice)
-        expression_hints["conscious_workspace_ignition_phase"] = conscious_workspace.ignition_phase
-        expression_hints["conscious_workspace_slot_scores"] = dict(conscious_workspace.slot_scores)
-        expression_hints["conscious_workspace_winner_margin"] = float(conscious_workspace.winner_margin)
-        expression_hints["conscious_workspace_dominant_inputs"] = list(conscious_workspace.dominant_inputs)
-        expression_hints["conversational_objects"] = conversational_objects.to_dict()
-        expression_hints["conversational_object_labels"] = list(conversational_objects.active_labels)
-        expression_hints["conversational_object_pressure_balance"] = conversational_objects.pressure_balance
-        expression_hints["object_operations"] = object_operations.to_dict()
-        expression_hints["object_operation_question_budget"] = object_operations.question_budget
-        expression_hints["object_operation_question_pressure"] = object_operations.question_pressure
-        expression_hints["object_operation_defer_dominance"] = object_operations.defer_dominance
-        expression_hints["interaction_effects"] = interaction_effects.to_dict()
-        expression_hints["interaction_judgement_view"] = interaction_judgement_view.to_dict()
-        expression_hints["interaction_judgement_summary"] = interaction_judgement_summary.to_dict()
-        expression_hints["interaction_condition_report"] = interaction_condition_report.to_dict()
-        expression_hints["interaction_inspection_report"] = interaction_inspection_report.to_dict()
-        expression_hints["interaction_audit_bundle"] = interaction_audit_bundle.to_dict()
-        expression_hints["interaction_audit_casebook"] = interaction_audit_casebook
-        expression_hints["interaction_audit_report"] = interaction_audit_report.to_dict()
-        expression_hints["interaction_audit_reference_case_ids"] = list(
-            reference_cases.get("reference_case_ids") or []
+        _apply_field_regulation_hint_bundle_views(
+            expression_hints,
+            {
+                "contact_field": contact_field.to_dict(),
+                "contact_dynamics": contact_dynamics.to_dict(),
+                "contact_dynamics_mode": contact_dynamics.dynamics_mode,
+                "contact_reflection_state": contact_reflection_state.to_dict(),
+                "access_projection": access_projection.to_dict(),
+                "access_dynamics": access_dynamics.to_dict(),
+                "access_dynamics_mode": access_dynamics.dynamics_mode,
+                "affect_blend_state": affect_blend_state.to_dict(),
+                "constraint_field": constraint_field.to_dict(),
+            },
         )
-        expression_hints["interaction_audit_reference_case_meta"] = dict(
-            reference_cases.get("reference_case_meta") or {}
+        _apply_terrain_insight_hint_bundle_views(
+            expression_hints,
+            {
+                "affective_position": affective_position.to_dict(),
+                "affective_position_confidence": float(affective_position.confidence),
+                "affective_terrain_state": affective_terrain_state.to_dict(),
+                "terrain_readout": terrain_readout.to_dict(),
+                "terrain_active_patch_label": terrain_readout.active_patch_label,
+                "protection_mode": protection_mode.to_dict(),
+                "protection_mode_name": protection_mode.mode,
+                "protection_mode_strength": float(protection_mode.strength),
+                "association_graph": association_graph.to_dict(),
+                "association_graph_winner_margin": float(association_graph.winner_margin),
+                "association_graph_dominant_inputs": list(association_graph.dominant_inputs),
+                "insight_event": insight_event.to_dict(),
+                "resonance_evaluation": resonance_evaluation.to_dict(),
+            },
         )
-        expression_hints["resonance_evaluation"] = resonance_evaluation.to_dict()
+        _apply_workspace_hint_bundle_views(
+            expression_hints,
+            {
+                "conscious_workspace": conscious_workspace.to_dict(),
+                "conscious_workspace_mode": conscious_workspace.workspace_mode,
+                "conscious_workspace_reportable_slice": list(
+                    conscious_workspace.reportable_slice
+                ),
+                "conscious_workspace_withheld_slice": list(
+                    conscious_workspace.withheld_slice
+                ),
+                "conscious_workspace_actionable_slice": list(
+                    conscious_workspace.actionable_slice
+                ),
+                "conscious_workspace_ignition_phase": conscious_workspace.ignition_phase,
+                "conscious_workspace_slot_scores": dict(conscious_workspace.slot_scores),
+                "conscious_workspace_winner_margin": float(
+                    conscious_workspace.winner_margin
+                ),
+                "conscious_workspace_dominant_inputs": list(
+                    conscious_workspace.dominant_inputs
+                ),
+            },
+        )
+        _apply_interaction_reasoning_hint_bundle_views(
+            expression_hints,
+            {
+                "conversational_objects": conversational_objects.to_dict(),
+                "conversational_object_labels": list(
+                    conversational_objects.active_labels
+                ),
+                "conversational_object_pressure_balance": conversational_objects.pressure_balance,
+                "object_operations": object_operations.to_dict(),
+                "object_operation_question_budget": object_operations.question_budget,
+                "object_operation_question_pressure": object_operations.question_pressure,
+                "object_operation_defer_dominance": object_operations.defer_dominance,
+                "interaction_effects": interaction_effects.to_dict(),
+                "interaction_judgement_view": interaction_judgement_view.to_dict(),
+                "interaction_judgement_summary": interaction_judgement_summary.to_dict(),
+                "interaction_condition_report": interaction_condition_report.to_dict(),
+                "interaction_inspection_report": interaction_inspection_report.to_dict(),
+            },
+        )
+        _apply_interaction_audit_hint_bundle_views(
+            expression_hints,
+            {
+                "interaction_audit_bundle": interaction_audit_bundle.to_dict(),
+                "interaction_audit_casebook": interaction_audit_casebook,
+                "interaction_audit_report": interaction_audit_report.to_dict(),
+                "interaction_audit_reference_case_ids": list(
+                    reference_cases.get("reference_case_ids") or []
+                ),
+                "interaction_audit_reference_case_meta": dict(
+                    reference_cases.get("reference_case_meta") or {}
+                ),
+            },
+        )
         if interaction_option_candidates:
-            expression_hints["top_interaction_option_family"] = interaction_option_candidates[0].family_id
+            _apply_scene_hint_bundle_views(
+                expression_hints,
+                {
+                    **dict(expression_hints.get("scene_hint_bundle") or {}),
+                    "top_interaction_option_family": interaction_option_candidates[0].family_id,
+                },
+            )
+        growth_state = derive_growth_state(
+            previous_growth=(current_state or {}).get("growth_state"),
+            development_state=(current_state or {}).get("development_state"),
+            forgetting_snapshot=(current_state or {}).get("forgetting"),
+        )
+        epistemic_state = derive_epistemic_state(
+            previous_epistemic=(current_state or {}).get("epistemic_state"),
+            current_state=current_state,
+        )
+        memory_dynamics_state = derive_memory_dynamics_state(
+            previous_state=(current_state or {}).get("memory_dynamics_state"),
+            memory_orchestration=(current_state or {}).get("memory_orchestration"),
+            association_graph=association_graph.to_dict(),
+            forgetting_snapshot=(current_state or {}).get("forgetting"),
+            activation_trace=(current_state or {}).get("activation_trace"),
+            memory_palace_state=(current_state or {}).get("memory_palace_state"),
+            recall_payload=(current_state or {}).get("recall_payload"),
+            recall_active=bool(current_state.get("replay_active", False)),
+        )
+        external_field_state = derive_external_field_state(
+            previous_state=(current_state or {}).get("external_field_state"),
+            environment_pressure=(current_state or {}).get("environment_pressure"),
+            social_topology_state=(current_state or {}).get("social_topology_state"),
+            relation_competition_state=(current_state or {}).get("relation_competition_state"),
+            recent_dialogue_state=(current_state or {}).get("recent_dialogue_state"),
+            discussion_thread_state=(current_state or {}).get("discussion_thread_state"),
+            issue_state=(current_state or {}).get("issue_state"),
+            transition_signal=(current_state or {}).get("context_shift"),
+            organism_state=(current_state or {}).get("organism_state"),
+        )
+        organism_state = derive_organism_state(
+            previous_state=(current_state or {}).get("organism_state"),
+            growth_state=growth_state.to_dict(),
+            epistemic_state=epistemic_state.to_dict(),
+            qualia_structure_state=qualia_structure_state.to_dict(),
+            heartbeat_structure_state=(current_state or {}).get("heartbeat_structure_state"),
+            relation_competition_state=(current_state or {}).get("relation_competition_state"),
+            social_topology_state=(current_state or {}).get("social_topology_state"),
+        )
+        terrain_dynamics_state = derive_terrain_dynamics_state(
+            previous_state=(current_state or {}).get("terrain_dynamics_state"),
+            organism_state=organism_state.to_dict(),
+            external_field_state=external_field_state.to_dict(),
+            memory_dynamics_state=memory_dynamics_state.to_dict(),
+            qualia_structure_state=qualia_structure_state.to_dict(),
+            heartbeat_structure_state=(current_state or {}).get("heartbeat_structure_state"),
+            terrain_readout=terrain_readout.to_dict(),
+        )
+        joint_state = derive_joint_state(
+            previous_state=(current_state or {}).get("joint_state"),
+            shared_moment_state=(current_state or {}).get("shared_moment_state"),
+            listener_action_state=(current_state or {}).get("listener_action_state"),
+            live_engagement_state=(current_state or {}).get("live_engagement_state"),
+            meaning_update_state=(current_state or {}).get("meaning_update_state"),
+            organism_state=organism_state.to_dict(),
+            external_field_state=external_field_state.to_dict(),
+            terrain_dynamics_state=terrain_dynamics_state.to_dict(),
+            memory_dynamics_state=memory_dynamics_state.to_dict(),
+        )
+        expression_hints["growth_state"] = growth_state.to_dict()
+        expression_hints["growth_replay_axes"] = growth_state.to_replay_axes(
+            (current_state or {}).get("growth_state")
+        )
+        expression_hints["epistemic_state"] = epistemic_state.to_dict()
+        expression_hints["epistemic_packet_axes"] = epistemic_state.to_packet_axes(
+            (current_state or {}).get("epistemic_state")
+        )
+        expression_hints["memory_dynamics_state"] = memory_dynamics_state.to_dict()
+        expression_hints["memory_dynamics_axes"] = memory_dynamics_state.to_packet_axes(
+            (current_state or {}).get("memory_dynamics_state")
+        )
+        expression_hints["external_field_state"] = external_field_state.to_dict()
+        expression_hints["external_field_axes"] = external_field_state.to_packet_axes(
+            (current_state or {}).get("external_field_state")
+        )
+        expression_hints["organism_state"] = organism_state.to_dict()
+        expression_hints["organism_axes"] = organism_state.to_packet_axes(
+            (current_state or {}).get("organism_state")
+        )
+        expression_hints["joint_state"] = joint_state.to_dict()
+        expression_hints["joint_axes"] = joint_state.to_packet_axes(
+            (current_state or {}).get("joint_state")
+        )
+        expression_hints["terrain_dynamics_state"] = terrain_dynamics_state.to_dict()
+        expression_hints["terrain_dynamics_axes"] = terrain_dynamics_state.to_packet_axes(
+            (current_state or {}).get("terrain_dynamics_state")
+        )
         interaction_policy_packet = derive_interaction_policy_packet(
             dialogue_act=str(access_payload.get("intent") or "report"),
+            observed_text=str(
+                draft.get("user_text")
+                or current_state.get("surface_user_text")
+                or draft.get("text")
+                or ""
+            ).strip(),
+            locale="ja-JP",
             current_focus=current_focus,
-            current_risks=["danger"] if safety_bias > 0.32 else [],
+            current_risks=current_risks,
             reportable_facts=[current_focus] if current_focus and current_focus != "ambient" else [],
             relation_bias_strength=relation_bias_strength,
             related_person_ids=related_person_ids,
@@ -2271,6 +3286,8 @@ class IntegrationHooks:
             association_reweighting_focus=_text_or_none(current_state.get("association_reweighting_focus")) or "",
             association_reweighting_reason=_text_or_none(current_state.get("association_reweighting_reason")) or "",
             insight_terrain_shape_target=_text_or_none(current_state.get("insight_terrain_shape_target")) or "",
+            external_field_state=external_field_state.to_dict(),
+            terrain_dynamics_state=terrain_dynamics_state.to_dict(),
             self_state=current_state,
         )
         recent_dialogue_state = derive_recent_dialogue_state(
@@ -2323,66 +3340,24 @@ class IntegrationHooks:
             interaction_policy=interaction_policy_packet,
         )
         interaction_policy_packet["conversation_contract"] = conversation_contract
-        action_posture = derive_action_posture(interaction_policy_packet)
-        actuation_plan = derive_actuation_plan(interaction_policy_packet, action_posture)
+        interaction_policy_packet = coerce_interaction_policy_packet(
+            interaction_policy_packet
+        )
+        action_posture = coerce_action_posture_contract(
+            derive_action_posture(interaction_policy_packet)
+        )
+        actuation_plan = coerce_actuation_plan_contract(
+            derive_actuation_plan(interaction_policy_packet, action_posture)
+        )
         expression_hints["conversation_contract"] = conversation_contract
-        expression_hints["interaction_policy_packet"] = interaction_policy_packet
         expression_hints["recent_dialogue_state"] = recent_dialogue_state
         expression_hints["discussion_thread_state"] = discussion_thread_state
         expression_hints["issue_state"] = issue_state
-        expression_hints["interaction_policy_contact_reflection_state"] = contact_reflection_state.to_dict()
         expression_hints["green_kernel_composition"] = green_kernel_composition
-        expression_hints["interaction_policy_strategy"] = interaction_policy_packet["response_strategy"]
-        expression_hints["interaction_policy_opening_move"] = interaction_policy_packet["opening_move"]
-        expression_hints["interaction_policy_followup_move"] = interaction_policy_packet["followup_move"]
-        expression_hints["interaction_policy_closing_move"] = interaction_policy_packet["closing_move"]
-        expression_hints["interaction_policy_disclosure_depth"] = interaction_policy_packet["disclosure_depth"]
-        expression_hints["interaction_policy_memory_write_priority"] = interaction_policy_packet["memory_write_priority"]
-        expression_hints["interaction_policy_memory_write_class"] = interaction_policy_packet["memory_write_class"]
-        expression_hints["interaction_policy_memory_write_class_reason"] = interaction_policy_packet["memory_write_class_reason"]
-        expression_hints["interaction_policy_memory_write_class_bias"] = interaction_policy_packet["memory_write_class_bias"]
-        expression_hints["interaction_policy_protection_mode_decision"] = interaction_policy_packet["protection_mode_decision"]
-        expression_hints["interaction_policy_body_recovery_guard"] = interaction_policy_packet["body_recovery_guard"]
-        expression_hints["interaction_policy_body_homeostasis_state"] = interaction_policy_packet["body_homeostasis_state"]
-        expression_hints["interaction_policy_homeostasis_budget_state"] = interaction_policy_packet["homeostasis_budget_state"]
-        expression_hints["interaction_policy_initiative_readiness"] = interaction_policy_packet["initiative_readiness"]
-        expression_hints["interaction_policy_agenda_state"] = interaction_policy_packet["agenda_state"]
-        expression_hints["interaction_policy_agenda_window_state"] = interaction_policy_packet["agenda_window_state"]
-        expression_hints["interaction_policy_commitment_state"] = interaction_policy_packet["commitment_state"]
-        expression_hints["interaction_policy_learning_mode_state"] = interaction_policy_packet["learning_mode_state"]
-        expression_hints["interaction_policy_social_experiment_loop_state"] = interaction_policy_packet["social_experiment_loop_state"]
-        expression_hints["interaction_policy_identity_arc_kind"] = interaction_policy_packet["identity_arc_kind"]
-        expression_hints["interaction_policy_identity_arc_phase"] = interaction_policy_packet["identity_arc_phase"]
-        expression_hints["interaction_policy_identity_arc_summary"] = interaction_policy_packet["identity_arc_summary"]
-        expression_hints["interaction_policy_identity_arc_open_tension"] = interaction_policy_packet["identity_arc_open_tension"]
-        expression_hints["interaction_policy_identity_arc_stability"] = interaction_policy_packet["identity_arc_stability"]
-        expression_hints["interaction_policy_relational_style_memory_state"] = interaction_policy_packet["relational_style_memory_state"]
-        expression_hints["interaction_policy_cultural_conversation_state"] = interaction_policy_packet["cultural_conversation_state"]
-        expression_hints["interaction_policy_expressive_style_state"] = interaction_policy_packet["expressive_style_state"]
-        expression_hints["interaction_policy_lightness_budget_state"] = interaction_policy_packet["lightness_budget_state"]
-        expression_hints["interaction_policy_relational_continuity_state"] = interaction_policy_packet["relational_continuity_state"]
-        expression_hints["interaction_policy_relation_competition_state"] = interaction_policy_packet["relation_competition_state"]
-        expression_hints["interaction_policy_social_topology_state"] = interaction_policy_packet["social_topology_state"]
-        expression_hints["interaction_policy_active_relation_table"] = interaction_policy_packet["active_relation_table"]
-        expression_hints["interaction_policy_association_reweighting_focus"] = interaction_policy_packet["association_reweighting_focus"]
-        expression_hints["interaction_policy_association_reweighting_reason"] = interaction_policy_packet["association_reweighting_reason"]
-        expression_hints["interaction_policy_insight_terrain_shape_target"] = interaction_policy_packet["insight_terrain_shape_target"]
-        expression_hints["interaction_policy_overnight_bias_roles"] = interaction_policy_packet["overnight_bias_roles"]
-        expression_hints["interaction_policy_reaction_vs_overnight_bias"] = interaction_policy_packet["reaction_vs_overnight_bias"]
-        expression_hints["surface_voice_texture"] = str((interaction_policy_packet.get("expressive_style_state") or {}).get("state") or "grounded_gentle")
-        expression_hints["surface_lightness_room"] = round(float((interaction_policy_packet.get("expressive_style_state") or {}).get("lightness_room") or 0.0), 4)
-        expression_hints["surface_continuity_weight"] = round(float((interaction_policy_packet.get("expressive_style_state") or {}).get("continuity_weight") or 0.0), 4)
-        expression_hints["surface_relational_voice_texture"] = str((interaction_policy_packet.get("relational_style_memory_state") or {}).get("state") or "grounded_gentle")
-        expression_hints["surface_relational_playful_ceiling"] = round(float((interaction_policy_packet.get("relational_style_memory_state") or {}).get("playful_ceiling") or 0.0), 4)
-        expression_hints["surface_cultural_register"] = str((interaction_policy_packet.get("cultural_conversation_state") or {}).get("state") or "careful_polite")
-        expression_hints["surface_cultural_joke_ratio_ceiling"] = round(float((interaction_policy_packet.get("cultural_conversation_state") or {}).get("joke_ratio_ceiling") or 0.0), 4)
-        expression_hints["surface_lightness_budget_state"] = str((interaction_policy_packet.get("lightness_budget_state") or {}).get("state") or "grounded_only")
-        expression_hints["surface_lightness_banter_room"] = round(float((interaction_policy_packet.get("lightness_budget_state") or {}).get("banter_room") or 0.0), 4)
-        expression_hints["surface_learning_mode_state"] = str((interaction_policy_packet.get("learning_mode_state") or {}).get("state") or "observe_only")
-        expression_hints["surface_social_experiment_state"] = str((interaction_policy_packet.get("social_experiment_loop_state") or {}).get("state") or "watch_and_read")
-        expression_hints["surface_identity_arc_kind"] = str(interaction_policy_packet.get("identity_arc_kind") or "")
-        expression_hints["surface_identity_arc_phase"] = str(interaction_policy_packet.get("identity_arc_phase") or "")
-        expression_hints["surface_identity_arc_open_tension"] = str(interaction_policy_packet.get("identity_arc_open_tension") or "")
+        _apply_interaction_policy_packet_views(
+            expression_hints,
+            interaction_policy_packet,
+        )
         expression_hints["action_posture"] = action_posture
         expression_hints["action_posture_mode"] = action_posture["engagement_mode"]
         expression_hints["action_posture_goal"] = action_posture["outcome_goal"]
@@ -3130,10 +4105,8 @@ class IntegrationHooks:
                     "prospective_memory_pull": round(next_state.prospective_memory_pull, 4),
                 }
             )
-        interaction_policy_packet = (
-            dict(current_state.get("interaction_policy_packet") or {})
-            if isinstance(current_state.get("interaction_policy_packet"), Mapping)
-            else {}
+        interaction_policy_packet = coerce_interaction_policy_packet(
+            current_state.get("interaction_policy_packet")
         )
         social_topology_state = dict(
             interaction_policy_packet.get("social_topology_state")
@@ -3287,6 +4260,65 @@ class IntegrationHooks:
             culture_id=str(world_snapshot.get("culture_id") or ""),
             social_role=str(world_snapshot.get("social_role") or ""),
         )
+        growth_state = derive_growth_state(
+            previous_growth=(current_state or {}).get("growth_state"),
+            development_state=development.to_dict(),
+            forgetting_snapshot=forgetting_snapshot,
+        )
+        epistemic_state = derive_epistemic_state(
+            previous_epistemic=(current_state or {}).get("epistemic_state"),
+            current_state=next_state.to_dict(),
+        )
+        memory_dynamics_state = derive_memory_dynamics_state(
+            previous_state=(current_state or {}).get("memory_dynamics_state"),
+            memory_orchestration=memory_orchestration,
+            association_graph=association_graph_state_after.to_dict(),
+            forgetting_snapshot=forgetting_snapshot,
+            activation_trace=(current_state or {}).get("activation_trace"),
+            memory_palace_state=(current_state or {}).get("memory_palace_state"),
+            recall_payload=recall_payload,
+            recall_active=bool(recall_payload),
+        )
+        external_field_state = derive_external_field_state(
+            previous_state=(current_state or {}).get("external_field_state"),
+            environment_pressure=environment_pressure.to_dict(),
+            social_topology_state=social_topology_state,
+            relation_competition_state=relation_competition_state,
+            recent_dialogue_state=(current_state or {}).get("recent_dialogue_state"),
+            discussion_thread_state=(current_state or {}).get("discussion_thread_state"),
+            issue_state=(current_state or {}).get("issue_state"),
+            transition_signal=transition_signal,
+            organism_state=(current_state or {}).get("organism_state"),
+        )
+        organism_state = derive_organism_state(
+            previous_state=(current_state or {}).get("organism_state"),
+            growth_state=growth_state.to_dict(),
+            epistemic_state=epistemic_state.to_dict(),
+            qualia_structure_state=(current_state or {}).get("qualia_structure_state"),
+            heartbeat_structure_state=(current_state or {}).get("heartbeat_structure_state"),
+            relation_competition_state=relation_competition_state,
+            social_topology_state=social_topology_state,
+        )
+        terrain_dynamics_state = derive_terrain_dynamics_state(
+            previous_state=(current_state or {}).get("terrain_dynamics_state"),
+            organism_state=organism_state.to_dict(),
+            external_field_state=external_field_state.to_dict(),
+            memory_dynamics_state=memory_dynamics_state.to_dict(),
+            qualia_structure_state=(current_state or {}).get("qualia_structure_state"),
+            heartbeat_structure_state=(current_state or {}).get("heartbeat_structure_state"),
+            terrain_readout=terrain_readout_before.to_dict(),
+        )
+        joint_state = derive_joint_state(
+            previous_state=(current_state or {}).get("joint_state"),
+            shared_moment_state=(current_state or {}).get("shared_moment_state"),
+            listener_action_state=(current_state or {}).get("listener_action_state"),
+            live_engagement_state=(current_state or {}).get("live_engagement_state"),
+            meaning_update_state=(current_state or {}).get("meaning_update_state"),
+            organism_state=organism_state.to_dict(),
+            external_field_state=external_field_state.to_dict(),
+            terrain_dynamics_state=terrain_dynamics_state.to_dict(),
+            memory_dynamics_state=memory_dynamics_state.to_dict(),
+        )
         return PostTurnUpdateResult(
             state=next_state,
             memory_appends=stored,
@@ -3370,6 +4402,40 @@ class IntegrationHooks:
                 "candidate_focus_hint": candidate_signal["focus_hint"],
                 "candidate_anchor_hint": candidate_signal["anchor_hint"],
                 "candidate_target_person_id": candidate_signal["target_person_id"],
+                "growth_state": growth_state.to_dict(),
+                "growth_replay_axes": growth_state.to_replay_axes(
+                    (current_state or {}).get("growth_state")
+                ),
+                "epistemic_state": epistemic_state.to_dict(),
+                "epistemic_packet_axes": epistemic_state.to_packet_axes(
+                    (current_state or {}).get("epistemic_state")
+                ),
+                "memory_dynamics_state": memory_dynamics_state.to_dict(),
+                "memory_dynamics_axes": memory_dynamics_state.to_packet_axes(
+                    (current_state or {}).get("memory_dynamics_state")
+                ),
+                "external_field_state": external_field_state.to_dict(),
+                "external_field_axes": external_field_state.to_packet_axes(
+                    (current_state or {}).get("external_field_state")
+                ),
+                "organism_state": organism_state.to_dict(),
+                "organism_axes": organism_state.to_packet_axes(
+                    (current_state or {}).get("organism_state")
+                ),
+                "joint_state": joint_state.to_dict(),
+                "joint_axes": joint_state.to_packet_axes(
+                    (current_state or {}).get("joint_state")
+                ),
+                "terrain_dynamics_state": terrain_dynamics_state.to_dict(),
+                "terrain_dynamics_axes": terrain_dynamics_state.to_packet_axes(
+                    (current_state or {}).get("terrain_dynamics_state")
+                ),
+                "qualia_structure_state": dict(
+                    (current_state or {}).get("qualia_structure_state") or {}
+                ),
+                "qualia_structure_axes": dict(
+                    (current_state or {}).get("qualia_structure_axes") or {}
+                ),
                 "person_registry_person_id": candidate_signal["target_person_id"] or counterpart_person_id,
                 "interaction_alignment_score": round(interaction_alignment["alignment_score"], 4),
                 "shared_attention_delta": round(interaction_alignment["shared_attention_delta"], 4),
@@ -3677,7 +4743,7 @@ def _replay_signature_alignment(
     return _clamp01(alignment)
 
 
-def _expression_hints(*, terrain_transition_roughness: float, caution_bias: float, recent_strain: float, continuity_score: float, social_update_strength: float = 1.0, identity_update_strength: float = 1.0, interaction_afterglow: float = 0.0, interaction_afterglow_intent: Optional[str] = None, replay_intensity: float = 0.0, anticipation_tension: float = 0.0, stabilization_drive: float = 0.0, relational_clarity: float = 0.0, meaning_inertia: float = 0.0, recovery_reopening: float = 0.0, object_affordance_bias: float = 0.0, fragility_guard: float = 0.0, object_attachment: float = 0.0, object_avoidance: float = 0.0, tool_extension_bias: float = 0.0, ritually_sensitive_bias: float = 0.0, defensive_salience: float = 0.0, reachability: float = 0.0, long_term_theme_strength: float = 0.0, long_term_theme_kind: str = "") -> Dict[str, Any]:
+def _expression_hints(*, terrain_transition_roughness: float, caution_bias: float, recent_strain: float, continuity_score: float, social_update_strength: float = 1.0, identity_update_strength: float = 1.0, interaction_afterglow: float = 0.0, interaction_afterglow_intent: Optional[str] = None, replay_intensity: float = 0.0, anticipation_tension: float = 0.0, stabilization_drive: float = 0.0, relational_clarity: float = 0.0, meaning_inertia: float = 0.0, recovery_reopening: float = 0.0, object_affordance_bias: float = 0.0, fragility_guard: float = 0.0, object_attachment: float = 0.0, object_avoidance: float = 0.0, tool_extension_bias: float = 0.0, ritually_sensitive_bias: float = 0.0, defensive_salience: float = 0.0, reachability: float = 0.0, long_term_theme_strength: float = 0.0, long_term_theme_kind: str = "") -> ExpressionHintsContract:
     tentative_bias = _clamp01(
         terrain_transition_roughness * EXPRESSION_HINT_WEIGHTS["tentative_roughness"]
         + caution_bias * EXPRESSION_HINT_WEIGHTS["tentative_caution"]
@@ -3693,7 +4759,7 @@ def _expression_hints(*, terrain_transition_roughness: float, caution_bias: floa
     )
     assertiveness_cap = max(0.2, 1.0 - terrain_transition_roughness * EXPRESSION_HINT_WEIGHTS["assertive_roughness"] - caution_bias * EXPRESSION_HINT_WEIGHTS["assertive_caution"] - anticipation_tension * EXPRESSION_HINT_WEIGHTS["assertive_anticipation"] - fragility_guard * 0.08 - object_avoidance * 0.06 - defensive_salience * 0.06 + reachability * 0.02)
     clarify_first = identity_update_strength <= 0.68 or social_update_strength <= 0.72 or interaction_afterglow >= 0.24 or stabilization_drive >= 0.42 or anticipation_tension >= 0.4
-    return {
+    return coerce_expression_hints_contract({
         "meaning_pacing": "slow" if tentative_bias >= 0.32 or meaning_inertia >= 0.4 else "steady",
         "tentative_bias": round(tentative_bias, 4),
         "assertiveness_cap": round(assertiveness_cap, 4),
@@ -3721,7 +4787,7 @@ def _expression_hints(*, terrain_transition_roughness: float, caution_bias: floa
         "recovery_reopening": round(recovery_reopening, 4),
         "long_term_theme_strength": round(long_term_theme_strength, 4),
         "long_term_theme_kind": long_term_theme_kind,
-    }
+    })
 
 
 def _terms(text: str) -> list[str]:

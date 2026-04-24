@@ -240,6 +240,168 @@ class InnerOSTransferPackageBuilder:
                 "daily_carry_summary": self._daily_carry_summary_dict(nightly_payload),
                 "overnight_bias_roles": dict(inner_os_meta.get("overnight_bias_roles") or {}),
                 "reaction_vs_overnight_bias": dict(inner_os_meta.get("reaction_vs_overnight_bias") or {}),
+                "growth_state": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "growth_state",
+                        default={},
+                    )
+                ),
+                "growth_replay_axes": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "growth_replay_axes",
+                        default={},
+                    )
+                ),
+                "epistemic_state": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "epistemic_state",
+                        default={},
+                    )
+                ),
+                "epistemic_packet_axes": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "epistemic_packet_axes",
+                        default={},
+                    )
+                ),
+                "memory_dynamics_state": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "memory_dynamics_state",
+                        default={},
+                    )
+                ),
+                "memory_dynamics_axes": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "memory_dynamics_axes",
+                        default={},
+                    )
+                ),
+                "qualia_structure_state": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "qualia_structure_state",
+                        default={},
+                    )
+                ),
+                "qualia_structure_axes": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "qualia_structure_axes",
+                        default={},
+                    )
+                ),
+                "heartbeat_structure_state": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "heartbeat_structure_state",
+                        default={},
+                    )
+                ),
+                "heartbeat_structure_axes": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "heartbeat_structure_axes",
+                        default={},
+                    )
+                ),
+                "organism_state": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "organism_state",
+                        default={},
+                    )
+                ),
+                "organism_axes": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "organism_axes",
+                        default={},
+                    )
+                ),
+                "joint_state": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "joint_state",
+                        default={},
+                    )
+                ),
+                "joint_axes": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "joint_axes",
+                        default={},
+                    )
+                ),
+                "external_field_state": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "external_field_state",
+                        default={},
+                    )
+                ),
+                "external_field_axes": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "external_field_axes",
+                        default={},
+                    )
+                ),
+                "terrain_dynamics_state": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "terrain_dynamics_state",
+                        default={},
+                    )
+                ),
+                "terrain_dynamics_axes": _mapping(
+                    self._state_value(
+                        current_payload,
+                        gate_payload,
+                        inner_os_meta,
+                        "terrain_dynamics_axes",
+                        default={},
+                    )
+                ),
                 "initiative_followup_bias": _compact_mapping(
                     inner_os_meta.get("initiative_followup_bias"),
                     ("state", "score", "winner_margin", "scores", "dominant_inputs"),
@@ -618,6 +780,24 @@ class InnerOSTransferPackageBuilder:
             return default
 
         return {
+            "growth_state": dict(_seed_value("growth_state", "growth_state", default={}) or {}),
+            "growth_replay_axes": dict(_seed_value("growth_replay_axes", "growth_replay_axes", default={}) or {}),
+            "epistemic_state": dict(_seed_value("epistemic_state", "epistemic_state", default={}) or {}),
+            "epistemic_packet_axes": dict(_seed_value("epistemic_packet_axes", "epistemic_packet_axes", default={}) or {}),
+            "memory_dynamics_state": dict(_seed_value("memory_dynamics_state", "memory_dynamics_state", default={}) or {}),
+            "memory_dynamics_axes": dict(_seed_value("memory_dynamics_axes", "memory_dynamics_axes", default={}) or {}),
+            "qualia_structure_state": dict(_seed_value("qualia_structure_state", "qualia_structure_state", default={}) or {}),
+            "qualia_structure_axes": dict(_seed_value("qualia_structure_axes", "qualia_structure_axes", default={}) or {}),
+            "heartbeat_structure_state": dict(_seed_value("heartbeat_structure_state", "heartbeat_structure_state", default={}) or {}),
+            "heartbeat_structure_axes": dict(_seed_value("heartbeat_structure_axes", "heartbeat_structure_axes", default={}) or {}),
+            "organism_state": dict(_seed_value("organism_state", "organism_state", default={}) or {}),
+            "organism_axes": dict(_seed_value("organism_axes", "organism_axes", default={}) or {}),
+            "joint_state": dict(_seed_value("joint_state", "joint_state", default={}) or {}),
+            "joint_axes": dict(_seed_value("joint_axes", "joint_axes", default={}) or {}),
+            "external_field_state": dict(_seed_value("external_field_state", "external_field_state", default={}) or {}),
+            "external_field_axes": dict(_seed_value("external_field_axes", "external_field_axes", default={}) or {}),
+            "terrain_dynamics_state": dict(_seed_value("terrain_dynamics_state", "terrain_dynamics_state", default={}) or {}),
+            "terrain_dynamics_axes": dict(_seed_value("terrain_dynamics_axes", "terrain_dynamics_axes", default={}) or {}),
             "prev_qualia": list(_seed_value("prev_qualia", "prev_qualia", "inner_os_prev_qualia", default=[])),
             "prev_qualia_habituation": list(_seed_value("prev_qualia_habituation", "prev_qualia_habituation", "inner_os_prev_qualia_habituation", default=[])),
             "prev_protection_grad_x": list(_seed_value("prev_protection_grad_x", "prev_protection_grad_x", "inner_os_prev_protection_grad_x", default=[])),
@@ -966,6 +1146,96 @@ class InnerOSTransferPackageBuilder:
             "monument_salience": round(_float(package.get("monument_salience") or carry.get("monument_salience")), 4),
             "monument_kind": _text(package.get("monument_kind") or carry.get("monument_kind")),
         }
+        growth_state = _mapping(
+            dict(carry.get("growth_state") or {})
+            or dict(runtime_seed.get("growth_state") or {})
+            or dict(package.get("growth_state") or {})
+        )
+        growth_replay_axes = _mapping(
+            dict(carry.get("growth_replay_axes") or {})
+            or dict(runtime_seed.get("growth_replay_axes") or {})
+            or dict(package.get("growth_replay_axes") or {})
+        )
+        epistemic_state = _mapping(
+            dict(carry.get("epistemic_state") or {})
+            or dict(runtime_seed.get("epistemic_state") or {})
+            or dict(package.get("epistemic_state") or {})
+        )
+        epistemic_packet_axes = _mapping(
+            dict(carry.get("epistemic_packet_axes") or {})
+            or dict(runtime_seed.get("epistemic_packet_axes") or {})
+            or dict(package.get("epistemic_packet_axes") or {})
+        )
+        memory_dynamics_state = _mapping(
+            dict(carry.get("memory_dynamics_state") or {})
+            or dict(runtime_seed.get("memory_dynamics_state") or {})
+            or dict(package.get("memory_dynamics_state") or {})
+        )
+        memory_dynamics_axes = _mapping(
+            dict(carry.get("memory_dynamics_axes") or {})
+            or dict(runtime_seed.get("memory_dynamics_axes") or {})
+            or dict(package.get("memory_dynamics_axes") or {})
+        )
+        qualia_structure_state = _mapping(
+            dict(carry.get("qualia_structure_state") or {})
+            or dict(runtime_seed.get("qualia_structure_state") or {})
+            or dict(package.get("qualia_structure_state") or {})
+        )
+        qualia_structure_axes = _mapping(
+            dict(carry.get("qualia_structure_axes") or {})
+            or dict(runtime_seed.get("qualia_structure_axes") or {})
+            or dict(package.get("qualia_structure_axes") or {})
+        )
+        heartbeat_structure_state = _mapping(
+            dict(carry.get("heartbeat_structure_state") or {})
+            or dict(runtime_seed.get("heartbeat_structure_state") or {})
+            or dict(package.get("heartbeat_structure_state") or {})
+        )
+        heartbeat_structure_axes = _mapping(
+            dict(carry.get("heartbeat_structure_axes") or {})
+            or dict(runtime_seed.get("heartbeat_structure_axes") or {})
+            or dict(package.get("heartbeat_structure_axes") or {})
+        )
+        organism_state = _mapping(
+            dict(carry.get("organism_state") or {})
+            or dict(runtime_seed.get("organism_state") or {})
+            or dict(package.get("organism_state") or {})
+        )
+        organism_axes = _mapping(
+            dict(carry.get("organism_axes") or {})
+            or dict(runtime_seed.get("organism_axes") or {})
+            or dict(package.get("organism_axes") or {})
+        )
+        joint_state = _mapping(
+            dict(carry.get("joint_state") or {})
+            or dict(runtime_seed.get("joint_state") or {})
+            or dict(package.get("joint_state") or {})
+        )
+        joint_axes = _mapping(
+            dict(carry.get("joint_axes") or {})
+            or dict(runtime_seed.get("joint_axes") or {})
+            or dict(package.get("joint_axes") or {})
+        )
+        external_field_state = _mapping(
+            dict(carry.get("external_field_state") or {})
+            or dict(runtime_seed.get("external_field_state") or {})
+            or dict(package.get("external_field_state") or {})
+        )
+        external_field_axes = _mapping(
+            dict(carry.get("external_field_axes") or {})
+            or dict(runtime_seed.get("external_field_axes") or {})
+            or dict(package.get("external_field_axes") or {})
+        )
+        terrain_dynamics_state = _mapping(
+            dict(carry.get("terrain_dynamics_state") or {})
+            or dict(runtime_seed.get("terrain_dynamics_state") or {})
+            or dict(package.get("terrain_dynamics_state") or {})
+        )
+        terrain_dynamics_axes = _mapping(
+            dict(carry.get("terrain_dynamics_axes") or {})
+            or dict(runtime_seed.get("terrain_dynamics_axes") or {})
+            or dict(package.get("terrain_dynamics_axes") or {})
+        )
 
         existing_migration = dict(package.get("migration") or {})
         migration_applied = bool(existing_migration.get("applied")) or (
@@ -992,6 +1262,24 @@ class InnerOSTransferPackageBuilder:
                     "daily_carry_summary": daily_carry_summary,
                     "overnight_bias_roles": dict(carry.get("overnight_bias_roles") or {}),
                     "reaction_vs_overnight_bias": dict(carry.get("reaction_vs_overnight_bias") or {}),
+                    "growth_state": growth_state,
+                    "growth_replay_axes": growth_replay_axes,
+                    "epistemic_state": epistemic_state,
+                    "epistemic_packet_axes": epistemic_packet_axes,
+                    "memory_dynamics_state": memory_dynamics_state,
+                    "memory_dynamics_axes": memory_dynamics_axes,
+                    "qualia_structure_state": qualia_structure_state,
+                    "qualia_structure_axes": qualia_structure_axes,
+                    "heartbeat_structure_state": heartbeat_structure_state,
+                    "heartbeat_structure_axes": heartbeat_structure_axes,
+                    "organism_state": organism_state,
+                    "organism_axes": organism_axes,
+                    "joint_state": joint_state,
+                    "joint_axes": joint_axes,
+                    "external_field_state": external_field_state,
+                    "external_field_axes": external_field_axes,
+                    "terrain_dynamics_state": terrain_dynamics_state,
+                    "terrain_dynamics_axes": terrain_dynamics_axes,
                     "initiative_followup_bias": dict(carry.get("initiative_followup_bias") or {}),
                     "agenda_carry": dict(carry.get("agenda_carry") or {}),
                     "temporal_membrane": temporal_membrane,
@@ -1114,6 +1402,24 @@ class InnerOSTransferPackageBuilder:
             "temperament_guard_bias",
             "temperament_bond_bias",
             "temperament_recovery_bias",
+            "growth_state",
+            "growth_replay_axes",
+            "epistemic_state",
+            "epistemic_packet_axes",
+            "memory_dynamics_state",
+            "memory_dynamics_axes",
+            "qualia_structure_state",
+            "qualia_structure_axes",
+            "heartbeat_structure_state",
+            "heartbeat_structure_axes",
+            "organism_state",
+            "organism_axes",
+            "joint_state",
+            "joint_axes",
+            "external_field_state",
+            "external_field_axes",
+            "terrain_dynamics_state",
+            "terrain_dynamics_axes",
         ):
             if key not in merged or merged.get(key) is None:
                 merged[key] = self._state_value(current_state, last_gate_context, persona_meta_inner_os, key)
@@ -1144,6 +1450,168 @@ class InnerOSTransferPackageBuilder:
         persona_meta_inner_os: Mapping[str, Any],
     ) -> dict[str, Any]:
         return {
+            "growth_state": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "growth_state",
+                    default={},
+                )
+            ),
+            "growth_replay_axes": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "growth_replay_axes",
+                    default={},
+                )
+            ),
+            "epistemic_state": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "epistemic_state",
+                    default={},
+                )
+            ),
+            "epistemic_packet_axes": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "epistemic_packet_axes",
+                    default={},
+                )
+            ),
+            "memory_dynamics_state": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "memory_dynamics_state",
+                    default={},
+                )
+            ),
+            "memory_dynamics_axes": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "memory_dynamics_axes",
+                    default={},
+                )
+            ),
+            "qualia_structure_state": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "qualia_structure_state",
+                    default={},
+                )
+            ),
+            "qualia_structure_axes": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "qualia_structure_axes",
+                    default={},
+                )
+            ),
+            "heartbeat_structure_state": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "heartbeat_structure_state",
+                    default={},
+                )
+            ),
+            "heartbeat_structure_axes": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "heartbeat_structure_axes",
+                    default={},
+                )
+            ),
+            "organism_state": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "organism_state",
+                    default={},
+                )
+            ),
+            "organism_axes": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "organism_axes",
+                    default={},
+                )
+            ),
+            "joint_state": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "joint_state",
+                    default={},
+                )
+            ),
+            "joint_axes": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "joint_axes",
+                    default={},
+                )
+            ),
+            "external_field_state": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "external_field_state",
+                    default={},
+                )
+            ),
+            "external_field_axes": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "external_field_axes",
+                    default={},
+                )
+            ),
+            "terrain_dynamics_state": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "terrain_dynamics_state",
+                    default={},
+                )
+            ),
+            "terrain_dynamics_axes": _mapping(
+                self._state_value(
+                    current_state,
+                    last_gate_context,
+                    persona_meta_inner_os,
+                    "terrain_dynamics_axes",
+                    default={},
+                )
+            ),
             "prev_qualia": _sequence(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "prev_qualia", default=[])),
             "prev_qualia_habituation": _sequence(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "prev_qualia_habituation", default=[])),
             "prev_protection_grad_x": _sequence(self._state_value(current_state, last_gate_context, persona_meta_inner_os, "prev_protection_grad_x", default=[])),

@@ -125,6 +125,28 @@ class DailyCarrySummaryBuilder:
             "identity_arc_registry_active_count": int(identity_arc_registry_summary.get("active_arc_count") or 0),
             "expressive_style": _text(payload.get("inner_os_same_turn_expressive_style_state")),
             "relational_banter_style": _text(payload.get("inner_os_same_turn_relational_style_banter_style")),
+            "growth_relational_trust": round(_float01(payload.get("inner_os_same_turn_growth_relational_trust")), 4),
+            "growth_epistemic_maturity": round(_float01(payload.get("inner_os_same_turn_growth_epistemic_maturity")), 4),
+            "growth_expressive_range": round(_float01(payload.get("inner_os_same_turn_growth_expressive_range")), 4),
+            "growth_residue_integration": round(_float01(payload.get("inner_os_same_turn_growth_residue_integration")), 4),
+            "growth_playfulness_range": round(_float01(payload.get("inner_os_same_turn_growth_playfulness_range")), 4),
+            "growth_self_coherence": round(_float01(payload.get("inner_os_same_turn_growth_self_coherence")), 4),
+            "growth_dominant_transition": _text(payload.get("inner_os_same_turn_growth_dominant_transition")),
+            "growth_bond_axis": round(_float01(payload.get("inner_os_same_turn_growth_bond_axis")), 4),
+            "growth_stability_axis": round(_float01(payload.get("inner_os_same_turn_growth_stability_axis")), 4),
+            "growth_curiosity_axis": round(_float01(payload.get("inner_os_same_turn_growth_curiosity_axis")), 4),
+            "memory_dynamics_mode": _text(payload.get("inner_os_same_turn_memory_dynamics_mode")),
+            "memory_dominant_link": _text(payload.get("inner_os_same_turn_memory_dominant_link")),
+            "memory_monument_kind": _text(payload.get("inner_os_same_turn_memory_monument_kind")),
+            "memory_monument_salience": round(_float01(payload.get("inner_os_same_turn_memory_monument_salience")), 4),
+            "memory_ignition_readiness": round(_float01(payload.get("inner_os_same_turn_memory_ignition_readiness")), 4),
+            "memory_consolidation_pull": round(_float01(payload.get("inner_os_same_turn_memory_consolidation_pull")), 4),
+            "memory_tension": round(_float01(payload.get("inner_os_same_turn_memory_tension")), 4),
+            "memory_topology_axis": round(_float01(payload.get("inner_os_same_turn_memory_topology_axis")), 4),
+            "memory_salience_axis": round(_float01(payload.get("inner_os_same_turn_memory_salience_axis")), 4),
+            "memory_ignition_axis": round(_float01(payload.get("inner_os_same_turn_memory_ignition_axis")), 4),
+            "memory_consolidation_axis": round(_float01(payload.get("inner_os_same_turn_memory_consolidation_axis")), 4),
+            "memory_tension_axis": round(_float01(payload.get("inner_os_same_turn_memory_tension_axis")), 4),
         }
 
         overnight_focus = {
@@ -179,6 +201,28 @@ class DailyCarrySummaryBuilder:
             "expressive_style_focus": _text(payload.get("inner_os_sleep_expressive_style_focus")),
             "expressive_style_history_focus": _text(payload.get("inner_os_sleep_expressive_style_history_focus")),
             "banter_style_focus": _text(payload.get("inner_os_sleep_banter_style_focus")),
+            "growth_relational_trust": round(_float01(payload.get("inner_os_sleep_growth_relational_trust")), 4),
+            "growth_epistemic_maturity": round(_float01(payload.get("inner_os_sleep_growth_epistemic_maturity")), 4),
+            "growth_expressive_range": round(_float01(payload.get("inner_os_sleep_growth_expressive_range")), 4),
+            "growth_residue_integration": round(_float01(payload.get("inner_os_sleep_growth_residue_integration")), 4),
+            "growth_playfulness_range": round(_float01(payload.get("inner_os_sleep_growth_playfulness_range")), 4),
+            "growth_self_coherence": round(_float01(payload.get("inner_os_sleep_growth_self_coherence")), 4),
+            "growth_dominant_transition": _text(payload.get("inner_os_sleep_growth_dominant_transition")),
+            "growth_bond_axis": round(_float01(payload.get("inner_os_sleep_growth_bond_axis")), 4),
+            "growth_stability_axis": round(_float01(payload.get("inner_os_sleep_growth_stability_axis")), 4),
+            "growth_curiosity_axis": round(_float01(payload.get("inner_os_sleep_growth_curiosity_axis")), 4),
+            "memory_dynamics_mode": _text(payload.get("inner_os_sleep_memory_dynamics_mode")),
+            "memory_dominant_link": _text(payload.get("inner_os_sleep_memory_dominant_link")),
+            "memory_monument_kind": _text(payload.get("inner_os_sleep_memory_monument_kind")),
+            "memory_monument_salience": round(_float01(payload.get("inner_os_sleep_memory_monument_salience")), 4),
+            "memory_ignition_readiness": round(_float01(payload.get("inner_os_sleep_memory_ignition_readiness")), 4),
+            "memory_consolidation_pull": round(_float01(payload.get("inner_os_sleep_memory_consolidation_pull")), 4),
+            "memory_tension": round(_float01(payload.get("inner_os_sleep_memory_tension")), 4),
+            "memory_topology_axis": round(_float01(payload.get("inner_os_sleep_memory_topology_axis")), 4),
+            "memory_salience_axis": round(_float01(payload.get("inner_os_sleep_memory_salience_axis")), 4),
+            "memory_ignition_axis": round(_float01(payload.get("inner_os_sleep_memory_ignition_axis")), 4),
+            "memory_consolidation_axis": round(_float01(payload.get("inner_os_sleep_memory_consolidation_axis")), 4),
+            "memory_tension_axis": round(_float01(payload.get("inner_os_sleep_memory_tension_axis")), 4),
         }
 
         carry_strengths = {
@@ -344,6 +388,12 @@ class DailyCarrySummaryBuilder:
             "banter_style_carry_visible": bool(
                 overnight_focus["banter_style_focus"]
                 and carry_strengths["lexical_variation_carry"] > 0.0
+            ),
+            "memory_dynamics_carry_visible": bool(
+                overnight_focus["memory_dynamics_mode"]
+                or overnight_focus["memory_dominant_link"]
+                or overnight_focus["memory_monument_kind"]
+                or float(overnight_focus["memory_ignition_readiness"] or 0.0) > 0.0
             ),
             "partner_registry_visible": bool(
                 same_turn_focus["partner_registry_dominant_person"]

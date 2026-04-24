@@ -465,6 +465,28 @@ def test_nightly_json_matches_schema(tmp_path) -> None:
         "inner_os_sleep_expressive_style_history_bias": 0.08,
         "inner_os_sleep_banter_style_focus": "gentle_tease",
         "inner_os_sleep_lexical_variation_carry_bias": 0.11,
+        "inner_os_sleep_growth_relational_trust": 0.64,
+        "inner_os_sleep_growth_epistemic_maturity": 0.58,
+        "inner_os_sleep_growth_expressive_range": 0.62,
+        "inner_os_sleep_growth_residue_integration": 0.55,
+        "inner_os_sleep_growth_playfulness_range": 0.49,
+        "inner_os_sleep_growth_self_coherence": 0.67,
+        "inner_os_sleep_growth_dominant_transition": "expressive_range",
+        "inner_os_sleep_growth_bond_axis": 0.61,
+        "inner_os_sleep_growth_stability_axis": 0.6,
+        "inner_os_sleep_growth_curiosity_axis": 0.57,
+        "inner_os_sleep_memory_dynamics_mode": "reconsolidate",
+        "inner_os_sleep_memory_dominant_link": "bond:user|memory:harbor_thread",
+        "inner_os_sleep_memory_monument_kind": "shared_ritual",
+        "inner_os_sleep_memory_monument_salience": 0.66,
+        "inner_os_sleep_memory_ignition_readiness": 0.52,
+        "inner_os_sleep_memory_consolidation_pull": 0.64,
+        "inner_os_sleep_memory_tension": 0.22,
+        "inner_os_sleep_memory_topology_axis": 0.57,
+        "inner_os_sleep_memory_salience_axis": 0.66,
+        "inner_os_sleep_memory_ignition_axis": 0.52,
+        "inner_os_sleep_memory_consolidation_axis": 0.64,
+        "inner_os_sleep_memory_tension_axis": 0.22,
         "inner_os_sleep_insight_class_focus": "reframed_relation",
         "inner_os_sleep_insight_reframing_bias": 0.31,
         "inner_os_sleep_association_reweighting_bias": 0.38,
@@ -574,6 +596,28 @@ def test_nightly_json_matches_schema(tmp_path) -> None:
     assert payload.get("inner_os_sleep_expressive_style_history_bias") == 0.08
     assert payload.get("inner_os_sleep_banter_style_focus") == "gentle_tease"
     assert payload.get("inner_os_sleep_lexical_variation_carry_bias") == 0.11
+    assert payload.get("inner_os_sleep_growth_relational_trust") == 0.64
+    assert payload.get("inner_os_sleep_growth_epistemic_maturity") == 0.58
+    assert payload.get("inner_os_sleep_growth_expressive_range") == 0.62
+    assert payload.get("inner_os_sleep_growth_residue_integration") == 0.55
+    assert payload.get("inner_os_sleep_growth_playfulness_range") == 0.49
+    assert payload.get("inner_os_sleep_growth_self_coherence") == 0.67
+    assert payload.get("inner_os_sleep_growth_dominant_transition") == "expressive_range"
+    assert payload.get("inner_os_sleep_growth_bond_axis") == 0.61
+    assert payload.get("inner_os_sleep_growth_stability_axis") == 0.6
+    assert payload.get("inner_os_sleep_growth_curiosity_axis") == 0.57
+    assert payload.get("inner_os_sleep_memory_dynamics_mode") == "reconsolidate"
+    assert payload.get("inner_os_sleep_memory_dominant_link") == "bond:user|memory:harbor_thread"
+    assert payload.get("inner_os_sleep_memory_monument_kind") == "shared_ritual"
+    assert payload.get("inner_os_sleep_memory_monument_salience") == 0.66
+    assert payload.get("inner_os_sleep_memory_ignition_readiness") == 0.52
+    assert payload.get("inner_os_sleep_memory_consolidation_pull") == 0.64
+    assert payload.get("inner_os_sleep_memory_tension") == 0.22
+    assert payload.get("inner_os_sleep_memory_topology_axis") == 0.57
+    assert payload.get("inner_os_sleep_memory_salience_axis") == 0.66
+    assert payload.get("inner_os_sleep_memory_ignition_axis") == 0.52
+    assert payload.get("inner_os_sleep_memory_consolidation_axis") == 0.64
+    assert payload.get("inner_os_sleep_memory_tension_axis") == 0.22
     assert payload.get("inner_os_sleep_insight_class_focus") == "reframed_relation"
     assert payload.get("inner_os_sleep_insight_reframing_bias") == 0.31
     assert payload.get("inner_os_sleep_association_reweighting_bias") == 0.38

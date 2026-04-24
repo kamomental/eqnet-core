@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Mapping, Optional
 
 
@@ -123,6 +123,10 @@ class SleepConsolidationSnapshot:
     expressive_style_history_bias: float = 0.0
     banter_style_focus: str = ""
     lexical_variation_carry_bias: float = 0.0
+    growth_state: dict[str, Any] = field(default_factory=dict)
+    growth_replay_axes: dict[str, dict[str, float]] = field(default_factory=dict)
+    memory_dynamics_state: dict[str, Any] = field(default_factory=dict)
+    memory_dynamics_axes: dict[str, dict[str, float]] = field(default_factory=dict)
     summary: str = ""
 
     def to_dict(self) -> Dict[str, Any]:

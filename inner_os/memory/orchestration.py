@@ -121,6 +121,8 @@ def build_memory_appends(memory_context: MemoryContext) -> list[dict[str, object
     )
     interaction_policy = derive_interaction_policy_packet(
         dialogue_act="check_in" if memory_context.related_person_ids else "report",
+        observed_text="",
+        locale="ja-JP",
         current_focus="person" if memory_context.related_person_ids else "ambient",
         current_risks=[],
         reportable_facts=[record.summary for record in memory_context.episodic_candidates],

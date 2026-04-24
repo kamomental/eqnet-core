@@ -7,6 +7,22 @@ from .hook_contracts import (  # noqa: F401
     PreTurnUpdateInput,
     ResponseGateInput,
 )
+from .expression_hints_contract import (
+    ExpressionHintsContract,
+    coerce_expression_hints_contract,
+)
+from .expression_hint_bundles import (
+    InteractionAuditHintBundleContract,
+    InteractionReasoningHintBundleContract,
+    QualiaHintBundleContract,
+    SceneHintBundleContract,
+    WorkspaceHintBundleContract,
+    coerce_interaction_audit_hint_bundle_contract,
+    coerce_interaction_reasoning_hint_bundle_contract,
+    coerce_qualia_hint_bundle_contract,
+    coerce_scene_hint_bundle_contract,
+    coerce_workspace_hint_bundle_contract,
+)
 from .integration_hooks import (  # noqa: F401
     HookState,
     IntegrationHooks,
@@ -23,11 +39,56 @@ from .physiology import (
     PainStressCore,
     RecoveryCore,
 )
+from .heartbeat_structure_state import (
+    HeartbeatStructureFrame,
+    HeartbeatStructureState,
+    coerce_heartbeat_structure_state,
+    derive_heartbeat_structure_state,
+)
 from .relational_world import RelationalWorldCore, RelationalWorldState
 from .temporal import TemporalWeightCore, TemporalWeightState
 
 from .memory_core import MemoryCore, MemorySearchHit
 from .development_core import DevelopmentCore, DevelopmentState
+from .growth_state import GrowthState, coerce_growth_state
+from .development_transition_policy import DevelopmentTransitionPolicy, derive_growth_state
+from .epistemic_state import EpistemicState, coerce_epistemic_state
+from .epistemic_update_policy import EpistemicUpdatePolicy, derive_epistemic_state
+from .memory_dynamics import (
+    MemoryDynamicsFrame,
+    MemoryDynamicsState,
+    coerce_memory_dynamics_state,
+    derive_memory_dynamics_state,
+)
+from .external_field_state import (
+    ExternalFieldFrame,
+    ExternalFieldState,
+    coerce_external_field_state,
+    derive_external_field_state,
+)
+from .terrain_dynamics import (
+    TerrainDynamicsFrame,
+    TerrainDynamicsState,
+    coerce_terrain_dynamics_state,
+    derive_terrain_dynamics_state,
+)
+from .organism_state import (
+    OrganismFrame,
+    OrganismState,
+    coerce_organism_state,
+    derive_organism_state,
+)
+from .joint_state import (
+    JointStateFrame,
+    JointState,
+    coerce_joint_state,
+    derive_joint_state,
+)
+from .shared_presence_state import (
+    SharedPresenceState,
+    coerce_shared_presence_state,
+    derive_shared_presence_state,
+)
 from .reinterpretation_core import ReinterpretationCore, ReinterpretationSnapshot
 from .environment_pressure_core import EnvironmentPressureCore, EnvironmentPressureSnapshot
 from .relationship_core import RelationshipCore, RelationshipState
@@ -64,8 +125,34 @@ from .observation_model import (
     ObservationModel,
     TensorObservationModel,
 )
-from .action_posture import derive_action_posture
-from .actuation_plan import derive_actuation_plan
+from .world_model import (
+    SubjectiveSceneState,
+    WorldState,
+    coerce_subjective_scene_state,
+    derive_subjective_scene_state,
+    update_world_state,
+)
+from .self_model import (
+    PersonNode,
+    PersonRegistry,
+    SelfOtherAttributionState,
+    SelfState,
+    coerce_self_other_attribution_state,
+    derive_self_other_attribution_state,
+    person_registry_from_snapshot,
+    update_person_registry,
+    update_self_state,
+)
+from .action_posture import (
+    ActionPostureContract,
+    coerce_action_posture_contract,
+    derive_action_posture,
+)
+from .actuation_plan import (
+    ActuationPlanContract,
+    coerce_actuation_plan_contract,
+    derive_actuation_plan,
+)
 from .affective_localizer import AffectiveLocalizer, BasicAffectiveLocalizer
 from .affective_position import AffectivePositionState, make_neutral_affective_position
 from .affective_terrain import (
@@ -109,7 +196,20 @@ from .expressive_style_state import ExpressiveStyleState, derive_expressive_styl
 from .emergency_posture import EmergencyPosture, derive_emergency_posture
 from .lightness_budget_state import LightnessBudgetState, derive_lightness_budget_state
 from .live_engagement_state import LiveEngagementState, derive_live_engagement_state
+from .listener_action_state import ListenerActionState, derive_listener_action_state
+from .nonverbal_response_state import NonverbalResponseState, derive_nonverbal_response_state
+from .meaning_update_state import MeaningUpdateState, derive_meaning_update_state
+from .presence_hold_state import PresenceHoldState, derive_presence_hold_state
+from .appraisal_state import AppraisalState, derive_appraisal_state
+from .response_selection_state import ResponseSelectionState, derive_response_selection_state
 from .learning_mode_state import LearningModeState, derive_learning_mode_state
+from .shared_moment_state import SharedMomentState, derive_shared_moment_state
+from .utterance_reason_packet import UtteranceReasonPacket, derive_utterance_reason_packet
+from .policy_packet import (
+    InteractionPolicyPacketContract,
+    coerce_interaction_policy_packet,
+    derive_interaction_policy_packet,
+)
 from .matrix_relation_memory import (
     MatrixMemoryHeadSpec,
     MatrixMemoryHeadState,
@@ -228,6 +328,12 @@ from .qualia_membrane_operator import (
     QualiaMembraneTemporalBias,
     derive_qualia_membrane_temporal_bias,
 )
+from .qualia_structure_state import (
+    QualiaStructureFrame,
+    QualiaStructureState,
+    coerce_qualia_structure_state,
+    derive_qualia_structure_state,
+)
 from .qualia_kernel_adapter import QualiaPlannerView
 from .association_graph import (
     AssociationGraph,
@@ -246,8 +352,19 @@ from .resonance_evaluator import (
     evaluate_interaction_resonance,
     rerank_interaction_option_candidates,
 )
-from .headless_runtime import HeadlessInnerOSRuntime, HeadlessTurnResult
+from .headless_runtime import (
+    EmitTimingContract,
+    HeadlessInnerOSRuntime,
+    HeadlessTurnResult,
+    TimingGuardState,
+    TurnTimingHint,
+    coerce_emit_timing_contract,
+    coerce_timing_guard_state,
+    coerce_turn_timing_hint,
+    derive_turn_timing_hint,
+)
 from .scene_state import SceneState, derive_scene_state
+from .risk_token_policy import CurrentRiskTokenPolicy, derive_current_risk_token_policy
 from .social_topology_state import (
     SocialTopologyState,
     coerce_social_topology_label,

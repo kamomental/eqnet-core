@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import MutableMapping
 from dataclasses import dataclass, field
+from typing import Mapping
 
 
 @dataclass
@@ -15,9 +17,11 @@ class ResponsePlan:
     speech_act: str
     content_brief: list[str] = field(default_factory=list)
     multimodal_cues: list[str] = field(default_factory=list)
-    interaction_policy: dict[str, object] = field(default_factory=dict)
-    action_posture: dict[str, object] = field(default_factory=dict)
-    actuation_plan: dict[str, object] = field(default_factory=dict)
+    interaction_policy: MutableMapping[str, object] = field(default_factory=dict)
+    action_posture: Mapping[str, object] = field(default_factory=dict)
+    actuation_plan: Mapping[str, object] = field(default_factory=dict)
+    reaction_contract: Mapping[str, object] = field(default_factory=dict)
+    discourse_shape: dict[str, object] = field(default_factory=dict)
     surface_profile: dict[str, object] = field(default_factory=dict)
     boundary_transform: dict[str, object] = field(default_factory=dict)
     residual_reflection: dict[str, object] = field(default_factory=dict)

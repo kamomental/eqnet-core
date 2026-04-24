@@ -32,11 +32,16 @@
   - `cultural_register`
   - `group_register`
   - `sentence_temperature`
+  - `brightness`
+  - `playfulness`
+  - `tempo`
 - `source_state`
   - `recent_dialogue_state`
   - `discussion_thread_state`
   - `issue_state`
   - `green_*`
+  - `live_engagement_*`
+  - `lightness_*`
 
 ## 方針
 

@@ -1,5 +1,10 @@
 # Evaluation Targets
 
+## 関連文書
+- `docs/core/evaluation_criteria.md`
+- `docs/core/evaluation_snapshot_2026_03_28.md`
+- `docs/core/evaluation_operating_policy.md`
+
 ## 目的
 
 `docs/core/evaluation_criteria.md` と

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from typing import Mapping
 
 from ..action_posture import derive_action_posture
 from ..actuation_plan import derive_actuation_plan
@@ -51,9 +52,11 @@ from ..resonance_evaluator import (
 )
 from ..scene_state import derive_scene_state
 from .content_policy import derive_content_sequence, derive_content_skeleton
+from .discourse_shape import derive_discourse_shape
 from .hint_bridge import ensure_qualia_planner_view
 from .interaction_constraints import derive_interaction_constraints
 from .models import DialogueContext, ResponsePlan
+from .reaction_contract import derive_reaction_contract
 from .repetition_guard import derive_repetition_guard
 from .surface_language_profile import derive_surface_language_profile
 from .surface_profile import derive_surface_profile
@@ -408,6 +411,8 @@ def render_response(
     surface_profile = _apply_qualia_planner_surface_bias(surface_profile, qualia_planner_view)
     interaction_policy = derive_interaction_policy_packet(
         dialogue_act=speech_act,
+        observed_text=dialogue_context.user_text,
+        locale="ja-JP",
         current_focus="person" if memory_context and memory_context.related_person_ids else "ambient",
         current_risks=foreground_state.current_risks,
         reportable_facts=foreground_state.reportable_facts,
@@ -441,6 +446,8 @@ def render_response(
         insight_event=expression_hints.get("insight_event"),
         insight_reframing_bias=float(expression_hints.get("insight_reframing_bias") or 0.0),
         insight_class_focus=str(expression_hints.get("insight_class_focus") or "").strip(),
+        external_field_state=expression_hints.get("external_field_state"),
+        terrain_dynamics_state=expression_hints.get("terrain_dynamics_state"),
         self_state=foreground_state.affective_summary,
     )
     interaction_policy["contact_reflection_state"] = contact_reflection_state.to_dict()
@@ -595,6 +602,15 @@ def render_response(
     multimodal_cues = sorted(set(multimodal_cues + list(residual_reflection.get("cues") or [])))
     multimodal_cues = sorted(set(multimodal_cues + [f"action_{action_posture['engagement_mode']}"]))
     multimodal_cues = sorted(set(multimodal_cues + [f"actuation_{actuation_plan['primary_action']}"]))
+    if str(actuation_plan.get("response_channel") or "").strip():
+        multimodal_cues = sorted(
+            set(multimodal_cues + [f"response_channel_{actuation_plan['response_channel']}"])
+        )
+    nonverbal_response_state = dict(actuation_plan.get("nonverbal_response_state") or {})
+    if str(nonverbal_response_state.get("state") or "").strip():
+        multimodal_cues = sorted(
+            set(multimodal_cues + [f"nonverbal_response_{nonverbal_response_state['state']}"])
+        )
     nonverbal_profile_payload = {
         "gaze_mode": nonverbal_profile.gaze_mode,
         "pause_mode": nonverbal_profile.pause_mode,
@@ -671,11 +687,39 @@ def render_response(
         surface_profile=surface_profile,
         contact_reflection_state=contact_reflection_state.to_dict(),
         green_kernel_composition=green_kernel_composition,
+        live_engagement_state=interaction_policy.get("live_engagement_state"),
+        lightness_budget_state=interaction_policy.get("lightness_budget_state"),
+        shared_moment_state=interaction_policy.get("shared_moment_state"),
+        listener_action_state=interaction_policy.get("listener_action_state"),
+        appraisal_state=interaction_policy.get("appraisal_state"),
+        meaning_update_state=interaction_policy.get("meaning_update_state"),
+        joint_state=interaction_policy.get("joint_state"),
+        utterance_reason_packet=interaction_policy.get("utterance_reason_packet"),
+        interaction_policy_packet=interaction_policy,
+        action_posture=action_posture,
+        actuation_plan=actuation_plan,
+        organism_state=expression_hints.get("organism_state"),
+        external_field_state=expression_hints.get("external_field_state"),
+        terrain_dynamics_state=expression_hints.get("terrain_dynamics_state"),
+        memory_dynamics_state=expression_hints.get("memory_dynamics_state"),
         dialogue_context={
             "user_text": dialogue_context.user_text,
             "history": list(dialogue_context.history),
         },
+    )
+    discourse_shape = derive_discourse_shape(
+        content_sequence=content_sequence,
+        turn_delta=turn_delta,
+        surface_context_packet=surface_context_packet,
     ).to_dict()
+    reaction_contract = derive_reaction_contract(
+        interaction_policy=interaction_policy,
+        action_posture=action_posture,
+        actuation_plan=actuation_plan,
+        discourse_shape=discourse_shape,
+        surface_context_packet=surface_context_packet,
+        turn_delta=turn_delta,
+    )
     return ResponsePlan(
         speech_act=speech_act,
         content_brief=list(foreground_state.reportable_facts),
@@ -683,6 +727,8 @@ def render_response(
         interaction_policy=interaction_policy,
         action_posture=action_posture,
         actuation_plan=actuation_plan,
+        reaction_contract=reaction_contract,
+        discourse_shape=discourse_shape,
         surface_profile=surface_profile,
         boundary_transform=boundary_transform,
         residual_reflection=residual_reflection,
@@ -709,10 +755,15 @@ def render_response(
             "turn_delta": turn_delta,
             "action_posture": action_posture,
             "actuation_plan": actuation_plan,
+            "reaction_contract": reaction_contract.to_dict(),
             "content_skeleton": content_skeleton,
             "content_sequence": content_sequence,
+            "discourse_shape": discourse_shape,
             "surface_profile": surface_profile,
-            "surface_context_packet": surface_context_packet,
+            "surface_context_packet": surface_context_packet.to_dict(),
+            "organism_state": expression_hints.get("organism_state") or {},
+            "external_field_state": expression_hints.get("external_field_state") or {},
+            "terrain_dynamics_state": expression_hints.get("terrain_dynamics_state") or {},
             "boundary_transform": boundary_transform,
             "residual_reflection": residual_reflection,
             "green_kernel_composition": green_kernel_composition,
@@ -815,7 +866,7 @@ def _apply_qualia_planner_surface_bias(
 
 def _apply_interaction_policy_surface_bias(
     surface_profile: dict[str, object],
-    interaction_policy: dict[str, object],
+    interaction_policy: Mapping[str, object],
 ) -> dict[str, object]:
     updated = dict(surface_profile)
     body_recovery_guard = dict(interaction_policy.get("body_recovery_guard") or {})

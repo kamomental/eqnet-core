@@ -6,13 +6,29 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, Optional
+import emot_terrain_lab.hub.runtime as runtime_module
+import numpy as np
 from emot_terrain_lab.terrain import llm as terrain_llm
 
 from emot_terrain_lab.hub.runtime import EmotionalHubRuntime, _apply_inner_os_expression_controls
+from inner_os.action_posture import coerce_action_posture_contract
+from inner_os.actuation_plan import coerce_actuation_plan_contract
 from inner_os.expression import build_expression_hints_from_gate_result
+from inner_os.expression_hint_bundles import (
+    FieldRegulationHintBundleContract,
+    InteractionAuditHintBundleContract,
+    InteractionReasoningHintBundleContract,
+    QualiaHintBundleContract,
+    SceneHintBundleContract,
+    TerrainInsightHintBundleContract,
+    WorkspaceHintBundleContract,
+)
+from inner_os.expression.surface_context_packet import coerce_surface_context_packet
+from inner_os.headless_runtime import TimingGuardState
 from inner_os.integration_hooks import IntegrationHooks
-from inner_os.headless_runtime import HeadlessInnerOSRuntime
+from inner_os.headless_runtime import HeadlessInnerOSRuntime, HeadlessTurnResult
 from inner_os.memory_core import MemoryCore
+from inner_os.policy_packet import coerce_interaction_policy_packet
 
 
 @dataclass
@@ -39,6 +55,11 @@ class _ProcessTurnHarness:
     )
     _last_shadow_estimate: Optional[Dict[str, Any]] = None
     _last_gate_context: Dict[str, Any] = field(default_factory=dict)
+    _last_inner_os_timing_guard: TimingGuardState = field(default_factory=TimingGuardState)
+    _inner_os_emit_not_before_ms: float = 0.0
+    _inner_os_interrupt_guard_until_ms: float = 0.0
+    _inner_os_emit_overlap_policy: str = ""
+    _inner_os_emit_response_channel: str = ""
     _self_model: _SelfHarness = field(default_factory=_SelfHarness)
     _last_step_context: Optional[str] = None
     _surface_user_history: Any = field(default_factory=lambda: deque(maxlen=4))
@@ -72,7 +93,14 @@ class _ProcessTurnHarness:
     _build_inner_os_llm_guidance = EmotionalHubRuntime._build_inner_os_llm_guidance
     _apply_surface_context_packet_to_content_sequence = EmotionalHubRuntime._apply_surface_context_packet_to_content_sequence
     _shape_inner_os_surface_text = EmotionalHubRuntime._shape_inner_os_surface_text
+    _apply_inner_os_actuation_timing_profile = EmotionalHubRuntime._apply_inner_os_actuation_timing_profile
+    _inner_os_emit_clock_ms = EmotionalHubRuntime._inner_os_emit_clock_ms
+    _inner_os_emit_wait_enabled = EmotionalHubRuntime._inner_os_emit_wait_enabled
+    _apply_inner_os_turn_timing_guard = EmotionalHubRuntime._apply_inner_os_turn_timing_guard
+    _apply_inner_os_emit_timing = EmotionalHubRuntime._apply_inner_os_emit_timing
     _shape_inner_os_surface_profile_text = EmotionalHubRuntime._shape_inner_os_surface_profile_text
+    _render_fast_ack = EmotionalHubRuntime._render_fast_ack
+    _render_inner_os_response_channel_text = EmotionalHubRuntime._render_inner_os_response_channel_text
     _shape_inner_os_content_sequence = EmotionalHubRuntime._shape_inner_os_content_sequence
     _select_short_inner_os_sequence = EmotionalHubRuntime._select_short_inner_os_sequence
     _compact_inner_os_sequence_text = EmotionalHubRuntime._compact_inner_os_sequence_text
@@ -296,8 +324,237 @@ def test_apply_inner_os_surface_policy_can_use_interaction_policy_packet() -> No
         {"intent": "check_in"},
     )
     assert updated is not None
-    assert updated.text.startswith("Let me give this a little more room before I press further.")
-    assert updated.text.endswith("I can leave this with room around it.")
+
+
+def test_apply_inner_os_emit_timing_records_absolute_windows() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness._inner_os_emit_wait_enabled = lambda: False  # type: ignore[assignment]
+    harness._inner_os_emit_clock_ms = lambda: 1000.0  # type: ignore[assignment]
+    response = SimpleNamespace(latency_ms=12.0, controls_used={}, controls={})
+
+    emit_timing = harness._apply_inner_os_emit_timing(
+        response,
+        actuation_plan={
+            "response_channel": "hold",
+            "turn_timing_hint": {
+                "response_channel": "hold",
+                "entry_window": "held",
+                "pause_profile": "soft_pause",
+                "overlap_policy": "wait_for_release",
+                "interruptibility": "low",
+                "minimum_wait_ms": 420,
+                "interrupt_guard_ms": 420,
+            },
+        },
+    )
+
+    assert response.latency_ms == 420.0
+    assert emit_timing.effective_emit_delay_ms == 408.0
+    assert emit_timing.emit_not_before_ms == 1408.0
+    assert emit_timing.interrupt_guard_until_ms == 1828.0
+    assert emit_timing.wait_applied is False
+    assert emit_timing.wait_applied_ms == 0.0
+    assert response.controls_used["inner_os_emit_timing"]["entry_window"] == "held"
+
+
+def test_inner_os_emit_wait_enabled_uses_streaming_surface_mode() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness.config = SimpleNamespace(latency=SimpleNamespace(enable_loose=True))
+    harness._surface_mode = lambda: "streaming"  # type: ignore[assignment]
+
+    assert harness._inner_os_emit_wait_enabled() is True
+
+    harness._surface_mode = lambda: "reality"  # type: ignore[assignment]
+    assert harness._inner_os_emit_wait_enabled() is False
+
+
+def test_apply_inner_os_emit_timing_can_apply_wait(monkeypatch: Any) -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness._inner_os_emit_wait_enabled = lambda: True  # type: ignore[assignment]
+    harness._inner_os_emit_clock_ms = lambda: 2000.0  # type: ignore[assignment]
+    response = SimpleNamespace(latency_ms=5.0, controls_used={}, controls={})
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(runtime_module.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    emit_timing = harness._apply_inner_os_emit_timing(
+        response,
+        actuation_plan={
+            "response_channel": "backchannel",
+            "turn_timing_hint": {
+                "response_channel": "backchannel",
+                "entry_window": "ready",
+                "pause_profile": "none",
+                "overlap_policy": "allow_soft_overlap",
+                "interruptibility": "high",
+                "minimum_wait_ms": 40,
+                "interrupt_guard_ms": 90,
+            },
+        },
+    )
+
+    assert sleep_calls == [0.035]
+    assert emit_timing.effective_emit_delay_ms == 35.0
+    assert emit_timing.wait_applied is True
+    assert emit_timing.wait_applied_ms == 35.0
+    assert emit_timing.emit_not_before_ms == 2035.0
+    assert emit_timing.interrupt_guard_until_ms == 2125.0
+
+
+def test_apply_inner_os_emit_timing_applies_wait_in_streaming_mode(monkeypatch: Any) -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness.config = SimpleNamespace(latency=SimpleNamespace(enable_loose=True))
+    harness._surface_mode = lambda: "streaming"  # type: ignore[assignment]
+    harness._inner_os_emit_clock_ms = lambda: 3000.0  # type: ignore[assignment]
+    response = SimpleNamespace(latency_ms=5.0, controls_used={}, controls={})
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(runtime_module.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    emit_timing = harness._apply_inner_os_emit_timing(
+        response,
+        actuation_plan={
+            "response_channel": "hold",
+            "turn_timing_hint": {
+                "response_channel": "hold",
+                "entry_window": "held",
+                "pause_profile": "soft_pause",
+                "overlap_policy": "wait_for_release",
+                "interruptibility": "low",
+                "minimum_wait_ms": 40,
+                "interrupt_guard_ms": 90,
+            },
+        },
+    )
+
+    assert sleep_calls == [0.035]
+    assert emit_timing.wait_applied is True
+    assert emit_timing.wait_applied_ms == 35.0
+    assert emit_timing.emit_not_before_ms == 3035.0
+
+
+def test_apply_inner_os_turn_timing_guard_blocks_until_emit_window() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness._inner_os_emit_response_channel = "hold"  # type: ignore[attr-defined]
+    harness._inner_os_emit_overlap_policy = "wait_for_release"  # type: ignore[attr-defined]
+    harness._inner_os_emit_not_before_ms = 1500.0  # type: ignore[attr-defined]
+    harness._inner_os_interrupt_guard_until_ms = 1900.0  # type: ignore[attr-defined]
+
+    gate_ctx = runtime_module.GateContext(
+        engaged=True,
+        face_motion=0.08,
+        blink=0.0,
+        voice_energy=0.0,
+        delta_m=0.0,
+        jerk=0.0,
+        text_input=False,
+        since_last_user_ms=640.0,
+        force_listen=False,
+    )
+
+    updated = harness._apply_inner_os_turn_timing_guard(gate_ctx, now_ts_ms=1400.0)
+
+    assert updated.force_listen is True
+    assert harness._last_inner_os_timing_guard.active is True
+    assert harness._last_inner_os_timing_guard.reason == "emit_delay"
+
+
+def test_apply_inner_os_turn_timing_guard_blocks_interrupt_overlap_when_user_still_speaking() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness._inner_os_emit_response_channel = "backchannel"  # type: ignore[attr-defined]
+    harness._inner_os_emit_overlap_policy = "wait_for_release"  # type: ignore[attr-defined]
+    harness._inner_os_emit_not_before_ms = 1000.0  # type: ignore[attr-defined]
+    harness._inner_os_interrupt_guard_until_ms = 1600.0  # type: ignore[attr-defined]
+
+    gate_ctx = runtime_module.GateContext(
+        engaged=True,
+        face_motion=0.08,
+        blink=0.0,
+        voice_energy=0.09,
+        delta_m=0.0,
+        jerk=0.0,
+        text_input=False,
+        since_last_user_ms=510.0,
+        force_listen=False,
+    )
+
+    updated = harness._apply_inner_os_turn_timing_guard(gate_ctx, now_ts_ms=1200.0)
+
+    assert updated.force_listen is True
+    assert harness._last_inner_os_timing_guard.active is True
+    assert harness._last_inner_os_timing_guard.reason == "interrupt_guard"
+
+
+def test_apply_inner_os_turn_timing_guard_allows_soft_overlap() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness._inner_os_emit_response_channel = "backchannel"  # type: ignore[attr-defined]
+    harness._inner_os_emit_overlap_policy = "allow_soft_overlap"  # type: ignore[attr-defined]
+    harness._inner_os_emit_not_before_ms = 1000.0  # type: ignore[attr-defined]
+    harness._inner_os_interrupt_guard_until_ms = 1600.0  # type: ignore[attr-defined]
+
+    gate_ctx = runtime_module.GateContext(
+        engaged=True,
+        face_motion=0.08,
+        blink=0.0,
+        voice_energy=0.09,
+        delta_m=0.0,
+        jerk=0.0,
+        text_input=False,
+        since_last_user_ms=510.0,
+        force_listen=False,
+    )
+
+    updated = harness._apply_inner_os_turn_timing_guard(gate_ctx, now_ts_ms=1200.0)
+
+    assert updated.force_listen is False
+    assert harness._last_inner_os_timing_guard.active is False
+    assert harness._last_inner_os_timing_guard.reason == "idle"
+
+
+def test_serialize_response_meta_keeps_inner_os_timing_contract() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    response = SimpleNamespace(
+        model="qwen3.5-4b",
+        model_source="lmstudio",
+        trace_id="turn-123",
+        latency_ms=84.0,
+        controls_used={
+            "temperature": 0.4,
+            "inner_os_emit_timing": {
+                "response_channel": "hold",
+                "entry_window": "held",
+                "overlap_policy": "wait_for_release",
+                "minimum_wait_ms": 420.0,
+                "interrupt_guard_ms": 420.0,
+                "emit_not_before_ms": 1408.0,
+                "interrupt_guard_until_ms": 1828.0,
+                "wait_applied": False,
+            },
+            "inner_os_timing_guard": {
+                "active": True,
+                "reason": "interrupt_guard",
+                "response_channel": "hold",
+                "overlap_policy": "wait_for_release",
+                "emit_not_before_ms": 1408.0,
+                "interrupt_guard_until_ms": 1828.0,
+                "voice_conflict": True,
+            },
+            "inner_os_gate_force_listen": True,
+        },
+        safety={"status": "ok"},
+        confidence=0.73,
+        uncertainty_reason=("none",),
+        perception_summary=None,
+        retrieval_summary=None,
+    )
+
+    meta = harness._serialize_response_meta(response)
+
+    assert meta is not None
+    assert meta["controls_used"] == {"temperature": 0.4, "inner_os_gate_force_listen": 1.0}
+    assert meta["actuation_emit_timing"]["response_channel"] == "hold"
+    assert meta["actuation_emit_timing"]["emit_not_before_ms"] == 1408.0
+    assert meta["timing_guard"]["reason"] == "interrupt_guard"
+    assert meta["timing_guard"]["voice_conflict"] is True
+    assert meta["gate_force_listen"] is True
 
 
 def test_apply_inner_os_surface_policy_can_use_object_operation_and_effects_without_strategy() -> None:
@@ -589,6 +846,11 @@ def test_build_inner_os_llm_guidance_uses_policy_packet_and_sequence() -> None:
     assert guidance["surface_context_packet"]["constraints"]["no_generic_clarification"] is True
     assert guidance["surface_context_packet"]["shared_core"]["already_shared"] == ["Can you stay with what is visible first?"]
     assert guidance["surface_context_packet"]["response_role"]["secondary"] == "reflect_only"
+    assert guidance["surface_context_packet"]["surface_profile"]["heartbeat_reaction"] in {"steady", "attune", "contain", "recover", "bounce"}
+    assert guidance["surface_context_packet"]["source_state"]["heartbeat_response_tempo"] >= 0.0
+    assert guidance["reaction_contract"]["question_budget"] == 0
+    assert guidance["reaction_contract"]["response_channel"] in {"speak", "backchannel", "hold", "defer", ""}
+    assert guidance["reaction_contract"]["continuity_mode"] in {"fresh", "continue", "reopen", "open"}
     sequence = guidance["content_sequence"]
     assert isinstance(sequence, list)
     assert len(sequence) >= 2
@@ -724,6 +986,144 @@ def test_build_inner_os_llm_guidance_prunes_deep_disclosure_sequence_when_questi
     assert acts == ["reflect_hidden_need", "stay_with_present_need"]
 
 
+def test_build_inner_os_llm_guidance_includes_bright_discourse_shape() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    guidance = harness._build_inner_os_llm_guidance(
+        expression_hint={
+            "interaction_policy_packet": {
+                "dialogue_act": "check_in",
+                "recent_dialogue_state": {"state": "continuing_thread"},
+                "discussion_thread_state": {"state": "discussion_open"},
+                "issue_state": {"state": "open_thread"},
+                "live_engagement_state": {"state": "pickup_comment"},
+                "lightness_budget_state": {"state": "open_play"},
+            },
+            "surface_response_length": "short",
+            "surface_cultural_register": "soft_companion",
+            "surface_group_register": "one_to_one",
+            "surface_sentence_temperature": "warm",
+            "surface_voice_texture": "measured",
+            "turn_delta": {
+                "kind": "bright_continuity",
+                "preferred_act": "light_bounce",
+            },
+            "organism_state": {
+                "dominant_posture": "play",
+                "attunement": 0.68,
+                "coherence": 0.62,
+                "grounding": 0.57,
+                "protective_tension": 0.2,
+                "expressive_readiness": 0.74,
+                "play_window": 0.76,
+                "relation_pull": 0.64,
+                "social_exposure": 0.16,
+            },
+            "surface_context_packet": {
+                "conversation_phase": "bright_continuity",
+                "shared_core": {
+                    "anchor": "",
+                    "already_shared": ["ちょっと笑えることがあった"],
+                    "not_yet_shared": [],
+                },
+                "response_role": {
+                    "primary": "light_bounce",
+                    "secondary": "shared_delight",
+                },
+                "constraints": {
+                    "max_questions": 0,
+                    "keep_thread_visible": True,
+                    "allow_small_next_step": True,
+                },
+                "surface_profile": {
+                    "response_length": "short",
+                    "voice_texture": "measured",
+                    "playfulness": 0.36,
+                    "tempo": 0.44,
+                    "organism_posture": "play",
+                    "organism_play_window": 0.76,
+                },
+                "source_state": {
+                    "live_engagement_state": "pickup_comment",
+                    "lightness_budget_state": "open_play",
+                    "organism_posture": "play",
+                    "organism_expressive_readiness": 0.74,
+                },
+            },
+        },
+        user_text="さっきの続きなんだけど、あのあとちょっと笑えることもあって。",
+        intent="check_in",
+    )
+
+    assert guidance["discourse_shape"]["shape_id"] == "bright_bounce"
+    assert guidance["surface_context_packet"]["surface_profile"]["organism_posture"] == "play"
+    acts = [item["act"] for item in guidance["content_sequence"]]
+    assert acts == ["shared_delight", "light_bounce"]
+
+
+def test_build_inner_os_llm_guidance_accepts_typed_contract_inputs() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness._response_locale = lambda: "ja-JP"  # type: ignore[attr-defined]
+    harness._last_gate_context["inner_os_heartbeat_structure_state"] = {}
+    guidance = harness._build_inner_os_llm_guidance(
+        expression_hint={
+            "interaction_policy_packet": coerce_interaction_policy_packet(
+                {
+                    "dialogue_act": "check_in",
+                    "recent_dialogue_state": {"state": "continuing_thread"},
+                    "discussion_thread_state": {"state": "discussion_open"},
+                    "issue_state": {"state": "open_thread"},
+                    "live_engagement_state": {"state": "pickup_comment", "score": 0.62},
+                    "lightness_budget_state": {"state": "open_play", "banter_room": 0.48},
+                    "shared_moment_state": {"moment_kind": "laugh", "afterglow": 0.52},
+                    "listener_action_state": {
+                        "state": "warm_laugh_ack",
+                        "token_profile": "soft_laugh",
+                    },
+                    "joint_state": {"dominant_mode": "shared_delight", "common_ground": 0.64},
+                }
+            ),
+            "action_posture": coerce_action_posture_contract(
+                {
+                    "engagement_mode": "co_move",
+                    "primary_operation_kind": "share_small_shift",
+                }
+            ),
+            "actuation_plan": coerce_actuation_plan_contract(
+                {
+                    "execution_mode": "shared_progression",
+                    "primary_action": "riff_current_comment",
+                    "response_channel": "speak",
+                }
+            ),
+            "surface_context_packet": coerce_surface_context_packet(
+                {
+                    "conversation_phase": "bright_continuity",
+                    "shared_core": {
+                        "anchor": "あのあとちょっと笑えることもあって。",
+                        "already_shared": ["あのあとちょっと笑えることもあって。"],
+                    },
+                    "response_role": {"primary": "shared_delight"},
+                    "constraints": {"max_questions": 0},
+                    "surface_profile": {"voice_texture": "light_playful"},
+                    "source_state": {"utterance_reason_offer": "brief_shared_smile"},
+                }
+            ),
+            "surface_response_length": "short",
+            "surface_voice_texture": "light_playful",
+            "turn_delta": {"kind": "bright_continuity", "preferred_act": "light_bounce"},
+        },
+        user_text="さっきの続きなんだけど、あのあとちょっと笑えることもあって。",
+        intent="check_in",
+    )
+
+    assert guidance["interaction_policy"]["dialogue_act"] == "check_in"
+    assert guidance["action_posture"]["engagement_mode"] == "co_move"
+    assert guidance["actuation_plan"]["response_channel"] == "speak"
+    assert guidance["surface_context_packet"]["conversation_phase"] == "bright_continuity"
+    assert guidance["surface_context_packet"]["surface_profile"]["voice_texture"] == "light_playful"
+    assert guidance["discourse_shape"]["shape_id"] == "bright_bounce"
+
+
 def test_apply_inner_os_surface_profile_shapes_text_and_controls() -> None:
     harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
     response = SimpleNamespace(
@@ -784,6 +1184,760 @@ def test_apply_inner_os_surface_profile_uses_live_mismatch_to_shorten_and_carefu
     assert updated.controls_used["inner_os_surface_profile"]["content_sequence_length"] >= 1
 
 
+def test_apply_inner_os_surface_profile_uses_backchannel_timing_from_actuation_plan() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    runtime = EmotionalHubRuntime(runtime_module.RuntimeConfig(use_eqnet_core=True))
+    harness._ack_cfg = runtime._ack_cfg  # type: ignore[attr-defined]
+    harness._runtime_cfg = runtime._runtime_cfg  # type: ignore[attr-defined]
+    response = SimpleNamespace(
+        text="I can stay with the thread for a moment longer.",
+        controls_used={
+            "mode": "talk",
+            "inner_os_planned_content_sequence": [
+                {"act": "light_bounce", "text": "That stays a little open."},
+            ],
+        },
+    )
+    updated = harness._apply_inner_os_surface_profile(
+        response,
+        {
+            "surface_opening_delay": "measured",
+            "surface_response_length": "balanced",
+            "surface_sentence_temperature": "neutral",
+            "surface_pause_insertion": "soft_pause",
+            "surface_certainty_style": "direct",
+            "opening_pace_windowed": "held",
+            "return_gaze_expectation": "soft_return",
+            "actuation_plan": {
+                "response_channel": "backchannel",
+                "wait_before_action": "brief",
+                "reply_permission": "hold_or_brief",
+                "nonverbal_response_state": {
+                    "timing_bias": "just_after_turn",
+                },
+            },
+        },
+    )
+    assert updated is not None
+    profile = updated.controls_used["inner_os_surface_profile"]
+    assert profile["actuation_response_channel"] == "backchannel"
+    assert profile["opening_pace_windowed"] == "ready"
+    assert profile["pause_insertion"] == "none"
+    assert profile["response_length"] == "short"
+
+
+def test_apply_inner_os_surface_profile_uses_hold_timing_from_actuation_plan() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    runtime = EmotionalHubRuntime(runtime_module.RuntimeConfig(use_eqnet_core=True))
+    harness._ack_cfg = runtime._ack_cfg  # type: ignore[attr-defined]
+    harness._runtime_cfg = runtime._runtime_cfg  # type: ignore[attr-defined]
+    response = SimpleNamespace(
+        text="I can leave the space open.",
+        controls_used={
+            "mode": "watch",
+            "inner_os_planned_content_sequence": [
+                {"act": "quiet_presence", "text": "This stays quiet."},
+            ],
+        },
+    )
+    updated = harness._apply_inner_os_surface_profile(
+        response,
+        {
+            "surface_opening_delay": "brief",
+            "surface_response_length": "balanced",
+            "surface_sentence_temperature": "neutral",
+            "surface_pause_insertion": "none",
+            "surface_certainty_style": "direct",
+            "opening_pace_windowed": "ready",
+            "return_gaze_expectation": "soft_return",
+            "actuation_plan": {
+                "response_channel": "hold",
+                "wait_before_action": "extended",
+                "reply_permission": "hold_or_brief",
+                "nonverbal_response_state": {
+                    "timing_bias": "wait",
+                },
+            },
+        },
+    )
+    assert updated is not None
+    profile = updated.controls_used["inner_os_surface_profile"]
+    assert profile["actuation_response_channel"] == "hold"
+    assert profile["opening_pace_windowed"] == "held"
+    assert profile["pause_insertion"] == "soft_pause"
+    assert profile["response_length"] == "short"
+
+
+
+def test_apply_inner_os_surface_profile_prefers_bright_short_sequence_when_voice_is_light_playful() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness._response_locale = lambda: "ja-JP"  # type: ignore[attr-defined]
+    response = SimpleNamespace(
+        text="placeholder",
+        controls_used={
+            "mode": "watch",
+            "inner_os_planned_content_sequence": [
+                {"act": "respect_boundary", "text": "いまは、無理にうまく話そうとしなくて大丈夫です。"},
+                {"act": "quiet_presence", "text": "話せるところからで大丈夫です。"},
+                {"act": "leave_unfinished_closed", "text": "また話せそうなときに、そこからで大丈夫です。"},
+                {"act": "shared_delight", "text": "それは、ちょっといい感じだね。"},
+                {"act": "light_bounce", "text": "その感じ、ちょっと嬉しいね。"},
+            ],
+        },
+    )
+    updated = harness._apply_inner_os_surface_profile(
+        response,
+        {
+            "surface_opening_delay": "measured",
+            "surface_response_length": "short",
+            "surface_sentence_temperature": "neutral",
+            "surface_pause_insertion": "soft_pause",
+            "surface_certainty_style": "direct",
+            "opening_pace_windowed": "ready",
+            "return_gaze_expectation": "soft_return",
+            "surface_voice_texture": "light_playful",
+        },
+    )
+    assert updated is not None
+    assert "それは、ちょっといい感じだね。" in updated.text
+    assert "大丈夫です" not in updated.text
+    assert "話せるところから" not in updated.text
+    assert not updated.text.startswith("いまは、")
+    assert not updated.text.startswith("…")
+    acts = [
+        str(item.get("act") or "").strip()
+        for item in updated.controls_used["inner_os_planned_content_sequence"]
+    ]
+    assert acts == ["shared_delight", "light_bounce"]
+
+
+def test_apply_inner_os_surface_profile_prefers_bright_short_sequence_when_turn_delta_is_bright() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness._response_locale = lambda: "ja-JP"  # type: ignore[attr-defined]
+    response = SimpleNamespace(
+        text="placeholder",
+        controls_used={
+            "mode": "watch",
+            "inner_os_planned_content_sequence": [
+                {"act": "respect_boundary", "text": "いまは、無理にうまく話そうとしなくて大丈夫です。"},
+                {"act": "quiet_presence", "text": "話せるところからで大丈夫です。"},
+                {"act": "light_bounce", "text": "その感じ、ちょっと嬉しいね。"},
+            ],
+        },
+    )
+    updated = harness._apply_inner_os_surface_profile(
+        response,
+        {
+            "surface_opening_delay": "measured",
+            "surface_response_length": "short",
+            "surface_sentence_temperature": "neutral",
+            "surface_pause_insertion": "soft_pause",
+            "surface_certainty_style": "direct",
+            "opening_pace_windowed": "ready",
+            "return_gaze_expectation": "soft_return",
+            "surface_voice_texture": "measured",
+            "turn_delta": {"kind": "bright_continuity", "preferred_act": "light_bounce"},
+        },
+    )
+    assert updated is not None
+    acts = [
+        str(item.get("act") or "").strip()
+        for item in updated.controls_used["inner_os_planned_content_sequence"]
+    ]
+    assert acts == ["shared_delight", "light_bounce"]
+
+
+def test_apply_inner_os_surface_profile_keeps_small_bright_progression_balanced() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness._response_locale = lambda: "ja-JP"  # type: ignore[attr-defined]
+    harness._last_surface_user_text = "さっきの続きなんだけど、あのあとちょっと笑えることもあって。"  # type: ignore[attr-defined]
+    response = SimpleNamespace(
+        text="placeholder",
+        controls_used={
+            "mode": "talk",
+            "inner_os_planned_content_sequence": [
+                {"act": "shared_delight", "text": "それ、ちょっと笑えるやつだね。"},
+                {"act": "light_bounce", "text": "そういうのあると、ちょっと楽になるよね。"},
+            ],
+            "inner_os_discourse_shape": {
+                "shape_id": "bright_bounce",
+                "primary_move": "bounce",
+                "secondary_move": "glow",
+                "sentence_budget": 2,
+                "question_budget": 0,
+                "closing_mode": "open_light",
+                "energy": "bright",
+                "brightness": 0.62,
+                "playfulness": 0.54,
+                "tempo": 0.48,
+            },
+            "inner_os_surface_context_packet": {
+                "conversation_phase": "bright_continuity",
+                "shared_core": {
+                    "already_shared": [
+                        "あのあとちょっと笑えることもあって。",
+                    ],
+                },
+                "surface_profile": {
+                    "utterance_reason_offer": "brief_shared_smile",
+                    "shared_moment_kind": "laugh",
+                },
+                "source_state": {
+                    "utterance_reason_offer": "brief_shared_smile",
+                    "shared_moment_kind": "laugh",
+                    "listener_action_state": "warm_laugh_ack",
+                },
+            },
+        },
+    )
+
+    updated = harness._apply_inner_os_surface_profile(
+        response,
+        {
+            "surface_opening_delay": "brief",
+            "surface_response_length": "balanced",
+            "surface_sentence_temperature": "warm",
+            "surface_pause_insertion": "none",
+            "surface_certainty_style": "direct",
+            "surface_voice_texture": "light_playful",
+            "surface_context_packet": response.controls_used["inner_os_surface_context_packet"],
+            "actuation_plan": {
+                "execution_mode": "shared_progression",
+                "reply_permission": "speak_briefly",
+                "primary_action": "riff_current_comment",
+            },
+            "discourse_shape": response.controls_used["inner_os_discourse_shape"],
+        },
+    )
+
+    assert updated is not None
+    assert "I think we can take one next step from here." not in updated.text
+    assert "笑えるやつ" in updated.text
+    assert "ちょっと楽になるよね" in updated.text
+    assert updated.controls_used["inner_os_surface_profile"]["response_length"] == "balanced"
+    planned = updated.controls_used["inner_os_planned_content_sequence"]
+    assert "笑えるやつ" in str(planned[0]["text"])
+    assert "ちょっと楽になるよね" in str(planned[1]["text"])
+
+
+def test_apply_inner_os_surface_profile_prefers_bright_sequence_from_discourse_shape_even_when_voice_is_measured() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness._response_locale = lambda: "ja-JP"  # type: ignore[attr-defined]
+    response = SimpleNamespace(
+        text="placeholder",
+        controls_used={
+            "mode": "watch",
+            "inner_os_allow_guarded_narrative_bridge": True,
+            "inner_os_llm_raw_text": "いまは、ちょっと良かったね。",
+            "inner_os_planned_content_sequence": [
+                {"act": "respect_boundary", "text": "いまは、無理にうまく話そうとしなくて大丈夫です。"},
+                {"act": "quiet_presence", "text": "話せるところからで大丈夫です。"},
+                {"act": "shared_delight", "text": "それは、ちょっといい感じだね。"},
+                {"act": "light_bounce", "text": "その感じ、ちょっと嬉しいね。"},
+            ],
+        },
+    )
+    updated = harness._apply_inner_os_surface_profile(
+        response,
+        {
+            "surface_opening_delay": "measured",
+            "surface_response_length": "short",
+            "surface_sentence_temperature": "neutral",
+            "surface_pause_insertion": "soft_pause",
+            "surface_certainty_style": "direct",
+            "opening_pace_windowed": "ready",
+            "return_gaze_expectation": "soft_return",
+            "surface_voice_texture": "measured",
+            "discourse_shape": {
+                "shape_id": "bright_bounce",
+                "primary_move": "bounce",
+                "secondary_move": "glow",
+                "sentence_budget": 2,
+                "question_budget": 0,
+                "closing_mode": "open_light",
+                "energy": "bright",
+                "brightness": 0.52,
+                "playfulness": 0.34,
+                "tempo": 0.44,
+            },
+        },
+    )
+
+    assert updated is not None
+    assert "それは、ちょっといい感じだね。" in updated.text
+    assert "大丈夫です" not in updated.text
+    assert "話せるところから" not in updated.text
+    acts = [
+        str(item.get("act") or "").strip()
+        for item in updated.controls_used["inner_os_planned_content_sequence"]
+    ]
+    assert acts == ["shared_delight", "light_bounce"]
+
+
+def test_apply_inner_os_surface_profile_overrides_stale_reflect_shape_when_bright_signal_is_structural() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness._response_locale = lambda: "ja-JP"  # type: ignore[attr-defined]
+    response = SimpleNamespace(
+        text="placeholder",
+        controls_used={
+            "mode": "watch",
+            "inner_os_allow_guarded_narrative_bridge": True,
+            "inner_os_llm_raw_text": "いま見えているところだけに絞って、一緒に見ていきます。",
+            "inner_os_planned_content_sequence": [
+                {"act": "respect_boundary", "text": "いまは、無理にうまく話そうとしなくて大丈夫です。"},
+                {"act": "quiet_presence", "text": "話せるところからで大丈夫です。"},
+            ],
+            "inner_os_discourse_shape": {
+                "shape_id": "reflect_step",
+                "primary_move": "reflect",
+                "secondary_move": "gentle_close",
+                "sentence_budget": 2,
+                "question_budget": 0,
+                "closing_mode": "soft_close",
+                "energy": "neutral",
+                "brightness": 0.0,
+                "playfulness": 0.0,
+                "tempo": 0.0,
+            },
+        },
+    )
+    updated = harness._apply_inner_os_surface_profile(
+        response,
+        {
+            "surface_opening_delay": "measured",
+            "surface_response_length": "balanced",
+            "surface_sentence_temperature": "neutral",
+            "surface_pause_insertion": "soft_pause",
+            "surface_certainty_style": "direct",
+            "opening_pace_windowed": "ready",
+            "return_gaze_expectation": "soft_return",
+            "surface_voice_texture": "light_playful",
+            "turn_delta": {"kind": "bright_continuity", "preferred_act": "light_bounce"},
+            "surface_context_packet": coerce_surface_context_packet(
+                {
+                    "conversation_phase": "bright_continuity",
+                    "surface_profile": {
+                        "voice_texture": "light_playful",
+                        "utterance_reason_offer": "brief_shared_smile",
+                        "shared_moment_kind": "laugh",
+                    },
+                    "source_state": {
+                        "utterance_reason_offer": "brief_shared_smile",
+                        "shared_moment_kind": "laugh",
+                        "live_engagement_state": "riff_with_comment",
+                        "lightness_budget_state": "open_play",
+                    },
+                }
+            ),
+            "actuation_plan": {
+                "execution_mode": "shared_progression",
+                "reply_permission": "speak_briefly",
+                "primary_action": "riff_current_comment",
+            },
+        },
+    )
+
+    assert updated is not None
+    assert updated.controls_used["inner_os_discourse_shape"]["shape_id"] == "bright_bounce"
+    acts = [
+        str(item.get("act") or "").strip()
+        for item in updated.controls_used["inner_os_planned_content_sequence"]
+    ]
+    assert acts == ["shared_delight", "light_bounce"]
+    assert updated.controls_used["inner_os_allow_guarded_narrative_bridge"] is False
+    assert updated.controls_used["inner_os_guarded_narrative_bridge_used"] is False
+    assert "話せるところから" not in updated.text
+    assert "いい感じ" in updated.text or "気持ちが軽くなる" in updated.text
+
+
+def test_apply_inner_os_surface_profile_uses_current_surface_context_packet_for_listener_prefix() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness._response_locale = lambda: "ja-JP"  # type: ignore[attr-defined]
+    harness._last_surface_context_packet = coerce_surface_context_packet(  # type: ignore[attr-defined]
+        {
+            "source_state": {
+                "listener_action_state": "soft_ack",
+                "listener_token_profile": "soft_ack",
+            }
+        }
+    )
+    response = SimpleNamespace(
+        text="placeholder",
+        controls_used={
+            "mode": "watch",
+            "inner_os_planned_content_sequence": [
+                {"act": "shared_delight", "text": "それ、ちょっと笑えるやつだね。"},
+                {"act": "light_bounce", "text": "そういうのあると、ちょっと楽になるよね。"},
+            ],
+            "inner_os_discourse_shape": {
+                "shape_id": "bright_bounce",
+                "primary_move": "bounce",
+                "secondary_move": "glow",
+                "sentence_budget": 2,
+                "question_budget": 0,
+                "closing_mode": "open_light",
+                "energy": "bright",
+                "brightness": 0.56,
+                "playfulness": 0.42,
+                "tempo": 0.48,
+            },
+        },
+    )
+    updated = harness._apply_inner_os_surface_profile(
+        response,
+        {
+            "surface_opening_delay": "measured",
+            "surface_response_length": "short",
+            "surface_sentence_temperature": "neutral",
+            "surface_pause_insertion": "soft_pause",
+            "surface_certainty_style": "direct",
+            "opening_pace_windowed": "ready",
+            "return_gaze_expectation": "soft_return",
+            "surface_voice_texture": "light_playful",
+            "surface_context_packet": coerce_surface_context_packet(
+                {
+                    "conversation_phase": "bright_continuity",
+                    "surface_profile": {
+                        "listener_action": "warm_laugh_ack",
+                        "listener_token_profile": "soft_laugh",
+                    },
+                    "source_state": {
+                        "listener_action_state": "warm_laugh_ack",
+                        "listener_token_profile": "soft_laugh",
+                    },
+                }
+            ),
+        },
+    )
+    assert updated is not None
+    assert updated.text.startswith("ふふっ、")
+    assert updated.controls_used["inner_os_surface_context_packet"]["source_state"]["listener_token_profile"] == "soft_laugh"
+    assert updated.controls_used["inner_os_discourse_shape"]["shape_id"] == "bright_bounce"
+    assert updated.controls_used["inner_os_allow_guarded_narrative_bridge"] is False
+    assert updated.controls_used["inner_os_guarded_narrative_bridge_used"] is False
+
+
+def test_derive_runtime_discourse_shape_prefers_derived_bright_bounce_over_stale_reflect_shape() -> None:
+    derived = runtime_module._derive_runtime_discourse_shape(
+        content_sequence=[
+            {"act": "respect_boundary", "text": "いまは、無理にうまく話そうとしなくて大丈夫です。"},
+        ],
+        discourse_shape={
+            "shape_id": "reflect_step",
+            "primary_move": "reflect",
+            "secondary_move": "gentle_close",
+            "sentence_budget": 2,
+            "question_budget": 0,
+            "closing_mode": "soft_close",
+            "energy": "neutral",
+        },
+        turn_delta={"kind": "bright_continuity", "preferred_act": "light_bounce"},
+        surface_context_packet=coerce_surface_context_packet(
+            {
+                "conversation_phase": "bright_continuity",
+                "surface_profile": {
+                    "utterance_reason_offer": "brief_shared_smile",
+                    "shared_moment_kind": "laugh",
+                },
+                "source_state": {
+                    "utterance_reason_offer": "brief_shared_smile",
+                    "shared_moment_kind": "laugh",
+                },
+            }
+        ),
+    )
+
+    assert derived["shape_id"] == "bright_bounce"
+
+
+def test_apply_interaction_policy_packet_to_current_state_uses_packet_as_source() -> None:
+    current_state: Dict[str, Any] = {}
+    packet = coerce_interaction_policy_packet(
+        {
+            "memory_write_class": "repair_trace",
+            "memory_write_class_reason": "shared_repair",
+            "agenda_state": {"state": "repair", "score": 0.62, "winner_margin": 0.2},
+            "body_homeostasis_state": {"state": "recovering", "score": 0.48, "winner_margin": 0.14},
+            "expressive_style_state": {"state": "grounded_gentle", "score": 0.55, "winner_margin": 0.18},
+            "relation_competition_state": {"state": "single_bond", "winner_margin": 0.4},
+            "social_topology_state": {"state": "one_to_one", "winner_margin": 0.5},
+            "active_relation_table": {"entries": [{"person_id": "user"}], "total_people": 1},
+        }
+    )
+
+    runtime_module._apply_interaction_policy_packet_to_current_state(
+        current_state,
+        interaction_policy_packet=packet,
+    )
+
+    assert current_state["interaction_policy_packet"]["memory_write_class"] == "repair_trace"
+    assert current_state["memory_write_class"] == "repair_trace"
+    assert current_state["agenda_state"]["state"] == "repair"
+    assert current_state["body_homeostasis_state"]["state"] == "recovering"
+    assert current_state["expressive_style_state"]["state"] == "grounded_gentle"
+    assert current_state["social_topology_state"]["state"] == "one_to_one"
+    assert current_state["active_relation_table"]["total_people"] == 1
+
+
+def test_apply_interaction_policy_packet_to_gate_context_derives_carry_fields() -> None:
+    gate_context: Dict[str, Any] = {}
+    packet = coerce_interaction_policy_packet(
+        {
+            "response_strategy": "shared_world_next_step",
+            "live_engagement_state": {"state": "pickup_comment"},
+            "lightness_budget_state": {"state": "open_play"},
+            "body_homeostasis_state": {"state": "recovering", "score": 0.6, "winner_margin": 0.25},
+            "homeostasis_budget_state": {"state": "careful", "score": 0.5, "winner_margin": 0.2},
+            "relational_continuity_state": {"state": "reopening", "score": 0.7, "winner_margin": 0.3},
+            "social_topology_state": {"state": "one_to_one", "score": 0.8, "winner_margin": 0.2},
+            "expressive_style_state": {"state": "warm_gentle", "score": 0.55, "winner_margin": 0.15},
+            "relational_style_memory_state": {"banter_style": "gentle_play", "lexical_variation_bias": 0.4},
+            "agenda_state": {"state": "repair", "score": 0.6, "winner_margin": 0.2, "reason": "repair thread"},
+            "agenda_window_state": {"state": "near", "score": 0.45, "winner_margin": 0.1, "reason": "window open"},
+            "learning_mode_state": {"state": "observe_and_adjust", "score": 0.4, "winner_margin": 0.1},
+            "social_experiment_loop_state": {"state": "watch_and_read", "score": 0.35, "winner_margin": 0.1, "probe_intensity": 0.2},
+            "commitment_carry": {
+                "target_focus": "repair",
+                "state_focus": "settle",
+                "carry_bias": 0.42,
+                "followup_focus": "stay_with_thread",
+                "mode_focus": "gentle",
+                "carry_reason": "shared_repair",
+            },
+            "relation_competition_state": {"state": "single_bond", "winner_margin": 0.3},
+            "active_relation_table": {"entries": [{"person_id": "user"}], "total_people": 1},
+            "overnight_bias_roles": {"agenda_state": "repair"},
+            "reaction_vs_overnight_bias": {"same_turn": {"agenda_state": "repair"}},
+        }
+    )
+
+    runtime_module._apply_interaction_policy_packet_to_gate_context(
+        gate_context,
+        interaction_policy_packet=packet,
+        current_state={},
+        initiative_followup_bias={"score": 0.33, "state": "offer"},
+    )
+
+    assert gate_context["inner_os_interaction_policy_packet"]["response_strategy"] == "shared_world_next_step"
+    assert gate_context["inner_os_response_strategy"] == "shared_world_next_step"
+    assert gate_context["inner_os_body_homeostasis_focus"] == "recovering"
+    assert gate_context["inner_os_body_homeostasis_carry_bias"] > 0.0
+    assert gate_context["inner_os_homeostasis_budget_focus"] == "careful"
+    assert gate_context["inner_os_relational_continuity_focus"] == "reopening"
+    assert gate_context["inner_os_group_thread_focus"] == "one_to_one"
+    assert gate_context["inner_os_expressive_style_focus"] == "warm_gentle"
+    assert gate_context["inner_os_banter_style_focus"] == "gentle_play"
+    assert gate_context["inner_os_agenda_focus"] == "repair"
+    assert gate_context["inner_os_agenda_window_focus"] == "near"
+    assert gate_context["inner_os_commitment_target_focus"] == "repair"
+    assert gate_context["inner_os_initiative_followup_state"] == "offer"
+
+
+def test_live_response_loop_refreshes_persistent_plan_when_bright_sequence_is_shaped(monkeypatch) -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    original_gate_builder = runtime_module.build_expression_hints_from_gate_result
+    original_surface_policy = harness._apply_inner_os_surface_policy
+    original_surface_profile = harness._apply_inner_os_surface_profile
+    original_style_feedback = harness._inner_os_live_style_feedback
+    original_followup_signals = harness._inner_os_live_followup_signals
+    original_stream_state = harness._inner_os_stream_state_from_hints
+    original_stream_converged = harness._inner_os_stream_converged
+
+    monkeypatch.setattr(
+        runtime_module,
+        "build_expression_hints_from_gate_result",
+        lambda hook, existing_hints, expected_source: dict(existing_hints),
+    )
+    harness._apply_inner_os_surface_policy = lambda response, expression_hints, conscious_access: response  # type: ignore[assignment]
+
+    def _fake_surface_profile(response, expression_hints):
+        controls_used = dict(getattr(response, "controls_used", {}) or {})
+        controls_used["inner_os_planned_content_sequence"] = [
+            {"act": "shared_delight", "text": "それは、ちょっといい感じだね。"},
+            {"act": "light_bounce", "text": "その感じ、ちょっと嬉しいね。"},
+        ]
+        response.controls_used = controls_used
+        response.text = "それは、ちょっといい感じだね。 その感じ、ちょっと嬉しいね。"
+        return response
+
+    harness._apply_inner_os_surface_profile = _fake_surface_profile  # type: ignore[assignment]
+    harness._inner_os_live_style_feedback = lambda current_hints, next_hints: {}  # type: ignore[assignment]
+    harness._inner_os_live_followup_signals = lambda expression_hints, safety_bias: {}  # type: ignore[assignment]
+    harness._inner_os_stream_state_from_hints = lambda expression_hints: {}  # type: ignore[assignment]
+    harness._inner_os_stream_converged = lambda previous, current: True  # type: ignore[assignment]
+
+    def _response_gate(*, draft, current_state, safety_signals):
+        return SimpleNamespace(
+            expression_hints={
+                "turn_delta": {"kind": "bright_continuity", "preferred_act": "light_bounce"},
+                "surface_context_packet": {
+                    "conversation_phase": "bright_continuity",
+                    "surface_profile": {"voice_texture": "light_playful"},
+                },
+                "surface_voice_texture": "light_playful",
+                "lightness_budget_state_name": "open_play",
+            },
+            conscious_access={},
+        )
+
+    harness._integration_hooks = SimpleNamespace(response_gate=_response_gate)
+    initial_hook = SimpleNamespace(
+        expression_hints={
+            "turn_delta": {"kind": "bright_continuity", "preferred_act": "light_bounce"},
+            "surface_context_packet": {
+                "conversation_phase": "bright_continuity",
+                "surface_profile": {"voice_texture": "light_playful"},
+            },
+            "surface_voice_texture": "light_playful",
+            "lightness_budget_state_name": "open_play",
+        },
+        conscious_access={},
+    )
+    response = SimpleNamespace(
+        text="placeholder",
+        controls_used={
+            "inner_os_planned_content_sequence": [
+                {"act": "respect_boundary", "text": "いまは、無理にうまく話そうとしなくて大丈夫です。"},
+                {"act": "quiet_presence", "text": "話せるところからで大丈夫です。"},
+                {"act": "shared_delight", "text": "それは、ちょっといい感じだね。"},
+                {"act": "light_bounce", "text": "その感じ、ちょっと嬉しいね。"},
+            ]
+        },
+    )
+
+    try:
+        updated, _hook, _steps = harness._run_inner_os_live_response_loop(
+            response=response,
+            initial_hook=initial_hook,
+            current_state={},
+            safety_bias=0.2,
+        )
+    finally:
+        runtime_module.build_expression_hints_from_gate_result = original_gate_builder
+        harness._apply_inner_os_surface_policy = original_surface_policy  # type: ignore[assignment]
+        harness._apply_inner_os_surface_profile = original_surface_profile  # type: ignore[assignment]
+        harness._inner_os_live_style_feedback = original_style_feedback  # type: ignore[assignment]
+        harness._inner_os_live_followup_signals = original_followup_signals  # type: ignore[assignment]
+        harness._inner_os_stream_state_from_hints = original_stream_state  # type: ignore[assignment]
+        harness._inner_os_stream_converged = original_stream_converged  # type: ignore[assignment]
+
+    assert updated is not None
+    acts = [
+        str(item.get("act") or "").strip()
+        for item in updated.controls_used["inner_os_planned_content_sequence"]
+    ]
+    assert acts == ["shared_delight", "light_bounce"]
+
+
+def test_live_response_loop_replaces_stale_reflect_shape_with_bright_guidance(monkeypatch) -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    original_gate_builder = runtime_module.build_expression_hints_from_gate_result
+    original_surface_policy = harness._apply_inner_os_surface_policy
+    original_surface_profile = harness._apply_inner_os_surface_profile
+    original_style_feedback = harness._inner_os_live_style_feedback
+    original_followup_signals = harness._inner_os_live_followup_signals
+    original_stream_state = harness._inner_os_stream_state_from_hints
+    original_stream_converged = harness._inner_os_stream_converged
+
+    monkeypatch.setattr(
+        runtime_module,
+        "build_expression_hints_from_gate_result",
+        lambda hook, existing_hints, expected_source: dict(existing_hints),
+    )
+    harness._apply_inner_os_surface_policy = lambda response, expression_hints, conscious_access: response  # type: ignore[assignment]
+    harness._apply_inner_os_surface_profile = lambda response, expression_hints: response  # type: ignore[assignment]
+    harness._inner_os_live_style_feedback = lambda current_hints, next_hints: {}  # type: ignore[assignment]
+    harness._inner_os_live_followup_signals = lambda expression_hints, safety_bias: {}  # type: ignore[assignment]
+    harness._inner_os_stream_state_from_hints = lambda expression_hints: {}  # type: ignore[assignment]
+    harness._inner_os_stream_converged = lambda previous, current: True  # type: ignore[assignment]
+    harness._last_surface_user_text = "さっきの続きなんだけど、あのあとちょっと笑えることもあって。"  # type: ignore[attr-defined]
+    harness._response_locale = lambda: "ja-JP"  # type: ignore[attr-defined]
+
+    def _response_gate(*, draft, current_state, safety_signals):
+        return SimpleNamespace(
+            expression_hints={
+                "interaction_policy_packet": {
+                    "dialogue_act": "check_in",
+                    "recent_dialogue_state": {"state": "continuing_thread"},
+                    "discussion_thread_state": {"state": "open_thread"},
+                    "issue_state": {"state": "light_tension"},
+                    "live_engagement_state": {"state": "pickup_comment"},
+                    "lightness_budget_state": {"state": "open_play"},
+                },
+                "interaction_policy_dialogue_act": "check_in",
+                "turn_delta": {"kind": "bright_continuity", "preferred_act": "light_bounce"},
+                "interaction_constraints": {
+                    "allow_small_next_step": True,
+                    "keep_thread_visible": True,
+                    "max_questions": 1,
+                },
+                "surface_context_packet": {
+                    "conversation_phase": "bright_continuity",
+                    "response_role": {"primary": "light_bounce"},
+                    "constraints": {
+                        "allow_small_next_step": True,
+                        "keep_thread_visible": True,
+                        "max_questions": 1,
+                    },
+                    "surface_profile": {
+                        "voice_texture": "light_playful",
+                        "response_length": "short",
+                    },
+                    "source_state": {
+                        "lightness_budget_state": "open_play",
+                        "live_engagement_state": "pickup_comment",
+                    },
+                },
+                "surface_voice_texture": "light_playful",
+                "surface_response_length": "short",
+                "lightness_budget_state_name": "open_play",
+                "live_engagement_state_name": "pickup_comment",
+            },
+            conscious_access={},
+        )
+
+    harness._integration_hooks = SimpleNamespace(response_gate=_response_gate)
+    initial_hook = _response_gate(draft={}, current_state={}, safety_signals={})
+    response = SimpleNamespace(
+        text="placeholder",
+        controls_used={
+            "inner_os_planned_content_sequence": [
+                {"act": "respect_boundary", "text": "いまは、無理にうまく話そうとしなくて大丈夫です。"},
+                {"act": "quiet_presence", "text": "話せるところからで大丈夫です。"},
+            ],
+            "inner_os_discourse_shape": {
+                "shape_id": "reflect_step",
+                "sentence_budget": 2,
+                "question_budget": 1,
+                "keep_thread_visible": True,
+            },
+        },
+    )
+
+    try:
+        updated, _hook, _steps = harness._run_inner_os_live_response_loop(
+            response=response,
+            initial_hook=initial_hook,
+            current_state={},
+            safety_bias=0.2,
+        )
+    finally:
+        runtime_module.build_expression_hints_from_gate_result = original_gate_builder
+        harness._apply_inner_os_surface_policy = original_surface_policy  # type: ignore[assignment]
+        harness._apply_inner_os_surface_profile = original_surface_profile  # type: ignore[assignment]
+        harness._inner_os_live_style_feedback = original_style_feedback  # type: ignore[assignment]
+        harness._inner_os_live_followup_signals = original_followup_signals  # type: ignore[assignment]
+        harness._inner_os_stream_state_from_hints = original_stream_state  # type: ignore[assignment]
+        harness._inner_os_stream_converged = original_stream_converged  # type: ignore[assignment]
+
+    assert updated is not None
+    assert updated.controls_used["inner_os_discourse_shape"]["shape_id"] == "bright_bounce"
+    acts = [
+        str(item.get("act") or "").strip()
+        for item in updated.controls_used["inner_os_planned_content_sequence"]
+    ]
+    assert acts == ["shared_delight", "light_bounce"]
+
 
 def test_shape_inner_os_surface_profile_text_applies_surface_language_profile() -> None:
     harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
@@ -832,6 +1986,270 @@ def test_apply_inner_os_surface_policy_adds_reopening_line_when_recovery_returns
     )
     assert updated is not None
     assert "I think we can open this a little more clearly now." in updated.text
+
+
+def test_apply_inner_os_surface_policy_bypasses_clarify_prefix_for_bright_bounce() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    response = SimpleNamespace(
+        text="それは、ちょっといい感じだね。 その感じ、ちょっと嬉しいね。",
+        controls_used={
+            "mode": "watch",
+            "inner_os_planned_content_sequence": [
+                {"act": "shared_delight", "text": "それは、ちょっといい感じだね。"},
+                {"act": "light_bounce", "text": "その感じ、ちょっと嬉しいね。"},
+            ],
+        },
+    )
+    updated = harness._apply_inner_os_surface_policy(
+        response,
+        {
+            "clarify_first": True,
+            "turn_delta": {"kind": "bright_continuity", "preferred_act": "light_bounce"},
+            "surface_context_packet": {
+                "conversation_phase": "bright_continuity",
+                "surface_profile": {"voice_texture": "light_playful"},
+            },
+            "discourse_shape": {
+                "shape_id": "bright_bounce",
+                "primary_move": "bounce",
+                "secondary_move": "glow",
+                "sentence_budget": 2,
+                "question_budget": 0,
+                "closing_mode": "open_light",
+                "energy": "bright",
+                "brightness": 0.52,
+                "playfulness": 0.34,
+                "tempo": 0.44,
+            },
+        },
+        {"intent": "clarify"},
+    )
+
+    assert updated is not None
+    assert updated.text == "それは、ちょっといい感じだね。 その感じ、ちょっと嬉しいね。"
+    assert updated.controls_used["inner_os_surface_policy"] == "bypass:bright_bounce"
+
+
+def test_apply_qualia_gate_prefers_response_shape_over_stale_runtime_plan() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness._qualia_vector_to_array = lambda qualia: np.array([0.0, 0.0, 0.0, 0.0, 0.0], dtype=float)  # type: ignore[attr-defined]
+    harness._prev_qualia_vec = None  # type: ignore[attr-defined]
+    harness._qualia_gate_enabled = True  # type: ignore[attr-defined]
+    harness._qualia_meta = SimpleNamespace(compute=lambda pred, current: 0.12)  # type: ignore[attr-defined]
+    harness._qualia_gate = SimpleNamespace(decide=lambda **kwargs: {"allow": False, "reason": "normal"})  # type: ignore[attr-defined]
+    harness._talk_mode = runtime_module.TalkMode.WATCH  # type: ignore[attr-defined]
+    harness._response_locale = lambda: "ja-JP"  # type: ignore[attr-defined]
+    harness._wrap_ack_response = lambda text, talk_mode, controls_used: SimpleNamespace(  # type: ignore[attr-defined]
+        text=text,
+        controls_used=controls_used,
+        latency_ms=0.0,
+        safety=None,
+        retrieval_summary=None,
+        perception_summary=None,
+    )
+    harness._render_ack_for_mode = lambda mode, gate_ctx: "ack"  # type: ignore[attr-defined]
+    harness._render_presence_ack = lambda gate_ctx: "presence"  # type: ignore[attr-defined]
+    harness._last_gate_context = {}
+    harness._last_surface_user_text = "さっきの続きなんだけど、あのあとちょっと笑えることもあって。"  # type: ignore[attr-defined]
+    harness._last_planned_content_sequence = [  # type: ignore[attr-defined]
+        {"act": "quiet_presence", "text": "話せるところからでいいよ。"},
+    ]
+
+    response = SimpleNamespace(
+        text="placeholder",
+        controls_used={
+            "inner_os_planned_content_sequence": [
+                {"act": "shared_delight", "text": "それは、ちょっといい感じだね。"},
+                {"act": "light_bounce", "text": "その感じ、ちょっと嬉しいね。"},
+            ],
+            "inner_os_discourse_shape": {
+                "shape_id": "bright_bounce",
+                "primary_move": "bounce",
+                "secondary_move": "glow",
+                "sentence_budget": 2,
+                "question_budget": 0,
+                "closing_mode": "open_light",
+                "energy": "bright",
+                "brightness": 0.52,
+                "playfulness": 0.34,
+                "tempo": 0.44,
+            },
+            "inner_os_surface_profile": {
+                "response_length": "short",
+                "voice_texture": "measured",
+                "sentence_temperature": "neutral",
+                "pause_insertion": "soft_pause",
+                "certainty_style": "direct",
+            },
+            "inner_os_surface_context_packet": {
+                "conversation_phase": "bright_continuity",
+                "shared_core": {
+                    "already_shared": [
+                        "あのあとちょっと笑えることもあって。",
+                    ],
+                },
+                "surface_profile": {
+                    "utterance_reason_offer": "brief_shared_smile",
+                    "shared_moment_kind": "laugh",
+                },
+                "source_state": {
+                    "utterance_reason_offer": "brief_shared_smile",
+                    "shared_moment_kind": "laugh",
+                    "listener_action_state": "warm_laugh_ack",
+                },
+            },
+        },
+    )
+
+    updated, narrative = runtime_module.EmotionalHubRuntime._apply_qualia_gate(
+        harness,
+        response=response,
+        narrative_text="raw narrative",
+        qualia_vec=SimpleNamespace(valence=0.0, arousal=0.0, love=0.0, stress=0.0, mask=0.0),
+        gate_ctx=SimpleNamespace(delta_m=0.0, jerk=0.0, text_input=True, force_listen=False),
+        boundary_signal=SimpleNamespace(score=0.0),
+        ack_text=None,
+        ack_for_fast=None,
+        metrics={},
+        prediction_error=0.0,
+    )
+
+    assert updated is not None
+    assert "笑えるやつ" in updated.text
+    assert "話せるところからでいいよ。" not in updated.text
+    assert updated.controls_used["inner_os_discourse_shape"]["shape_id"] == "bright_bounce"
+    planned = updated.controls_used["inner_os_planned_content_sequence"]
+    assert "笑えるやつ" in str(planned[0]["text"])
+    assert "ちょっと楽になるよね" in str(planned[1]["text"])
+    assert updated.controls_used["inner_os_qualia_gate_suppressed"] is True
+    assert narrative is None
+
+
+def test_effective_interaction_policy_packet_promotes_shared_world_next_step_for_small_bright_progression() -> None:
+    effective = runtime_module._derive_effective_interaction_policy_packet(
+        {
+            "response_strategy": "attune_then_extend",
+            "recent_dialogue_state": {
+                "state": "reopening_thread",
+                "reopen_pressure": 0.24,
+                "recent_anchor": "前の流れはまだしんどさが残っていた",
+            },
+        },
+        response_controls_used={
+            "inner_os_discourse_shape": {"shape_id": "bright_bounce"},
+            "inner_os_surface_profile": {
+                "response_length": "balanced",
+            },
+            "inner_os_surface_context_packet": {
+                "surface_profile": {
+                    "utterance_reason_offer": "brief_shared_smile",
+                    "shared_moment_kind": "laugh",
+                },
+                "source_state": {
+                    "utterance_reason_offer": "brief_shared_smile",
+                    "shared_moment_kind": "laugh",
+                },
+            },
+        },
+        actuation_plan={
+            "execution_mode": "shared_progression",
+            "primary_action": "riff_current_comment",
+        },
+    )
+
+    assert effective["response_strategy"] == "shared_world_next_step"
+    assert effective["opening_move"] == "synchronize_then_propose"
+    assert effective["recent_dialogue_state"]["state"] == "continuing_thread"
+    assert effective["recent_dialogue_state"]["reopen_pressure"] == 0.18
+
+
+def test_effective_talk_mode_promotes_shared_progression_to_talk() -> None:
+    talk_mode = runtime_module._derive_effective_talk_mode_name(
+        raw_talk_mode="watch",
+        interaction_policy_packet={
+            "response_strategy": "shared_world_next_step",
+        },
+        actuation_plan={
+            "execution_mode": "shared_progression",
+            "primary_action": "riff_current_comment",
+        },
+        response_text="ふふっ、それ、ちょっと笑えるやつだね。",
+    )
+
+    assert talk_mode == "talk"
+
+
+def test_effective_response_controls_used_rewrites_small_bright_sequence_to_cue_aware() -> None:
+    harness = _ProcessTurnHarness(_integration_hooks=IntegrationHooks())
+    harness._response_locale = lambda: "ja-JP"  # type: ignore[attr-defined]
+    harness._last_surface_user_text = "さっきの続きなんだけど、あのあとちょっと笑えることもあって。"  # type: ignore[attr-defined]
+
+    response = SimpleNamespace(
+        text="ふふっ、それ、ちょっと笑えるやつだね。 そういうのあると、ちょっと楽になるよね。",
+        controls_used={
+            "inner_os_planned_content_sequence": [
+                {"act": "shared_delight", "text": "それは、ちょっといい感じだね。"},
+                {"act": "light_bounce", "text": "それは、ちょっと気持ちが軽くなるね。"},
+            ],
+            "inner_os_discourse_shape": {
+                "shape_id": "bright_bounce",
+                "primary_move": "bounce",
+                "secondary_move": "glow",
+                "sentence_budget": 2,
+                "question_budget": 0,
+                "closing_mode": "open_light",
+                "energy": "bright",
+                "brightness": 0.52,
+                "playfulness": 0.34,
+                "tempo": 0.44,
+            },
+            "inner_os_surface_profile": {
+                "response_length": "balanced",
+                "voice_texture": "light_playful",
+                "sentence_temperature": "neutral",
+                "pause_insertion": "none",
+                "certainty_style": "",
+            },
+            "inner_os_surface_context_packet": {
+                "conversation_phase": "bright_continuity",
+                "shared_core": {
+                    "already_shared": [
+                        "あのあとちょっと笑えることもあって。",
+                    ],
+                },
+                "surface_profile": {
+                    "utterance_reason_offer": "brief_shared_smile",
+                    "shared_moment_kind": "laugh",
+                },
+                "source_state": {
+                    "utterance_reason_offer": "brief_shared_smile",
+                    "shared_moment_kind": "laugh",
+                    "listener_action_state": "warm_laugh_ack",
+                    "listener_token_profile": "soft_laugh",
+                },
+            },
+        },
+    )
+
+    effective = runtime_module._derive_effective_response_controls_used(
+        harness,
+        response=response,
+        expression_hints={
+            "turn_delta": {
+                "kind": "bright_continuity",
+                "preferred_act": "light_bounce",
+            },
+            "surface_response_length": "balanced",
+            "surface_voice_texture": "light_playful",
+        },
+    )
+
+    planned = effective["inner_os_planned_content_sequence"]
+    assert str(planned[0]["text"]).startswith("ふふっ、")
+    assert "笑えるやつ" in str(planned[0]["text"])
+    assert "ちょっと楽になるよね" in str(planned[1]["text"])
+    assert effective["inner_os_surface_profile"]["content_sequence_length"] == 2
+    assert effective["inner_os_discourse_shape"]["shape_id"] == "bright_bounce"
 
 
 def test_process_turn_injects_inner_os_metadata(tmp_path: Path) -> None:
@@ -885,6 +2303,18 @@ def test_process_turn_injects_inner_os_metadata(tmp_path: Path) -> None:
     assert result.response.controls["inner_os"]["surface_policy_level"] in {"none", "layered", "prefix_only"}
     assert result.response.controls["inner_os"]["headless_actuation"]["execution_mode"] in {"attuned_contact", "defer_with_presence", "repair_contact", "shared_progression", "stabilize_boundary", "stabilize_before_contact", "open_reflection"}
     assert result.response.controls["inner_os"]["headless_actuation"]["primary_action"]
+    assert result.response.controls["inner_os"]["headless_actuation"]["response_channel"] in {"speak", "backchannel", "hold", "defer"}
+    assert "turn_timing_hint" in result.response.controls["inner_os"]["headless_actuation"]
+    assert result.response.controls["inner_os"]["headless_actuation"]["turn_timing_hint"]["minimum_wait_ms"] >= 0
+    assert result.response.controls_used["inner_os_emit_timing"]["minimum_wait_ms"] >= 0
+    assert result.response.controls_used["inner_os_emit_timing"]["effective_latency_ms"] >= 0
+    assert result.response.controls_used["inner_os_emit_timing"]["interrupt_guard_ms"] >= 0
+    assert result.response.controls_used["inner_os_emit_timing"]["emit_not_before_ms"] >= 0
+    assert result.response.controls_used["inner_os_emit_timing"]["interrupt_guard_until_ms"] >= result.response.controls_used["inner_os_emit_timing"]["emit_not_before_ms"]
+    assert isinstance(result.response.controls_used["inner_os_timing_guard"], dict)
+    assert result.response.controls_used["inner_os_gate_force_listen"] in {True, False}
+    if result.response.controls_used["inner_os_emit_timing"]["response_channel"] in {"backchannel", "hold", "defer"}:
+        assert result.response.latency_ms >= result.response.controls_used["inner_os_emit_timing"]["minimum_wait_ms"]
     assert result.response.controls_used["inner_os_surface_profile"]["certainty_style"] in {"direct", "tentative", "careful"}
     assert result.response.controls_used["inner_os_surface_profile"]["content_sequence_length"] >= 1
     assert result.response.controls_used["inner_os_surface_policy"] == "clarify_first_prefix:clarify"
@@ -903,9 +2333,22 @@ def test_process_turn_injects_inner_os_metadata(tmp_path: Path) -> None:
     assert result.persona_meta["inner_os"]["interaction_pacing"] in {"flow", "check"}
     assert result.persona_meta["inner_os"]["actuation_execution_mode"] in {"attuned_contact", "defer_with_presence", "repair_contact", "shared_progression", "stabilize_boundary", "stabilize_before_contact", "open_reflection"}
     assert result.persona_meta["inner_os"]["actuation_primary_action"]
+    assert result.persona_meta["inner_os"]["actuation_response_channel"] in {"speak", "backchannel", "hold", "defer"}
     assert result.persona_meta["inner_os"]["actuation_reply_permission"] in {"speak", "speak_briefly", "hold_or_brief", "speak_forward", "speak_minimal", "speak_reflective", "speak_expand"}
+    assert result.persona_meta["inner_os"]["actuation_turn_timing_hint"]["minimum_wait_ms"] >= 0
+    assert result.persona_meta["inner_os"]["actuation_emit_timing"]["effective_latency_ms"] >= 0
+    assert result.persona_meta["inner_os"]["actuation_emit_timing"]["interrupt_guard_ms"] >= 0
+    assert result.persona_meta["inner_os"]["actuation_emit_timing"]["emit_not_before_ms"] >= 0
+    assert isinstance(result.persona_meta["inner_os"]["timing_guard"], dict)
+    assert result.persona_meta["inner_os"]["gate_force_listen"] in {True, False}
     assert result.persona_meta["inner_os"]["surface_policy_level"] in {"none", "layered", "prefix_only"}
     assert result.persona_meta["inner_os"]["surface_policy_intent"] == "clarify"
+    assert isinstance(result.persona_meta["inner_os"]["scene_family"], str)
+    assert isinstance(result.persona_meta["inner_os"]["top_interaction_option_family"], str)
+    assert result.persona_meta["inner_os"]["interaction_option_candidate_count"] >= 0
+    assert result.persona_meta["inner_os"]["conscious_workspace_mode"] in {"preconscious", "latent_foreground", "foreground", "guarded_foreground", ""}
+    assert isinstance(result.persona_meta["inner_os"]["audit_reference_case_ids"], list)
+    assert isinstance(result.persona_meta["inner_os"]["audit_reference_case_meta"], dict)
     assert result.response.controls["inner_os"]["expression_hints"]["surface_opening_delay"] in {"brief", "measured", "long"}
     assert result.response.controls["inner_os"]["expression_hints"]["surface_response_length"] in {"short", "balanced", "reflective", "forward_leaning"}
     assert result.response.controls["inner_os"]["expression_hints"]["surface_certainty_style"] in {"direct", "tentative", "careful"}
@@ -937,6 +2380,8 @@ def test_process_turn_injects_inner_os_metadata(tmp_path: Path) -> None:
     assert result.response.controls["inner_os"]["expression_hints"]["qualia_hint_expected_mismatch"] is False
     assert result.response.controls["inner_os"]["expression_hints"]["qualia_planner_view"]["trust"] >= 0.0
     assert result.response.controls["inner_os"]["expression_hints"]["qualia_planner_view"]["felt_energy"] >= 0.0
+    assert result.response.controls["inner_os"]["expression_hints"]["qualia_hint_bundle"]["qualia_hint_source"] == "shared"
+    assert result.response.controls["inner_os"]["expression_hints"]["qualia_hint_bundle"]["qualia_planner_view"] == result.response.controls["inner_os"]["expression_hints"]["qualia_planner_view"]
     assert result.response.controls["inner_os"]["expression_hints"]["qualia_planner_view"] == build_expression_hints_from_gate_result(
         result.qualia_gate["inner_os"],
         existing_hints=result.qualia_gate["inner_os"]["expression_hints"],
@@ -947,9 +2392,15 @@ def test_process_turn_injects_inner_os_metadata(tmp_path: Path) -> None:
     assert result.response.controls["inner_os"]["expression_hints"]["conscious_workspace"]["workspace_mode"] in {"preconscious", "latent_foreground", "foreground", "guarded_foreground"}
     assert isinstance(result.response.controls["inner_os"]["expression_hints"]["conscious_workspace_actionable_slice"], list)
     assert result.response.controls["inner_os"]["expression_hints"]["conscious_workspace_ignition_phase"] in {"dormant", "priming", "ignited", "guarded"}
+    assert result.response.controls["inner_os"]["expression_hints"]["scene_hint_bundle"]["scene_state"] == result.response.controls["inner_os"]["expression_hints"]["scene_state"]
+    assert result.response.controls["inner_os"]["expression_hints"]["scene_hint_bundle"]["scene_family"] == result.response.controls["inner_os"]["expression_hints"]["scene_family"]
+    assert result.response.controls["inner_os"]["expression_hints"]["workspace_hint_bundle"]["conscious_workspace"] == result.response.controls["inner_os"]["expression_hints"]["conscious_workspace"]
+    assert result.response.controls["inner_os"]["expression_hints"]["workspace_hint_bundle"]["conscious_workspace_mode"] == result.response.controls["inner_os"]["expression_hints"]["conscious_workspace_mode"]
     assert result.response.controls["inner_os"]["expression_hints"]["conversational_objects"]["objects"]
     assert result.response.controls["inner_os"]["expression_hints"]["object_operations"]["operations"]
     assert result.response.controls["inner_os"]["expression_hints"]["interaction_effects"]["effects"]
+    assert result.response.controls["inner_os"]["expression_hints"]["interaction_reasoning_hint_bundle"]["conversational_objects"] == result.response.controls["inner_os"]["expression_hints"]["conversational_objects"]
+    assert result.response.controls["inner_os"]["expression_hints"]["interaction_reasoning_hint_bundle"]["object_operations"] == result.response.controls["inner_os"]["expression_hints"]["object_operations"]
     assert result.response.controls["inner_os"]["expression_hints"]["interaction_judgement_view"]["observed_signals"]
     assert result.response.controls["inner_os"]["expression_hints"]["interaction_judgement_view"]["inferred_signals"]
     assert result.response.controls["inner_os"]["expression_hints"]["interaction_judgement_summary"]["observed_lines"]
@@ -958,10 +2409,40 @@ def test_process_turn_injects_inner_os_metadata(tmp_path: Path) -> None:
     assert result.response.controls["inner_os"]["expression_hints"]["interaction_condition_report"]["report_lines"]
     assert result.response.controls["inner_os"]["expression_hints"]["interaction_inspection_report"]["case_reports"]
     assert result.response.controls["inner_os"]["expression_hints"]["interaction_inspection_report"]["report_lines"]
+    assert result.response.controls["inner_os"]["expression_hints"]["interaction_reasoning_hint_bundle"]["interaction_judgement_view"] == result.response.controls["inner_os"]["expression_hints"]["interaction_judgement_view"]
+    assert result.response.controls["inner_os"]["expression_hints"]["interaction_reasoning_hint_bundle"]["interaction_condition_report"] == result.response.controls["inner_os"]["expression_hints"]["interaction_condition_report"]
     assert result.response.controls["inner_os"]["expression_hints"]["interaction_audit_bundle"]["report_lines"]
     assert result.response.controls["inner_os"]["expression_hints"]["interaction_audit_bundle"]["key_metrics"]["question_budget"] >= 0
     assert result.response.controls["inner_os"]["expression_hints"]["interaction_audit_casebook"]["cases"]
     assert result.response.controls["inner_os"]["expression_hints"]["interaction_audit_report"]["report_lines"]
+    assert result.response.controls["inner_os"]["expression_hints"]["interaction_audit_hint_bundle"]["interaction_audit_bundle"] == result.response.controls["inner_os"]["expression_hints"]["interaction_audit_bundle"]
+    assert result.response.controls["inner_os"]["expression_hints"]["field_regulation_hint_bundle"]["contact_dynamics"] == result.response.controls["inner_os"]["expression_hints"]["contact_dynamics"]
+    assert result.response.controls["inner_os"]["expression_hints"]["field_regulation_hint_bundle"]["access_dynamics"] == result.response.controls["inner_os"]["expression_hints"]["access_dynamics"]
+    assert result.response.controls["inner_os"]["expression_hints"]["terrain_insight_hint_bundle"]["terrain_readout"] == result.response.controls["inner_os"]["expression_hints"]["terrain_readout"]
+    assert result.response.controls["inner_os"]["expression_hints"]["terrain_insight_hint_bundle"]["resonance_evaluation"] == result.response.controls["inner_os"]["expression_hints"]["resonance_evaluation"]
+    assert isinstance(harness._last_gate_context["inner_os_scene_hint_bundle"], SceneHintBundleContract)
+    assert isinstance(harness._last_gate_context["inner_os_workspace_hint_bundle"], WorkspaceHintBundleContract)
+    assert isinstance(harness._last_gate_context["inner_os_field_regulation_hint_bundle"], FieldRegulationHintBundleContract)
+    assert isinstance(harness._last_gate_context["inner_os_terrain_insight_hint_bundle"], TerrainInsightHintBundleContract)
+    assert isinstance(
+        harness._last_gate_context["inner_os_qualia_hint_bundle"],
+        QualiaHintBundleContract,
+    )
+    assert isinstance(
+        harness._last_gate_context["inner_os_interaction_reasoning_hint_bundle"],
+        InteractionReasoningHintBundleContract,
+    )
+    assert isinstance(
+        harness._last_gate_context["inner_os_interaction_audit_hint_bundle"],
+        InteractionAuditHintBundleContract,
+    )
+    assert harness._last_gate_context["inner_os_scene_family"] == harness._last_gate_context["inner_os_scene_hint_bundle"]["scene_family"]
+    assert harness._last_gate_context["inner_os_conscious_workspace_mode"] == harness._last_gate_context["inner_os_workspace_hint_bundle"]["conscious_workspace_mode"]
+    assert harness._last_gate_context["inner_os_conversational_objects"] == harness._last_gate_context["inner_os_interaction_reasoning_hint_bundle"]["conversational_objects"]
+    assert harness._last_gate_context["inner_os_interaction_audit_reference_case_ids"] == harness._last_gate_context["inner_os_interaction_audit_hint_bundle"]["interaction_audit_reference_case_ids"]
+    assert harness._last_gate_context["inner_os_qualia_hint_source"] == harness._last_gate_context["inner_os_qualia_hint_bundle"]["qualia_hint_source"]
+    assert harness._last_gate_context["inner_os_contact_dynamics"] == harness._last_gate_context["inner_os_field_regulation_hint_bundle"]["contact_dynamics"]
+    assert harness._last_gate_context["inner_os_resonance_evaluation"] == harness._last_gate_context["inner_os_terrain_insight_hint_bundle"]["resonance_evaluation"]
     assert result.response.controls["inner_os"]["expression_hints"]["affective_position"]["z_aff"]
     assert result.response.controls["inner_os"]["expression_hints"]["terrain_readout"]["active_patch_label"]
     assert result.response.controls["inner_os"]["expression_hints"]["protection_mode"]["mode"] in {"monitor", "contain", "stabilize", "repair", "shield"}
@@ -973,6 +2454,15 @@ def test_process_turn_injects_inner_os_metadata(tmp_path: Path) -> None:
     assert result.response.controls_used["inner_os_surface_profile"]["live_return_gaze_mismatch"] >= 0.0
     assert result.metrics["inner_os/stream_update_count"] >= 2.0
     assert result.metrics["inner_os/headless_wait_required"] in {0.0, 1.0}
+    assert result.metrics["inner_os/headless_wait_ms"] >= 0.0
+    assert result.metrics["inner_os/headless_interrupt_guard_ms"] >= 0.0
+    assert result.metrics["inner_os/effective_emit_delay_ms"] >= 0.0
+    assert result.metrics["inner_os/effective_latency_ms"] >= 0.0
+    assert result.metrics["inner_os/emit_wait_applied"] in {0.0, 1.0}
+    assert result.metrics["inner_os/emit_wait_applied_ms"] >= 0.0
+    assert result.metrics["inner_os/timing_guard_active"] in {0.0, 1.0}
+    assert result.metrics["inner_os/timing_guard_emit_delay"] in {0.0, 1.0}
+    assert result.metrics["inner_os/timing_guard_interrupt_guard"] in {0.0, 1.0}
     assert result.metrics["inner_os/resonance_score"] >= 0.0
     assert result.metrics["inner_os/qualia_hint_shared"] == 1.0
     assert result.metrics["inner_os/qualia_hint_fallback"] == 0.0
@@ -999,85 +2489,72 @@ def test_process_turn_injects_inner_os_metadata(tmp_path: Path) -> None:
     assert result.metrics["inner_os/relation_competition_winner_margin"] >= 0.0
     assert result.metrics["inner_os/social_topology_score"] >= 0.0
     assert result.metrics["inner_os/social_topology_winner_margin"] >= 0.0
+    assert result.metrics["inner_os/growth_relational_trust"] >= 0.0
+    assert result.metrics["inner_os/growth_self_coherence"] >= 0.0
+    serialized_meta = harness._serialize_response_meta(result.response)
+    assert serialized_meta is not None
+    assert isinstance(serialized_meta["actuation_emit_timing"], dict)
+    assert isinstance(serialized_meta["timing_guard"], dict)
+    assert serialized_meta["gate_force_listen"] in {True, False}
     assert result.metrics["inner_os/active_relation_total_people"] >= 0.0
     assert result.metrics["inner_os/commitment_accepted_cost"] >= 0.0
     assert result.metrics["inner_os/initiative_followup_bias"] >= 0.0
-    assert result.metrics["inner_os/initiative_followup_winner_margin"] >= 0.0
-    assert result.metrics["inner_os/terrain_plasticity_winner_margin"] >= 0.0
-    assert result.metrics["inner_os/association_reinforcement_winner_margin"] >= 0.0
-    assert result.metrics["inner_os/qualia_hint_expected_mismatch"] == 0.0
-    assert result.persona_meta["inner_os"]["interaction_afterglow"] > 0.0
-    assert result.persona_meta["inner_os"]["interaction_afterglow_intent"] == "clarify"
-    assert result.persona_meta["inner_os"]["replay_intensity"] >= 0.0
-    assert result.persona_meta["inner_os"]["anticipation_tension"] >= 0.0
-    assert result.persona_meta["inner_os"]["contact_dynamics_mode"] in {"fresh", "guarded_fresh", "reentrant", "guarded_reentry"}
-    assert result.persona_meta["inner_os"]["access_dynamics_mode"] in {"fresh_projection", "guarded_projection", "inertial_projection", "guarded_inertial_projection"}
-    assert result.persona_meta["inner_os"]["conscious_workspace_mode"] in {"preconscious", "latent_foreground", "foreground", "guarded_foreground"}
-    assert isinstance(result.persona_meta["inner_os"]["conscious_workspace_reportable_slice"], list)
-    assert isinstance(result.persona_meta["inner_os"]["conscious_workspace_withheld_slice"], list)
-    assert isinstance(result.persona_meta["inner_os"]["conscious_workspace_actionable_slice"], list)
-    assert result.persona_meta["inner_os"]["conscious_workspace_winner_margin"] >= 0.0
-    assert result.persona_meta["inner_os"]["conscious_workspace_slot_scores"]
-    assert result.persona_meta["inner_os"]["conscious_workspace_dominant_inputs"]
-    assert result.persona_meta["inner_os"]["association_graph_winner_margin"] >= 0.0
-    assert result.persona_meta["inner_os"]["association_graph_dominant_inputs"]
-    assert result.persona_meta["inner_os"]["qualia_hint_source"] == "shared"
-    assert result.persona_meta["inner_os"]["qualia_hint_fallback_reason"] == "prebuilt_shared_view"
-    assert result.persona_meta["inner_os"]["qualia_hint_expected_source"] == "shared"
-    assert result.persona_meta["inner_os"]["qualia_hint_expected_mismatch"] is False
-    assert result.persona_meta["inner_os"]["association_reweighting_focus"] == "repeated_links"
-    assert result.persona_meta["inner_os"]["association_reweighting_reason"] == "repeated_insight_trace"
-    assert result.persona_meta["inner_os"]["insight_terrain_shape_target"] == "soft_relation"
-    assert result.persona_meta["inner_os"]["overnight_bias_roles"]["association_reweighting_focus"] == "repeated_links"
-    assert result.persona_meta["inner_os"]["reaction_vs_overnight_bias"]["same_turn"]["protection_mode"] in {"monitor", "contain", "stabilize", "repair", "shield"}
-    assert result.persona_meta["inner_os"]["reaction_vs_overnight_bias"]["overnight"]["insight_terrain_shape_target"] == "soft_relation"
-    assert result.persona_meta["inner_os"]["memory_write_class_bias"]["winner_margin"] >= 0.0
-    assert result.persona_meta["inner_os"]["memory_write_class_bias"]["dominant_inputs"]
-    assert result.persona_meta["inner_os"]["protection_mode_decision"]["winner_margin"] >= 0.0
-    assert result.persona_meta["inner_os"]["body_recovery_guard"]["winner_margin"] >= 0.0
-    assert result.persona_meta["inner_os"]["body_homeostasis_state"]["winner_margin"] >= 0.0
-    assert result.persona_meta["inner_os"]["homeostasis_budget_state"]["winner_margin"] >= 0.0
-    assert result.persona_meta["inner_os"]["initiative_readiness"]["score"] >= 0.0
-    assert result.persona_meta["inner_os"]["commitment_state"]["winner_margin"] >= 0.0
-    assert result.persona_meta["inner_os"]["commitment_state"]["target"] in {"hold", "stabilize", "repair", "bond_protect", "step_forward"}
-    assert result.persona_meta["inner_os"]["relational_continuity_state"]["winner_margin"] >= 0.0
-    assert result.persona_meta["inner_os"]["relation_competition_state"]["winner_margin"] >= 0.0
-    assert result.persona_meta["inner_os"]["social_topology_state"]["winner_margin"] >= 0.0
-    assert isinstance(result.persona_meta["inner_os"]["active_relation_table"]["entries"], list)
-    assert result.persona_meta["inner_os"]["initiative_followup_bias"]["winner_margin"] >= 0.0
-    assert result.persona_meta["inner_os"]["terrain_plasticity_update"]["winner_margin"] >= 0.0
-    assert result.persona_meta["inner_os"]["association_graph_state"]["winner_margin"] >= 0.0
-    assert isinstance(result.persona_meta["inner_os"]["conversational_object_labels"], list)
-    assert result.persona_meta["inner_os"]["conversational_object_pressure_balance"] >= 0.0
-    assert result.persona_meta["inner_os"]["object_operation_question_budget"] >= 0
-    assert result.persona_meta["inner_os"]["object_operation_question_pressure"] >= 0.0
-    assert result.persona_meta["inner_os"]["object_operation_defer_dominance"] >= 0.0
-    assert result.persona_meta["inner_os"]["judgement_observed_count"] >= 1
-    assert result.persona_meta["inner_os"]["judgement_inferred_count"] >= 1
-    assert isinstance(result.persona_meta["inner_os"]["judgement_selected_object_labels"], list)
-    assert isinstance(result.persona_meta["inner_os"]["judgement_active_operation_labels"], list)
-    assert result.persona_meta["inner_os"]["judgement_summary_observed"]
-    assert result.persona_meta["inner_os"]["judgement_summary_operations"]
-    assert result.persona_meta["inner_os"]["condition_scene_lines"]
-    assert result.persona_meta["inner_os"]["condition_integration_lines"]
-    assert result.persona_meta["inner_os"]["inspection_report_lines"]
-    assert result.persona_meta["inner_os"]["continuity_summary"]["same_turn"]["protection_mode"] in {"monitor", "contain", "stabilize", "repair", "shield"}
-    assert result.persona_meta["inner_os"]["continuity_summary"]["same_turn"]["social_topology_state"] in {"ambient", "one_to_one", "threaded_group", "public_visible", "hierarchical", ""}
-    assert result.persona_meta["inner_os"]["continuity_summary"]["same_turn"]["active_group_thread_total"] >= 0
-    assert result.persona_meta["inner_os"]["continuity_summary"]["same_turn"]["issue_state"] in {"ambient", "naming_issue", "exploring_issue", "pausing_issue", "resolving_issue", ""}
-    assert result.persona_meta["inner_os"]["discussion_thread_registry_summary"]["total_threads"] >= 0
-    assert "dominant_carry_channel" in result.persona_meta["inner_os"]["continuity_summary"]
-    assert result.persona_meta["inner_os"]["resonance_recommended_family"]
-    assert result.persona_meta["inner_os"]["audit_report_lines"]
-    assert result.persona_meta["inner_os"]["audit_key_metrics"]["question_budget"] >= 0
-    assert result.persona_meta["inner_os"]["audit_casebook_case_ids"]
-    assert isinstance(result.persona_meta["inner_os"]["audit_reference_case_ids"], list)
-    assert isinstance(result.persona_meta["inner_os"]["audit_reference_case_meta"], dict)
-    assert result.persona_meta["inner_os"]["audit_comparison_report_lines"]
-    assert result.persona_meta["inner_os"]["other_person_detail_room"] in {"low", "medium", "high"}
-    assert harness._last_gate_context["inner_os_conscious_residue_strength"] >= 0.0
-    assert harness._last_gate_context["inner_os_initiative_followup_bias"] >= 0.0
-    assert harness._last_gate_context["inner_os_initiative_followup_state"] in {"hold", "reopen_softly", "offer_next_step"}
+
+
+def test_process_turn_applies_streaming_emit_wait_for_guarded_channel(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    hooks = IntegrationHooks(memory_core=MemoryCore(path=tmp_path / "inner_os_memory.jsonl"))
+    harness = _ProcessTurnHarness(_integration_hooks=hooks)
+    harness.config = SimpleNamespace(latency=SimpleNamespace(enable_loose=True))
+    harness._surface_mode = lambda: "streaming"  # type: ignore[assignment]
+    harness._inner_os_emit_clock_ms = lambda: 5000.0  # type: ignore[assignment]
+    harness._inner_os_headless_runtime.step = lambda actuation_plan=None: HeadlessTurnResult(  # type: ignore[assignment]
+        execution_mode="stabilize_boundary",
+        primary_action="hold_presence",
+        response_channel="hold",
+        response_channel_score=0.91,
+        reply_permission="hold_or_brief",
+        wait_before_action="held",
+        repair_window_commitment="soft",
+        outcome_goal="leave_room",
+        boundary_mode="soft_guard",
+        attention_target="user",
+        memory_write_priority="carry",
+        nonverbal_response_state={"timing_bias": "wait"},
+        presence_hold_state={"hold_state": "holding_space"},
+        turn_timing_hint={
+            "response_channel": "hold",
+            "wait_before_action": "held",
+            "timing_bias": "wait",
+            "entry_window": "held",
+            "pause_profile": "soft_pause",
+            "overlap_policy": "wait_for_release",
+            "interruptibility": "low",
+            "minimum_wait_ms": 40,
+            "interrupt_guard_ms": 90,
+        },
+        do_not_cross=["force_reopen"],
+    )
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(runtime_module.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    result = harness.process_turn(
+        user_text="do you remember this new place",
+        context="previous framing",
+    )
+
+    assert sleep_calls == [0.028]
+    assert result.response is not None
+    assert result.response.controls_used["inner_os_emit_timing"]["response_channel"] == "hold"
+    assert result.response.controls_used["inner_os_emit_timing"]["wait_applied"] is True
+    assert result.response.controls_used["inner_os_emit_timing"]["wait_applied_ms"] == 28.0
+    assert result.metrics["inner_os/emit_wait_applied"] == 1.0
+    assert result.metrics["inner_os/emit_wait_applied_ms"] == 28.0
+    assert result.response.latency_ms == 40.0
+    assert result.response.controls_used["inner_os_emit_timing"]["emit_not_before_ms"] == 5028.0
+    assert result.persona_meta["inner_os"]["actuation_emit_timing"]["wait_applied"] is True
 
 
 def test_process_turn_restores_initiative_followup_bias_into_overnight_view(tmp_path) -> None:

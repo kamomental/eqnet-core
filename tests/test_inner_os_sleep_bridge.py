@@ -67,6 +67,19 @@ def test_build_inner_os_sleep_snapshot_wraps_legacy_signals() -> None:
     assert result["derived_inputs"]["current_state"]["relation_seed_strength"] == 0.76
     assert result["derived_inputs"]["current_state"]["autobiographical_thread_mode"] == "unfinished_thread"
     assert result["snapshot"]["autobiographical_thread_anchor"] == "harbor promise"
+    assert result["snapshot"]["growth_state"]["relational_trust"] >= 0.0
+    assert result["snapshot"]["growth_state"]["dominant_transition"]
+    assert result["snapshot"]["growth_replay_axes"]["bond"]["value"] >= 0.0
+    assert result["snapshot"]["memory_dynamics_state"]["dominant_mode"] in {
+        "stabilize",
+        "reconsolidate",
+        "ignite",
+        "protect",
+        "prospect",
+    }
+    assert result["snapshot"]["memory_dynamics_state"]["monument_salience"] >= 0.0
+    assert result["snapshot"]["memory_dynamics_axes"]["salience"]["value"] >= 0.0
+    assert result["snapshot"]["memory_dynamics_axes"]["consolidation"]["value"] >= 0.0
     assert result["derived_inputs"]["forgetting_snapshot"]["replay_horizon"] == 1
     assert result["derived_inputs"]["memory_orchestration"]["consolidation_priority"] > 0.0
 

@@ -3,6 +3,11 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Mapping
 
+from ..expression_hints_contract import (
+    ExpressionHintsContract,
+    coerce_expression_hints_contract,
+)
+from ..expression_hint_bundles import coerce_qualia_hint_bundle_contract
 from ..qualia_kernel_adapter import build_qualia_planner_view
 
 QUALIA_HINT_VERSION = 1
@@ -23,8 +28,8 @@ def build_expression_hints_from_gate_result(
     existing_hints: Mapping[str, object] | None = None,
     *,
     expected_source: str | None = None,
-) -> dict[str, object]:
-    merged = dict(existing_hints or {})
+) -> ExpressionHintsContract:
+    merged = coerce_expression_hints_contract(existing_hints)
     source_hints = _extract_expression_hints(gate_result)
     for key in _QUALIA_HINT_KEYS:
         if key in source_hints:
@@ -36,8 +41,8 @@ def ensure_qualia_planner_view(
     expression_hints: Mapping[str, object] | None,
     *,
     expected_source: str | None = None,
-) -> dict[str, object]:
-    merged = dict(expression_hints or {})
+) -> ExpressionHintsContract:
+    merged = coerce_expression_hints_contract(expression_hints)
     if isinstance(merged.get("qualia_planner_view"), Mapping):
         merged["qualia_planner_view"] = dict(merged["qualia_planner_view"])
         return _finalize_qualia_hint_metadata(
@@ -83,13 +88,36 @@ def _extract_expression_hints(gate_result: Any) -> dict[str, object]:
     return {}
 
 
+def _qualia_hint_materials(
+    expression_hints: Mapping[str, object],
+) -> dict[str, object]:
+    bundle = expression_hints.get("qualia_hint_bundle")
+    if isinstance(bundle, Mapping):
+        packet = coerce_qualia_hint_bundle_contract(bundle).to_dict()
+        return {
+            "qualia_state": packet.get("qualia_state"),
+            "qualia_estimator_health": packet.get("qualia_estimator_health"),
+            "qualia_protection_grad_x": packet.get("qualia_protection_grad_x"),
+            "qualia_axis_labels": packet.get("qualia_axis_labels"),
+            "qualia_planner_view": packet.get("qualia_planner_view"),
+        }
+    return {
+        "qualia_state": expression_hints.get("qualia_state"),
+        "qualia_estimator_health": expression_hints.get("qualia_estimator_health"),
+        "qualia_protection_grad_x": expression_hints.get("qualia_protection_grad_x"),
+        "qualia_axis_labels": expression_hints.get("qualia_axis_labels"),
+        "qualia_planner_view": expression_hints.get("qualia_planner_view"),
+    }
+
+
 def _has_qualia_raw_materials(expression_hints: Mapping[str, object]) -> bool:
+    materials = _qualia_hint_materials(expression_hints)
     return any(
         (
-            isinstance(expression_hints.get("qualia_state"), dict),
-            isinstance(expression_hints.get("qualia_estimator_health"), dict),
-            isinstance(expression_hints.get("qualia_protection_grad_x"), list),
-            isinstance(expression_hints.get("qualia_axis_labels"), list),
+            isinstance(materials.get("qualia_state"), dict),
+            isinstance(materials.get("qualia_estimator_health"), dict),
+            isinstance(materials.get("qualia_protection_grad_x"), list),
+            isinstance(materials.get("qualia_axis_labels"), list),
         )
     )
 
@@ -100,10 +128,11 @@ def build_qualia_planner_view_hint(
     if not _has_qualia_raw_materials(expression_hints):
         return None
 
-    qualia_state = expression_hints.get("qualia_state")
-    qualia_health = expression_hints.get("qualia_estimator_health")
-    qualia_grad = expression_hints.get("qualia_protection_grad_x")
-    qualia_axis_labels = expression_hints.get("qualia_axis_labels")
+    materials = _qualia_hint_materials(expression_hints)
+    qualia_state = materials.get("qualia_state")
+    qualia_health = materials.get("qualia_estimator_health")
+    qualia_grad = materials.get("qualia_protection_grad_x")
+    qualia_axis_labels = materials.get("qualia_axis_labels")
     return build_qualia_planner_view(
         qualia_state=qualia_state if isinstance(qualia_state, dict) else None,
         estimator_health=qualia_health if isinstance(qualia_health, dict) else None,
@@ -113,12 +142,12 @@ def build_qualia_planner_view_hint(
 
 
 def _finalize_qualia_hint_metadata(
-    expression_hints: dict[str, object],
+    expression_hints: ExpressionHintsContract,
     *,
     source: str,
     reason: str,
     expected_source: str | None,
-) -> dict[str, object]:
+) -> ExpressionHintsContract:
     expression_hints["qualia_hint_source"] = source
     expression_hints["qualia_hint_version"] = QUALIA_HINT_VERSION
     expression_hints["qualia_hint_fallback_reason"] = reason
