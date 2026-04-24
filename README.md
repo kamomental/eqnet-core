@@ -494,6 +494,14 @@ python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMM
    python scripts/core_quickstart_demo.py --json
    ```
 
+6. **同じ LLM を state-conditioned bridge として評価**
+   ```bash
+   python scripts/core_llm_expression_eval.py --scenario small_shared_moment --json
+   python scripts/core_llm_expression_eval.py --scenario guarded_uncertainty --json
+   ```
+
+   `--dry-run` を付けると LLM を呼ばず、`llm_expression_request` だけ確認できます。
+
 これが、現在の EQNet 本流を最も短く確認する導線です。
 
 ### Full / Research Quick Starts

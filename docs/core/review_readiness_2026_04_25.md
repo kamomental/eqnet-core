@@ -48,10 +48,20 @@ python scripts/core_contract_eval.py
 python scripts/core_contract_eval.py --json
 ```
 
+state-conditioned LLM bridge の確認:
+
+```bash
+python scripts/core_llm_expression_eval.py --scenario small_shared_moment --json
+python scripts/core_llm_expression_eval.py --scenario guarded_uncertainty --json
+python scripts/core_llm_expression_eval.py --scenario small_shared_moment --dry-run --json
+```
+
 この作業環境では次の形で確認しました。
 
 ```bash
 uv run python scripts/core_contract_eval.py --json
+uv run python scripts/core_llm_expression_eval.py --scenario small_shared_moment --dry-run --json
+uv run python scripts/core_llm_expression_eval.py --scenario guarded_uncertainty --json
 ```
 
 ## 現在の期待結果
@@ -80,7 +90,7 @@ uv run python scripts/core_contract_eval.py --json
 
 - シナリオはまだ 2 本だけです。
 - prompt-only baseline は fixture 比較であり、live baseline ではありません。
-- LM Studio live 出力は同じ evaluator にまだ接続していません。
+- LM Studio live 出力を呼ぶ CLI は追加済みですが、実モデルごとの結果蓄積と横断評価はまだです。
 - LLM 出力後の `review_llm_bridge_text` は既存側に残っていますが、文字化けした検出語彙が多く、次に整理が必要です。
 - legacy / full demo 導線の分離は、さらに明確化が必要です。
 
