@@ -142,10 +142,31 @@ class LLMHub:
             "reopen_from_anchor",
             "leave_return_point_from_anchor",
         }
+        is_bright_continuity = phase == "bright_continuity" or primary_role in {
+            "shared_delight",
+            "light_bounce",
+        }
         is_deep_hold = primary_role in {
             "reflect_only",
             "stay_with_present_need",
         } or secondary_role == "quiet_presence"
+
+        if is_bright_continuity:
+            guard_lines = [
+                "Keep the reply colloquial, literal, and easy to picture.",
+                "Stay with the small thing that actually happened instead of interpreting hidden meaning behind it.",
+                "Use concrete everyday Japanese, and prefer a short acknowledgement of the small laugh, small relief, or small easing that was already shared.",
+                "If the packet names a concrete shift, stay with that shift instead of translating it into a lesson or hidden meaning.",
+                "Do not broaden into abstract nouns or therapeutic framing such as 要素, 流れ, サイン, 視点, 解放感, 証拠, 一歩, or 現実の受け止め方.",
+                "Do not turn the moment into advice, analysis, or a question about how the user should understand it.",
+                "Do not ask the user to explain more, and avoid questions such as どう捉えている, どう影響している, or 今どう感じる.",
+                "Do not ask any follow-up question, and avoid forms such as よろしいでしょうか, お聞かせいただけますか, or 〜でしょうか.",
+                "Avoid vague or explanatory Japanese such as 笑い事, 穏やかな流れ, 心に残っています, 重たいものから離れる一歩, 焦点を当てて, or 事実だけ捉えてみる.",
+                "Avoid causal or essay-like framing such as きっかけ, 証拠のように思える, ただの出来事というより, or 〜なんだろうな.",
+                "Prefer plain chat phrasing close to それ、ちょっと笑えるやつだね or そういうのあると、ちょっと楽になるよね.",
+                "Keep it to one or two short sentences, and do not sound like customer support or counseling copy.",
+            ]
+            return " ".join(guard_lines)
 
         if not (is_reopen or is_deep_hold):
             return ""
@@ -162,6 +183,195 @@ class LLMHub:
             guard_lines.append("At most one light question, and only if it stays close to what is already shared.")
         guard_lines.append("Stay with the person's current thread instead of teaching a method.")
         return " ".join(guard_lines)
+
+    def _reason_chain_language_guard(
+        self,
+        surface_context_packet: Optional[Mapping[str, Any]],
+    ) -> str:
+        if not isinstance(surface_context_packet, Mapping):
+            return ""
+        source_state = dict(surface_context_packet.get("source_state") or {})
+        if not source_state:
+            return ""
+
+        utterance_reason_state = str(source_state.get("utterance_reason_state") or "").strip()
+        joint_state = str(source_state.get("joint_state") or "").strip()
+        memory_anchor = str(
+            source_state.get("utterance_reason_memory_anchor")
+            or source_state.get("memory_recall_anchor")
+            or source_state.get("appraisal_memory_anchor")
+            or ""
+        ).strip()
+        organism_posture = str(source_state.get("organism_posture") or "").strip()
+        external_field = str(source_state.get("external_field_dominant") or "").strip()
+        terrain_flow = str(source_state.get("terrain_dominant_flow") or "").strip()
+        question_policy = str(source_state.get("utterance_reason_question_policy") or "").strip()
+        preserve_mode = str(source_state.get("utterance_reason_preserve") or "").strip()
+        offer_mode = str(source_state.get("utterance_reason_offer") or "").strip()
+
+        joint_common_ground = float(source_state.get("joint_common_ground") or 0.0)
+        joint_mutual_room = float(source_state.get("joint_mutual_room") or 0.0)
+        memory_activation_confidence = float(source_state.get("memory_activation_confidence") or 0.0)
+        organism_protective_tension = float(source_state.get("organism_protective_tension") or 0.0)
+        organism_play_window = float(source_state.get("organism_play_window") or 0.0)
+        external_field_safety = float(source_state.get("external_field_safety_envelope") or 0.0)
+        external_field_ambiguity = float(source_state.get("external_field_ambiguity_load") or 0.0)
+        terrain_ignition_pressure = float(source_state.get("terrain_ignition_pressure") or 0.0)
+
+        has_reason_chain = bool(
+            utterance_reason_state
+            or joint_state
+            or memory_anchor
+            or organism_posture
+            or external_field
+            or terrain_flow
+        )
+        if not has_reason_chain:
+            return ""
+
+        guard_lines = [
+            "Treat the packet's appraisal, meaning update, and utterance reason as the immediate cause of the reply.",
+            "Do not step outside the moment to explain it from a helper, analyst, or counselor point of view.",
+            "Do not narrate the hidden lesson behind the moment, and do not summarize what the user should learn from it.",
+        ]
+        if question_policy == "none":
+            guard_lines.append(
+                "The packet says there is no question room here, so do not ask a follow-up question."
+            )
+        if preserve_mode == "keep_it_small" or offer_mode == "brief_shared_smile":
+            guard_lines.append(
+                "Keep the reply inside the small shared window that is already open, without enlarging it into interpretation or advice."
+            )
+        if offer_mode == "brief_shared_smile":
+            guard_lines.append(
+                "For a brief shared smile, prefer a short co-present chat reaction instead of reflective phrasing such as 明るさを添えてくれた, 変化が潜んでいる, 受け止められるようになりつつある, or 落ち着いているわけではないけれど."
+            )
+        if joint_state or joint_common_ground >= 0.4 or joint_mutual_room >= 0.35:
+            guard_lines.append(
+                "Answer from inside the already-shared ground of the moment, not like an external observer describing the user."
+            )
+        if memory_anchor and memory_activation_confidence >= 0.25:
+            guard_lines.append(
+                "Treat the recalled anchor as an already-known thread, and do not reframe it as a new issue that needs explanation."
+            )
+        if (
+            organism_posture in {"protect", "recover", "verify"}
+            or organism_protective_tension >= 0.4
+            or external_field_safety <= 0.4
+            or external_field_ambiguity >= 0.4
+        ):
+            guard_lines.append(
+                "Keep the wording grounded, low-force, and close to what is actually shared instead of making therapeutic or managerial suggestions."
+            )
+        if organism_posture in {"play", "attune", "open"} or organism_play_window >= 0.35:
+            guard_lines.append(
+                "If the state leaves room for play or attunement, prefer a co-present chat reaction over formal empathy copy."
+            )
+        if terrain_flow or terrain_ignition_pressure >= 0.35 or external_field:
+            guard_lines.append(
+                "Use the organism, field, and terrain state to decide force and stance before any generic helpfulness."
+            )
+        return " ".join(guard_lines)
+
+    def _build_response_cause_payload(
+        self,
+        source_state_payload: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        source_state = dict(source_state_payload or {})
+        if not source_state:
+            return {}
+
+        immediate_event = str(source_state.get("appraisal_event") or "").strip()
+        shared_shift = str(source_state.get("appraisal_shared_shift") or "").strip()
+        relation_update = str(source_state.get("meaning_update_relation") or "").strip()
+        relation_frame = str(source_state.get("meaning_update_relation_frame") or "").strip()
+        relation_key = str(
+            source_state.get("meaning_update_relation_key")
+            or source_state.get("appraisal_dominant_relation_key")
+            or source_state.get("utterance_reason_relation_key")
+            or ""
+        ).strip()
+        causal_frame = str(
+            source_state.get("meaning_update_causal_frame")
+            or source_state.get("utterance_reason_causal_frame")
+            or ""
+        ).strip()
+        causal_key = str(
+            source_state.get("meaning_update_causal_key")
+            or source_state.get("appraisal_dominant_causal_key")
+            or source_state.get("utterance_reason_causal_key")
+            or ""
+        ).strip()
+        causal_type = str(
+            source_state.get("appraisal_dominant_causal_type")
+            or source_state.get("memory_dominant_causal_type")
+            or ""
+        ).strip()
+        world_update = str(source_state.get("meaning_update_world") or "").strip()
+        memory_update = str(source_state.get("meaning_update_memory") or "").strip()
+
+        offer = str(source_state.get("utterance_reason_offer") or "").strip()
+        preserve = str(source_state.get("utterance_reason_preserve") or "").strip()
+        question_policy = str(source_state.get("utterance_reason_question_policy") or "").strip()
+        tone_hint = str(source_state.get("utterance_reason_tone_hint") or "").strip()
+        memory_frame = str(source_state.get("utterance_reason_memory_frame") or "").strip()
+        memory_anchor = str(
+            source_state.get("utterance_reason_memory_anchor")
+            or source_state.get("meaning_update_memory_anchor")
+            or source_state.get("memory_recall_anchor")
+            or ""
+        ).strip()
+
+        joint_mode = str(source_state.get("joint_state") or "").strip()
+        organism_posture = str(source_state.get("organism_posture") or "").strip()
+        external_field = str(source_state.get("external_field_dominant") or "").strip()
+        terrain_flow = str(source_state.get("terrain_dominant_flow") or "").strip()
+
+        payload: Dict[str, Any] = {}
+        if immediate_event or shared_shift or relation_update or causal_frame or world_update:
+            payload["immediate"] = {
+                "event": immediate_event,
+                "shared_shift": shared_shift,
+                "relation_update": relation_update,
+                "relation_frame": relation_frame,
+                "relation_key": relation_key,
+                "causal_frame": causal_frame,
+                "causal_key": causal_key,
+                "causal_type": causal_type,
+                "world_update": world_update,
+            }
+        if memory_anchor or memory_frame or memory_update or causal_type:
+            payload["memory_link"] = {
+                "anchor": memory_anchor,
+                "frame": memory_frame,
+                "update": memory_update,
+                "causal_generation_mode": str(source_state.get("memory_causal_generation_mode") or "").strip(),
+                "activation_confidence": round(float(source_state.get("memory_activation_confidence") or 0.0), 4),
+            }
+        if joint_mode:
+            payload["joint_position"] = {
+                "mode": joint_mode,
+                "common_ground": round(float(source_state.get("joint_common_ground") or 0.0), 4),
+                "mutual_room": round(float(source_state.get("joint_mutual_room") or 0.0), 4),
+                "shared_delight": round(float(source_state.get("joint_shared_delight") or 0.0), 4),
+                "shared_tension": round(float(source_state.get("joint_shared_tension") or 0.0), 4),
+            }
+        if organism_posture or external_field or terrain_flow:
+            payload["stance"] = {
+                "organism_posture": organism_posture,
+                "external_field": external_field,
+                "terrain_flow": terrain_flow,
+                "protective_tension": round(float(source_state.get("organism_protective_tension") or 0.0), 4),
+                "play_window": round(float(source_state.get("organism_play_window") or 0.0), 4),
+            }
+        if offer or preserve or question_policy or tone_hint:
+            payload["reply_rule"] = {
+                "offer": offer,
+                "preserve": preserve,
+                "question_policy": question_policy,
+                "tone_hint": tone_hint,
+            }
+        return payload
 
     def _render_uncertainty_line(self, confidence: float, reasons: Tuple[str, ...]) -> str:
         lex = _uncertainty_lexicon(self._ui_locale())
@@ -244,6 +454,7 @@ class LLMHub:
         interaction_policy: Optional[Mapping[str, Any]] = None,
         action_posture: Optional[Mapping[str, Any]] = None,
         actuation_plan: Optional[Mapping[str, Any]] = None,
+        reaction_contract: Optional[Mapping[str, Any]] = None,
         conversation_contract: Optional[Mapping[str, Any]] = None,
         conversational_objects: Optional[Mapping[str, Any]] = None,
         object_operations: Optional[Mapping[str, Any]] = None,
@@ -339,6 +550,7 @@ class LLMHub:
             interaction_policy=interaction_policy,
             action_posture=action_posture,
             actuation_plan=actuation_plan,
+            reaction_contract=reaction_contract,
             conversation_contract=conversation_contract,
             conversational_objects=conversational_objects,
             object_operations=object_operations,
@@ -360,6 +572,9 @@ class LLMHub:
         surface_guard = self._surface_context_language_guard(surface_context_packet)
         if surface_guard:
             system_prompt = f"{system_prompt} {surface_guard}".strip()
+        reason_guard = self._reason_chain_language_guard(surface_context_packet)
+        if reason_guard:
+            system_prompt = f"{system_prompt} {reason_guard}".strip()
         if context and policy_prompt:
             prompt = (
                 context.strip()
@@ -437,6 +652,7 @@ class LLMHub:
         interaction_policy: Optional[Mapping[str, Any]] = None,
         action_posture: Optional[Mapping[str, Any]] = None,
         actuation_plan: Optional[Mapping[str, Any]] = None,
+        reaction_contract: Optional[Mapping[str, Any]] = None,
         conversation_contract: Optional[Mapping[str, Any]] = None,
         conversational_objects: Optional[Mapping[str, Any]] = None,
         object_operations: Optional[Mapping[str, Any]] = None,
@@ -451,6 +667,7 @@ class LLMHub:
         policy_packet = dict(interaction_policy or {})
         posture = dict(action_posture or {})
         actuation = dict(actuation_plan or {})
+        reaction = dict(reaction_contract or {})
         conversational_payload = dict(conversational_objects or {})
         operation_payload = dict(object_operations or {})
         effects_payload = dict(interaction_effects or {})
@@ -514,6 +731,85 @@ class LLMHub:
                     "green_guardedness": round(float(source_state_payload.get("green_guardedness") or 0.0), 4),
                     "green_reopening_pull": round(float(source_state_payload.get("green_reopening_pull") or 0.0), 4),
                     "green_affective_charge": round(float(source_state_payload.get("green_affective_charge") or 0.0), 4),
+                    "appraisal_state": str(source_state_payload.get("appraisal_state") or "").strip(),
+                    "appraisal_event": str(source_state_payload.get("appraisal_event") or "").strip(),
+                    "appraisal_shared_shift": str(source_state_payload.get("appraisal_shared_shift") or "").strip(),
+                    "appraisal_dominant_relation_type": str(source_state_payload.get("appraisal_dominant_relation_type") or "").strip(),
+                    "appraisal_dominant_relation_key": str(source_state_payload.get("appraisal_dominant_relation_key") or "").strip(),
+                    "appraisal_dominant_causal_type": str(source_state_payload.get("appraisal_dominant_causal_type") or "").strip(),
+                    "appraisal_dominant_causal_key": str(source_state_payload.get("appraisal_dominant_causal_key") or "").strip(),
+                    "appraisal_memory_mode": str(source_state_payload.get("appraisal_memory_mode") or "").strip(),
+                    "appraisal_memory_anchor": str(source_state_payload.get("appraisal_memory_anchor") or "").strip(),
+                    "appraisal_memory_resonance": round(float(source_state_payload.get("appraisal_memory_resonance") or 0.0), 4),
+                    "joint_state": str(source_state_payload.get("joint_state") or "").strip(),
+                    "joint_shared_delight": round(float(source_state_payload.get("joint_shared_delight") or 0.0), 4),
+                    "joint_shared_tension": round(float(source_state_payload.get("joint_shared_tension") or 0.0), 4),
+                    "joint_repair_readiness": round(float(source_state_payload.get("joint_repair_readiness") or 0.0), 4),
+                    "joint_common_ground": round(float(source_state_payload.get("joint_common_ground") or 0.0), 4),
+                    "joint_attention": round(float(source_state_payload.get("joint_attention") or 0.0), 4),
+                    "joint_mutual_room": round(float(source_state_payload.get("joint_mutual_room") or 0.0), 4),
+                    "joint_coupling_strength": round(float(source_state_payload.get("joint_coupling_strength") or 0.0), 4),
+                    "meaning_update_state": str(source_state_payload.get("meaning_update_state") or "").strip(),
+                    "meaning_update_relation": str(source_state_payload.get("meaning_update_relation") or "").strip(),
+                    "meaning_update_relation_frame": str(source_state_payload.get("meaning_update_relation_frame") or "").strip(),
+                    "meaning_update_relation_key": str(source_state_payload.get("meaning_update_relation_key") or "").strip(),
+                    "meaning_update_causal_frame": str(source_state_payload.get("meaning_update_causal_frame") or "").strip(),
+                    "meaning_update_causal_key": str(source_state_payload.get("meaning_update_causal_key") or "").strip(),
+                    "meaning_update_world": str(source_state_payload.get("meaning_update_world") or "").strip(),
+                    "meaning_update_memory": str(source_state_payload.get("meaning_update_memory") or "").strip(),
+                    "meaning_update_memory_anchor": str(source_state_payload.get("meaning_update_memory_anchor") or "").strip(),
+                    "meaning_update_memory_resonance": round(float(source_state_payload.get("meaning_update_memory_resonance") or 0.0), 4),
+                    "utterance_reason_state": str(source_state_payload.get("utterance_reason_state") or "").strip(),
+                    "utterance_reason_offer": str(source_state_payload.get("utterance_reason_offer") or "").strip(),
+                    "utterance_reason_preserve": str(source_state_payload.get("utterance_reason_preserve") or "").strip(),
+                    "utterance_reason_question_policy": str(source_state_payload.get("utterance_reason_question_policy") or "").strip(),
+                    "utterance_reason_relation_frame": str(source_state_payload.get("utterance_reason_relation_frame") or "").strip(),
+                    "utterance_reason_relation_key": str(source_state_payload.get("utterance_reason_relation_key") or "").strip(),
+                    "utterance_reason_causal_frame": str(source_state_payload.get("utterance_reason_causal_frame") or "").strip(),
+                    "utterance_reason_causal_key": str(source_state_payload.get("utterance_reason_causal_key") or "").strip(),
+                    "utterance_reason_memory_frame": str(source_state_payload.get("utterance_reason_memory_frame") or "").strip(),
+                    "utterance_reason_memory_anchor": str(source_state_payload.get("utterance_reason_memory_anchor") or "").strip(),
+                    "organism_posture": str(source_state_payload.get("organism_posture") or "").strip(),
+                    "organism_relation_focus": str(source_state_payload.get("organism_relation_focus") or "").strip(),
+                    "organism_social_mode": str(source_state_payload.get("organism_social_mode") or "").strip(),
+                    "organism_attunement": round(float(source_state_payload.get("organism_attunement") or 0.0), 4),
+                    "organism_coherence": round(float(source_state_payload.get("organism_coherence") or 0.0), 4),
+                    "organism_grounding": round(float(source_state_payload.get("organism_grounding") or 0.0), 4),
+                    "organism_protective_tension": round(float(source_state_payload.get("organism_protective_tension") or 0.0), 4),
+                    "organism_expressive_readiness": round(float(source_state_payload.get("organism_expressive_readiness") or 0.0), 4),
+                    "organism_play_window": round(float(source_state_payload.get("organism_play_window") or 0.0), 4),
+                    "organism_relation_pull": round(float(source_state_payload.get("organism_relation_pull") or 0.0), 4),
+                    "organism_social_exposure": round(float(source_state_payload.get("organism_social_exposure") or 0.0), 4),
+                    "external_field_dominant": str(source_state_payload.get("external_field_dominant") or "").strip(),
+                    "external_field_social_mode": str(source_state_payload.get("external_field_social_mode") or "").strip(),
+                    "external_field_thread_mode": str(source_state_payload.get("external_field_thread_mode") or "").strip(),
+                    "external_field_environmental_load": round(float(source_state_payload.get("external_field_environmental_load") or 0.0), 4),
+                    "external_field_social_pressure": round(float(source_state_payload.get("external_field_social_pressure") or 0.0), 4),
+                    "external_field_continuity_pull": round(float(source_state_payload.get("external_field_continuity_pull") or 0.0), 4),
+                    "external_field_ambiguity_load": round(float(source_state_payload.get("external_field_ambiguity_load") or 0.0), 4),
+                    "external_field_safety_envelope": round(float(source_state_payload.get("external_field_safety_envelope") or 0.0), 4),
+                    "external_field_novelty": round(float(source_state_payload.get("external_field_novelty") or 0.0), 4),
+                    "terrain_dominant_basin": str(source_state_payload.get("terrain_dominant_basin") or "").strip(),
+                    "terrain_dominant_flow": str(source_state_payload.get("terrain_dominant_flow") or "").strip(),
+                    "terrain_energy": round(float(source_state_payload.get("terrain_energy") or 0.0), 4),
+                    "terrain_entropy": round(float(source_state_payload.get("terrain_entropy") or 0.0), 4),
+                    "terrain_ignition_pressure": round(float(source_state_payload.get("terrain_ignition_pressure") or 0.0), 4),
+                    "terrain_barrier_height": round(float(source_state_payload.get("terrain_barrier_height") or 0.0), 4),
+                    "terrain_recovery_gradient": round(float(source_state_payload.get("terrain_recovery_gradient") or 0.0), 4),
+                    "terrain_basin_pull": round(float(source_state_payload.get("terrain_basin_pull") or 0.0), 4),
+                    "memory_dynamics_mode": str(source_state_payload.get("memory_dynamics_mode") or "").strip(),
+                    "memory_dominant_relation_type": str(source_state_payload.get("memory_dominant_relation_type") or "").strip(),
+                    "memory_relation_generation_mode": str(source_state_payload.get("memory_relation_generation_mode") or "").strip(),
+                    "memory_dominant_causal_type": str(source_state_payload.get("memory_dominant_causal_type") or "").strip(),
+                    "memory_causal_generation_mode": str(source_state_payload.get("memory_causal_generation_mode") or "").strip(),
+                    "memory_palace_mode": str(source_state_payload.get("memory_palace_mode") or "").strip(),
+                    "memory_monument_mode": str(source_state_payload.get("memory_monument_mode") or "").strip(),
+                    "memory_ignition_mode": str(source_state_payload.get("memory_ignition_mode") or "").strip(),
+                    "memory_reconsolidation_mode": str(source_state_payload.get("memory_reconsolidation_mode") or "").strip(),
+                    "memory_recall_anchor": str(source_state_payload.get("memory_recall_anchor") or "").strip(),
+                    "memory_monument_salience": round(float(source_state_payload.get("memory_monument_salience") or 0.0), 4),
+                    "memory_activation_confidence": round(float(source_state_payload.get("memory_activation_confidence") or 0.0), 4),
+                    "memory_tension": round(float(source_state_payload.get("memory_tension") or 0.0), 4),
                 },
             }
         profile_payload = {}
@@ -599,22 +895,209 @@ class LLMHub:
             guidance["actuation_plan"] = {
                 "execution_mode": str(actuation.get("execution_mode") or "").strip(),
                 "primary_action": str(actuation.get("primary_action") or "").strip(),
+                "response_channel": str(actuation.get("response_channel") or "").strip(),
+                "response_channel_score": round(float(actuation.get("response_channel_score") or 0.0), 4),
                 "reply_permission": str(actuation.get("reply_permission") or "").strip(),
                 "wait_before_action": str(actuation.get("wait_before_action") or "").strip(),
                 "action_queue": list(actuation.get("action_queue") or []),
+            }
+            nonverbal_response_state = dict(actuation.get("nonverbal_response_state") or {})
+            if nonverbal_response_state:
+                guidance["actuation_plan"]["nonverbal_response_state"] = {
+                    "state": str(nonverbal_response_state.get("state") or "").strip(),
+                    "response_kind": str(nonverbal_response_state.get("response_kind") or "").strip(),
+                    "pause_mode": str(nonverbal_response_state.get("pause_mode") or "").strip(),
+                    "silence_mode": str(nonverbal_response_state.get("silence_mode") or "").strip(),
+                    "timing_bias": str(nonverbal_response_state.get("timing_bias") or "").strip(),
+                    "token_profile": str(nonverbal_response_state.get("token_profile") or "").strip(),
+                }
+            presence_hold_state = dict(actuation.get("presence_hold_state") or {})
+            if presence_hold_state:
+                guidance["actuation_plan"]["presence_hold_state"] = {
+                    "state": str(presence_hold_state.get("state") or "").strip(),
+                    "silence_mode": str(presence_hold_state.get("silence_mode") or "").strip(),
+                    "pacing_mode": str(presence_hold_state.get("pacing_mode") or "").strip(),
+                    "hold_room": round(float(presence_hold_state.get("hold_room") or 0.0), 4),
+                    "reentry_room": round(float(presence_hold_state.get("reentry_room") or 0.0), 4),
+                    "backchannel_room": round(float(presence_hold_state.get("backchannel_room") or 0.0), 4),
+                }
+        if reaction:
+            guidance["reaction_contract"] = {
+                "stance": str(reaction.get("stance") or "").strip(),
+                "scale": str(reaction.get("scale") or "").strip(),
+                "initiative": str(reaction.get("initiative") or "").strip(),
+                "question_budget": int(reaction.get("question_budget") or 0),
+                "interpretation_budget": str(reaction.get("interpretation_budget") or "").strip(),
+                "response_channel": str(reaction.get("response_channel") or "").strip(),
+                "timing_mode": str(reaction.get("timing_mode") or "").strip(),
+                "continuity_mode": str(reaction.get("continuity_mode") or "").strip(),
+                "distance_mode": str(reaction.get("distance_mode") or "").strip(),
+                "closure_mode": str(reaction.get("closure_mode") or "").strip(),
+                "reason_tags": [
+                    str(item).strip()
+                    for item in reaction.get("reason_tags") or []
+                    if str(item).strip()
+                ],
+                "shared_presence_mode": str(reaction.get("shared_presence_mode") or "").strip(),
+                "shared_presence_co_presence": round(
+                    float(reaction.get("shared_presence_co_presence") or 0.0), 4
+                ),
+                "shared_presence_boundary_stability": round(
+                    float(reaction.get("shared_presence_boundary_stability") or 0.0), 4
+                ),
+                "self_other_dominant_attribution": str(
+                    reaction.get("self_other_dominant_attribution") or ""
+                ).strip(),
+                "self_other_unknown_likelihood": round(
+                    float(reaction.get("self_other_unknown_likelihood") or 0.0), 4
+                ),
+                "subjective_scene_anchor_frame": str(
+                    reaction.get("subjective_scene_anchor_frame") or ""
+                ).strip(),
+                "subjective_scene_shared_scene_potential": round(
+                    float(reaction.get("subjective_scene_shared_scene_potential") or 0.0), 4
+                ),
             }
         if sequence_rows:
             guidance["content_sequence"] = sequence_rows
         if surface_context_payload:
             guidance["surface_context_packet"] = surface_context_payload
+            response_cause_payload = self._build_response_cause_payload(
+                surface_context_payload.get("source_state") or {}
+            )
+            if response_cause_payload:
+                guidance["response_cause"] = response_cause_payload
         if profile_payload:
             guidance["surface_profile"] = profile_payload
         stance = str(utterance_stance or "").strip()
         if stance:
             guidance["utterance_stance"] = stance
+        reaction_language_guard = _build_reaction_language_guard(reaction)
+        if reaction_language_guard:
+            guidance["reaction_language_guard"] = reaction_language_guard
         if not guidance:
             return ""
         return "[inner_os_policy]\n" + json.dumps(guidance, ensure_ascii=False, indent=2)
+
+
+def _build_reaction_language_guard(reaction: Mapping[str, Any] | None) -> dict[str, Any]:
+    payload = dict(reaction or {})
+    if not payload:
+        return {}
+
+    stance = str(payload.get("stance") or "").strip()
+    scale = str(payload.get("scale") or "").strip()
+    initiative = str(payload.get("initiative") or "").strip()
+    response_channel = str(payload.get("response_channel") or "").strip()
+    timing_mode = str(payload.get("timing_mode") or "").strip()
+    continuity_mode = str(payload.get("continuity_mode") or "").strip()
+    interpretation_budget = str(payload.get("interpretation_budget") or "").strip()
+    shared_presence_mode = str(payload.get("shared_presence_mode") or "").strip()
+    self_other_dominant_attribution = str(
+        payload.get("self_other_dominant_attribution") or ""
+    ).strip()
+    subjective_scene_anchor_frame = str(
+        payload.get("subjective_scene_anchor_frame") or ""
+    ).strip()
+    try:
+        shared_presence_co_presence = float(payload.get("shared_presence_co_presence") or 0.0)
+    except (TypeError, ValueError):
+        shared_presence_co_presence = 0.0
+    try:
+        shared_presence_boundary_stability = float(
+            payload.get("shared_presence_boundary_stability") or 0.0
+        )
+    except (TypeError, ValueError):
+        shared_presence_boundary_stability = 0.0
+    try:
+        self_other_unknown_likelihood = float(
+            payload.get("self_other_unknown_likelihood") or 0.0
+        )
+    except (TypeError, ValueError):
+        self_other_unknown_likelihood = 0.0
+    try:
+        subjective_scene_shared_scene_potential = float(
+            payload.get("subjective_scene_shared_scene_potential") or 0.0
+        )
+    except (TypeError, ValueError):
+        subjective_scene_shared_scene_potential = 0.0
+    try:
+        question_budget = int(payload.get("question_budget") or 0)
+    except (TypeError, ValueError):
+        question_budget = 0
+
+    max_sentences = 3
+    if scale == "micro":
+        max_sentences = 1
+    elif scale == "small":
+        max_sentences = 2
+
+    must: list[str] = []
+    avoid: list[str] = []
+
+    if stance == "join":
+        must.append("まず相手の小さい変化を一緒に受ける")
+    elif stance == "witness":
+        must.append("外から整理せず、静かに受け止める")
+    elif stance == "hold":
+        must.append("無理に言葉を増やさず、余白を保つ")
+
+    if continuity_mode == "continue":
+        must.append("前の流れの続きとして自然に受ける")
+    elif continuity_mode == "reopen":
+        must.append("切れた流れを急がず再接続する")
+
+    if initiative in {"receive", "co_move"}:
+        must.append("主導権を取りすぎず、相手の流れを優先する")
+
+    if timing_mode == "quick_ack":
+        must.append("すぐ短く返す")
+    elif timing_mode == "held_open":
+        must.append("急いで埋めず、少し待てる余白を保つ")
+
+    if scale in {"micro", "small"}:
+        must.append("一回の反応を小さく保つ")
+        avoid.append("大きなまとめや長い説明にしない")
+
+    shared_join_signal = max(shared_presence_co_presence, subjective_scene_shared_scene_potential)
+    guarded_self_view_signal = max(
+        self_other_unknown_likelihood,
+        max(0.0, 1.0 - shared_presence_boundary_stability),
+    )
+    if (
+        self_other_dominant_attribution == "shared"
+        and shared_join_signal >= 0.5
+        and guarded_self_view_signal < 0.55
+    ):
+        must.append("共有された場の内側から、そのまま一緒に受ける")
+        avoid.append("外から観察して説明する語りにしない")
+    if subjective_scene_anchor_frame in {"shared_margin", "front_field"}:
+        must.append("目の前で共有されている場の続きとして返す")
+    if shared_presence_mode == "guarded_boundary" or guarded_self_view_signal >= 0.56:
+        must.append("境界を保ったまま、踏み込みすぎずに返す")
+        avoid.append("親密さを勝手に前提化しない")
+        avoid.append("関係を断定したり代弁したりしない")
+
+    if question_budget <= 0:
+        avoid.append("出来事の詳細を聞きに行かない")
+        avoid.append("follow-up question を足さない")
+
+    if interpretation_budget == "none":
+        avoid.append("意味づけや分析を足さない")
+        avoid.append("相談支援や一般論に広げない")
+    elif interpretation_budget == "low":
+        avoid.append("解釈を前に出しすぎない")
+
+    if response_channel == "backchannel":
+        must.append("相槌として短く返す")
+    elif response_channel == "hold":
+        avoid.append("無理に話題を前へ動かさない")
+
+    return {
+        "max_sentences": max_sentences,
+        "must": must,
+        "avoid": avoid,
+    }
 
 
 def _build_conversation_contract_payload(
