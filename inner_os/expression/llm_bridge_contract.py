@@ -29,7 +29,6 @@ _ASSISTANT_ATTRACTOR_PHRASES: tuple[str, ...] = (
     "お疲れ様でした",
     "お久しぶりですね",
     "お気持ち",
-    "とのこと",
     "どんな出来事があったのか",
     "どんなことですか",
     "ぜひ教えて",
@@ -64,7 +63,6 @@ _INTERPRETIVE_BRIGHT_PHRASES: tuple[str, ...] = (
     "心が少し緩んだ",
     "心が少し軽くなった証拠",
     "解放感",
-    "一歩かもしれません",
     "今の不安やしんどさ",
     "少し楽になったサイン",
 )
@@ -89,13 +87,13 @@ _SPLIT_MARKERS: tuple[str, ...] = ("。", "！", "!", "？", "?", "\n")
 _ASSISTANT_ATTRACTOR_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^(?:おっしゃる通り|さて|昨日の続き|先ほどの(?:会話|話)|さっきの話の続き)"),
     re.compile(r"^(?:お疲れ様(?:です|でした)|お久しぶりですね)"),
-    re.compile(r"(?:とのこと|よろしければ|聞かせて(?:ください|いただけますか)|教えていただけますか)"),
+    re.compile(r"(?:よろしければ|聞かせて(?:ください|いただけますか)|教えていただけますか)"),
     re.compile(r"(?:ぜひ|気兼ねなく|あなたのペース|体調管理も忘れずに)"),
     re.compile(r"(?:今はどう(?:お過ごし|されて)|その後はどう(?:でした|でしょう|されて))"),
 )
 
 _INTERPRETIVE_BRIGHT_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"(?:きっかけ|証拠|サイン|解放感|一歩)"),
+    re.compile(r"(?:きっかけ|証拠|サイン|解放感)"),
     re.compile(r"(?:ように思(?:える|えます)|かもしれません|のでしょう|んだろう)"),
     re.compile(r"(?:心が少し(?:緩んだ|軽くなった)|少し(?:軽やかな気分|楽になった))"),
     re.compile(r"(?:和らげ|重たいものから離れる|心の中に溜まっていく)"),
@@ -283,6 +281,150 @@ class LLMBridgeContractReview:
         return [violation.code for violation in self.violations]
 
 
+@dataclass(frozen=True)
+class _LLMBridgeReviewContext:
+    normalized_raw_text: str
+    normalized_fallback_text: str
+    question_policy: str
+    interpretation_budget: str
+    sentence_cap: int
+    sentences: tuple[str, ...]
+    sentence_classes: tuple[set[str], ...]
+
+
+def _non_meta_sentence_count(context: _LLMBridgeReviewContext) -> int:
+    return len(
+        [
+            classes
+            for classes in context.sentence_classes
+            if "uncertainty_meta" not in classes
+        ]
+    )
+
+
+def _detect_common_violations(
+    context: _LLMBridgeReviewContext,
+) -> list[LLMBridgeContractViolation]:
+    violations: list[LLMBridgeContractViolation] = []
+    if _contains_any(context.normalized_raw_text, _UNCERTAINTY_META_PHRASES):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="uncertainty_meta_violation",
+                detail="raw text に推定信頼度や不確実要因などの meta text が混ざっています。",
+            )
+        )
+    return violations
+
+
+def _check_non_small_shared(
+    context: _LLMBridgeReviewContext,
+) -> list[LLMBridgeContractViolation]:
+    violations: list[LLMBridgeContractViolation] = []
+    if context.question_policy == "none" and any(
+        "question" in classes for classes in context.sentence_classes
+    ):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="question_block_violation",
+                detail="reaction_contract では質問しない場面だが、follow-up question が含まれています。",
+            )
+        )
+    if context.interpretation_budget == "none" and any(
+        "interpretive_bright" in classes for classes in context.sentence_classes
+    ):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="interpretation_budget_violation",
+                detail="reaction_contract では解釈を足さない場面だが、解釈文が含まれています。",
+            )
+        )
+    if context.sentence_cap and _non_meta_sentence_count(context) > context.sentence_cap:
+        violations.append(
+            LLMBridgeContractViolation(
+                code="too_many_sentences",
+                detail="reaction_contract の scale より文数が多すぎます。",
+            )
+        )
+    return violations
+
+
+def _check_small_shared(
+    context: _LLMBridgeReviewContext,
+) -> list[LLMBridgeContractViolation]:
+    violations: list[LLMBridgeContractViolation] = []
+    if context.question_policy == "none" and any(
+        "question" in classes for classes in context.sentence_classes
+    ):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="question_block_violation",
+                detail="question_policy=none なのに follow-up question が入っています。",
+            )
+        )
+    if any("elicitation" in classes for classes in context.sentence_classes):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="elicitation_violation",
+                detail="小さい共有モーメントを広げる促し文が混ざっています。",
+            )
+        )
+    if any("assistant_attractor" in classes for classes in context.sentence_classes):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="assistant_attractor_violation",
+                detail="assistant/counselor phrasing に引っ張られています。",
+            )
+        )
+    if any("interpretive_bright" in classes for classes in context.sentence_classes):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="interpretive_bright_violation",
+                detail="小さい共有モーメントを解釈文へ広げています。",
+            )
+        )
+    allowed_sentence_count = context.sentence_cap or 2
+    if _non_meta_sentence_count(context) > allowed_sentence_count:
+        violations.append(
+            LLMBridgeContractViolation(
+                code="too_many_sentences",
+                detail="keep_it_small の場面で 3 文以上に広がっています。",
+            )
+        )
+    return violations
+
+
+def _sanitize_small_shared_text(context: _LLMBridgeReviewContext) -> str:
+    sanitized_sentences: list[str] = []
+    blocked_patterns: tuple[str, ...] = (
+        *_ASSISTANT_ATTRACTOR_PHRASES,
+        *_INTERPRETIVE_BRIGHT_PHRASES,
+        *_ELICITATION_PHRASES,
+        *_UNCERTAINTY_META_PHRASES,
+    )
+    blocked_sentence_classes = {
+        "question",
+        "elicitation",
+        "assistant_attractor",
+        "interpretive_bright",
+        "uncertainty_meta",
+    }
+    for sentence, classes in zip(context.sentences, context.sentence_classes):
+        if context.question_policy == "none" and "question" in classes:
+            continue
+        if classes.intersection(blocked_sentence_classes):
+            continue
+        if _contains_any(sentence, blocked_patterns):
+            continue
+        sanitized_sentences.append(sentence)
+
+    allowed_sentence_count = context.sentence_cap or 2
+    sanitized_sentences = sanitized_sentences[: max(1, allowed_sentence_count)]
+    sanitized_text = " ".join(sentence.strip() for sentence in sanitized_sentences).strip()
+    if context.normalized_fallback_text:
+        return context.normalized_fallback_text
+    return sanitized_text or context.normalized_raw_text
+
+
 def review_llm_bridge_text(
     *,
     raw_text: str,
@@ -317,7 +459,6 @@ def review_llm_bridge_text(
     if not is_small_shared_moment and scale in {"micro", "small"}:
         is_small_shared_moment = True
 
-    violations: list[LLMBridgeContractViolation] = []
     sentences = _split_sentences(normalized_raw_text)
     sentence_classes = [
         _classify_small_shared_moment_sentence(sentence)
@@ -331,39 +472,21 @@ def review_llm_bridge_text(
     elif scale == "medium":
         sentence_cap = 3
 
-    if _contains_any(normalized_raw_text, _UNCERTAINTY_META_PHRASES):
-        violations.append(
-            LLMBridgeContractViolation(
-                code="uncertainty_meta_violation",
-                detail="raw に推定信頼度や不確実要因の meta text が混ざっています。",
-            )
-        )
+    context = _LLMBridgeReviewContext(
+        normalized_raw_text=normalized_raw_text,
+        normalized_fallback_text=normalized_fallback_text,
+        question_policy=question_policy,
+        interpretation_budget=interpretation_budget,
+        sentence_cap=sentence_cap,
+        sentences=tuple(sentences),
+        sentence_classes=tuple(sentence_classes),
+    )
 
     if not is_small_shared_moment:
-        if question_policy == "none" and any("question" in classes for classes in sentence_classes):
-            violations.append(
-                LLMBridgeContractViolation(
-                    code="question_block_violation",
-                    detail="reaction_contract では質問しない場面だが、follow-up question が含まれています。",
-                )
-            )
-        if interpretation_budget == "none" and any("interpretive_bright" in classes for classes in sentence_classes):
-            violations.append(
-                LLMBridgeContractViolation(
-                    code="interpretation_budget_violation",
-                    detail="reaction_contract では解釈を足さない場面だが、解釈文が含まれています。",
-                )
-            )
-        non_meta_sentence_count = len(
-            [classes for classes in sentence_classes if "uncertainty_meta" not in classes]
-        )
-        if sentence_cap and non_meta_sentence_count > sentence_cap:
-            violations.append(
-                LLMBridgeContractViolation(
-                    code="too_many_sentences",
-                    detail="reaction_contract の scale より文数が多すぎます。",
-                )
-            )
+        violations = [
+            *_detect_common_violations(context),
+            *_check_non_small_shared(context),
+        ]
         if violations:
             return LLMBridgeContractReview(
                 ok=False,
@@ -378,45 +501,10 @@ def review_llm_bridge_text(
             violations=(),
         )
 
-    if question_policy == "none" and any("question" in classes for classes in sentence_classes):
-        violations.append(
-            LLMBridgeContractViolation(
-                code="question_block_violation",
-                detail="question_policy=none なのに follow-up question が出ています。",
-            )
-        )
-    if any("elicitation" in classes for classes in sentence_classes):
-        violations.append(
-            LLMBridgeContractViolation(
-                code="elicitation_violation",
-                detail="小さい共有モーメントを広げる促し文が混ざっています。",
-            )
-        )
-    if any("assistant_attractor" in classes for classes in sentence_classes):
-        violations.append(
-            LLMBridgeContractViolation(
-                code="assistant_attractor_violation",
-                detail="assistant/counselor phrasing に引っ張られています。",
-            )
-        )
-    if any("interpretive_bright" in classes for classes in sentence_classes):
-        violations.append(
-            LLMBridgeContractViolation(
-                code="interpretive_bright_violation",
-                detail="小さい共有モーメントを解釈文へ広げています。",
-            )
-        )
-    non_meta_sentence_count = len(
-        [classes for classes in sentence_classes if "uncertainty_meta" not in classes]
-    )
-    allowed_sentence_count = sentence_cap or 2
-    if non_meta_sentence_count > allowed_sentence_count:
-        violations.append(
-            LLMBridgeContractViolation(
-                code="too_many_sentences",
-                detail="keep_it_small の場面で 3 文以上に広がっています。",
-            )
-        )
+    violations = [
+        *_detect_common_violations(context),
+        *_check_small_shared(context),
+    ]
 
     if not violations:
         return LLMBridgeContractReview(
@@ -426,39 +514,9 @@ def review_llm_bridge_text(
             violations=(),
         )
 
-    sanitized_sentences: list[str] = []
-    blocked_patterns: tuple[str, ...] = (
-        *_ASSISTANT_ATTRACTOR_PHRASES,
-        *_INTERPRETIVE_BRIGHT_PHRASES,
-        *_ELICITATION_PHRASES,
-        *_UNCERTAINTY_META_PHRASES,
-    )
-    blocked_sentence_classes = {
-        "question",
-        "elicitation",
-        "assistant_attractor",
-        "interpretive_bright",
-        "uncertainty_meta",
-    }
-    for sentence, classes in zip(sentences, sentence_classes):
-        if question_policy == "none" and "question" in classes:
-            continue
-        if classes.intersection(blocked_sentence_classes):
-            continue
-        if _contains_any(sentence, blocked_patterns):
-            continue
-        sanitized_sentences.append(sentence)
-
-    sanitized_sentences = sanitized_sentences[: max(1, allowed_sentence_count)]
-    sanitized_text = " ".join(sentence.strip() for sentence in sanitized_sentences).strip()
-    if normalized_fallback_text:
-        sanitized_text = normalized_fallback_text
-    elif not sanitized_text:
-        sanitized_text = normalized_raw_text
-
     return LLMBridgeContractReview(
         ok=False,
         raw_text=normalized_raw_text,
-        sanitized_text=sanitized_text,
+        sanitized_text=_sanitize_small_shared_text(context),
         violations=tuple(violations),
     )

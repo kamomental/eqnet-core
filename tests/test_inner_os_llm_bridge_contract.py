@@ -56,7 +56,6 @@ def test_review_llm_bridge_text_blocks_interpretive_probe_style_for_small_shared
 
     assert review.ok is False
     assert review.sanitized_text == "ふふっ、それ、ちょっと笑えるやつだね。 そういうのあると、ちょっと楽になるよね。"
-    assert "assistant_attractor_violation" in review.violation_codes()
     assert "interpretive_bright_violation" in review.violation_codes()
     assert "uncertainty_meta_violation" in review.violation_codes()
 
@@ -132,7 +131,6 @@ def test_review_llm_bridge_text_treats_bright_bounce_discourse_shape_as_small_sh
 
     assert review.ok is False
     assert review.sanitized_text == "それ、ちょっと笑えるやつだね。 そういうのあると、ちょっと楽になるよね。"
-    assert "assistant_attractor_violation" in review.violation_codes()
     assert "interpretive_bright_violation" in review.violation_codes()
 
 
@@ -153,7 +151,6 @@ def test_review_llm_bridge_text_blocks_live_like_followup_question_sequence() ->
     assert review.ok is False
     assert review.sanitized_text == "ふふっ、それ、ちょっと笑えるやつだね。 そういうのあると、ちょっと楽になるよね。"
     assert "question_block_violation" in review.violation_codes()
-    assert "assistant_attractor_violation" in review.violation_codes()
     assert "interpretive_bright_violation" in review.violation_codes()
     assert "uncertainty_meta_violation" in review.violation_codes()
 
@@ -217,7 +214,6 @@ def test_review_llm_bridge_text_blocks_live_runtime_interpretive_sequence() -> N
 
     assert review.ok is False
     assert review.sanitized_text == "ふふっ、それ、ちょっと笑えるやつだね。 そういうのあると、ちょっと楽になるよね。"
-    assert "assistant_attractor_violation" in review.violation_codes()
     assert "interpretive_bright_violation" in review.violation_codes()
     assert "uncertainty_meta_violation" in review.violation_codes()
 
@@ -246,3 +242,23 @@ def test_review_llm_bridge_text_uses_reaction_contract_for_non_small_scene() -> 
     assert review.sanitized_text == "それ、いまはそのまま受け取っておくので十分です。"
     assert "question_block_violation" in review.violation_codes()
     assert "interpretation_budget_violation" in review.violation_codes()
+
+
+def test_review_llm_bridge_text_does_not_treat_tonokoto_as_assistant_attractor() -> None:
+    review = review_llm_bridge_text(
+        raw_text="昨日のこととのことですね。ふふ、少し笑える感じもあったんだね。",
+        surface_context_packet=_small_shared_smile_packet(),
+    )
+
+    assert review.ok is True
+    assert "assistant_attractor_violation" not in review.violation_codes()
+
+
+def test_review_llm_bridge_text_does_not_treat_plain_ippo_as_interpretation() -> None:
+    review = review_llm_bridge_text(
+        raw_text="また明日も一歩ずつでいいですね。ふふ、少し笑える余白もある。",
+        surface_context_packet=_small_shared_smile_packet(),
+    )
+
+    assert review.ok is True
+    assert "interpretive_bright_violation" not in review.violation_codes()
