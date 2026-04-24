@@ -1,9 +1,8 @@
 # Core Quickstart (2026-04-25)
 
 ## 目的
-
 この quickstart は、EQNet の本流を最短で確認するための入口です。  
-豪華な UI や LLM 比較ではなく、次の core loop をそのまま見せます。
+重い UI や LLM 比較を挟まず、次の core loop をそのまま見せます。
 
 1. `subjective_scene`
 2. `self_other_attribution`
@@ -12,7 +11,6 @@
 5. `reaction_contract`
 
 ## 実行
-
 Windows:
 
 ```bat
@@ -25,7 +23,7 @@ macOS / Linux:
 ./quickstart_core.sh
 ```
 
-JSON で確認したい場合:
+JSON で確認する場合:
 
 ```bash
 python scripts/core_quickstart_demo.py --json
@@ -34,9 +32,24 @@ python scripts/core_quickstart_demo.py --json
 ## 既定シナリオ
 
 - `small_shared_moment`
-  - 小さい共有モーメントを小さく一緒に受ける。
+  - 小さい共有モーメントを小さく一緒に受ける
 - `guarded_uncertainty`
-  - 踏み込みを抑えて hold / defer に寄る。
+  - 踏み込みを控えて hold / defer に寄る
+
+## 何が出るか
+
+- `subjective_scene`
+- `self_other_attribution`
+- `shared_presence`
+- `joint_state`
+- `expected_contract`
+- `reaction_contract`
+- `evaluation`
+- `response_guideline`
+
+`evaluation` では、シナリオごとに定義した期待 contract と actual contract を比較し、
+`stance / scale / question_budget / interpretation_budget / response_channel / continuity / timing / distance`
+の違反を機械的に確認できます。
 
 ## 位置づけ
 
@@ -45,6 +58,6 @@ python scripts/core_quickstart_demo.py --json
 - `quickstart_llm.bat`
   - 比較・研究用の入口
 - `quickstart_gradio.*`
-  - full demo / 実験的な可視化入口
+  - full demo / 実験導線
 - `heartos_mini.py`
-  - 旧簡易実験。core quickstart ではない
+  - 旧実験系。core quickstart の代表ではない

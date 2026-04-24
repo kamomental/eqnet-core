@@ -474,7 +474,9 @@ python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMM
    - `self_other_attribution`
    - `shared_presence`
    - `joint_state`
+   - `expected_contract`
    - `reaction_contract`
+   - `evaluation`
    - `response_guideline`
 
 4. **既定シナリオ**

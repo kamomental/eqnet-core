@@ -11,7 +11,6 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-INNER_OS_ROOT = REPO_ROOT / "inner_os"
 
 
 def _load_module(module_name: str, relative_path: str):
@@ -45,6 +44,10 @@ _SUBJECTIVE_SCENE_MODULE = _load_module(
     "core_quickstart_subjective_scene",
     "inner_os/world_model/subjective_scene_state.py",
 )
+_CONTRACT_EVAL_MODULE = _load_module(
+    "core_quickstart_contract_eval",
+    "inner_os/evaluation/conversation_contract_eval.py",
+)
 
 derive_reaction_contract = _REACTION_CONTRACT_MODULE.derive_reaction_contract
 derive_joint_state = _JOINT_STATE_MODULE.derive_joint_state
@@ -54,6 +57,10 @@ SharedPresenceState = _SHARED_PRESENCE_MODULE.SharedPresenceState
 derive_shared_presence_state = _SHARED_PRESENCE_MODULE.derive_shared_presence_state
 SubjectiveSceneState = _SUBJECTIVE_SCENE_MODULE.SubjectiveSceneState
 derive_subjective_scene_state = _SUBJECTIVE_SCENE_MODULE.derive_subjective_scene_state
+CORE_QUICKSTART_EXPECTATIONS = _CONTRACT_EVAL_MODULE.CORE_QUICKSTART_EXPECTATIONS
+evaluate_reaction_contract_against_expectation = (
+    _CONTRACT_EVAL_MODULE.evaluate_reaction_contract_against_expectation
+)
 
 
 @dataclass(frozen=True)
@@ -157,8 +164,8 @@ SCENARIOS: dict[str, CoreDemoScenario] = {
     ),
     "guarded_uncertainty": CoreDemoScenario(
         name="guarded_uncertainty",
-        description="踏み込みを抑えて hold / defer に寄る。",
-        input_text="まだうまく言葉にできないんだけど、ちょっと変な感じが残ってて。",
+        description="踏み込みを控えて hold / defer に寄る。",
+        input_text="まだうまく言葉にできないんだけど、ちょっと重い感じだけ残ってて。",
         camera_observation={
             "egocentric_closeness": 0.34,
             "workspace_proximity": 0.28,
@@ -292,6 +299,11 @@ def build_core_demo_result(
         scenario=scenario,
     )
     reaction_contract = derive_reaction_contract(**contract_inputs)
+    expectation = CORE_QUICKSTART_EXPECTATIONS[scenario.name]
+    evaluation = evaluate_reaction_contract_against_expectation(
+        reaction_contract=reaction_contract.to_dict(),
+        expectation=expectation,
+    )
 
     return {
         "scenario": {
@@ -303,6 +315,8 @@ def build_core_demo_result(
         "self_other_attribution": attribution.to_dict(),
         "shared_presence": shared_presence.to_dict(),
         "joint_state": joint_state.to_dict(),
+        "expected_contract": expectation.to_dict(),
+        "evaluation": evaluation.to_dict(),
         "reaction_contract": reaction_contract.to_dict(),
         "response_guideline": _render_response_guideline(reaction_contract.to_dict()),
     }
@@ -319,11 +333,14 @@ def _build_contract_inputs(
     common_ground = _float01(joint_state.get("common_ground"))
     shared_delight = _float01(joint_state.get("shared_delight"))
     shared_tension = _float01(joint_state.get("shared_tension"))
-    co_presence = shared_presence.co_presence
     boundary_stability = shared_presence.boundary_stability
     unknown_likelihood = attribution.unknown_likelihood
 
-    guarded = unknown_likelihood >= 0.5 or boundary_stability <= 0.4 or shared_tension > shared_delight + 0.12
+    guarded = (
+        unknown_likelihood >= 0.5
+        or boundary_stability <= 0.4
+        or shared_tension > shared_delight + 0.12
+    )
     response_strategy = "respectful_wait" if guarded else "shared_world_next_step"
     response_channel = "hold" if guarded else "speak"
     execution_mode = "defer_with_presence" if guarded else "shared_progression"
@@ -372,16 +389,27 @@ def _build_contract_inputs(
                 "joint_common_ground": common_ground,
                 "organism_social_mode": scenario.organism_state.get("social_mode", ""),
                 "recent_dialogue_state": recent_dialogue_state,
-                "organism_protective_tension": scenario.organism_state.get("protective_tension", 0.0),
-                "external_field_social_pressure": scenario.external_field_state.get("social_pressure", 0.0),
+                "organism_protective_tension": scenario.organism_state.get(
+                    "protective_tension", 0.0
+                ),
+                "external_field_social_pressure": scenario.external_field_state.get(
+                    "social_pressure", 0.0
+                ),
                 "self_other_unknown_likelihood": unknown_likelihood,
+                "self_other_dominant_attribution": attribution.dominant_attribution,
                 "shared_presence_mode": shared_presence.dominant_mode,
+                "shared_presence_co_presence": shared_presence.co_presence,
+                "shared_presence_boundary_stability": shared_presence.boundary_stability,
                 "subjective_scene_anchor_frame": subjective_scene.anchor_frame,
+                "subjective_scene_shared_scene_potential": subjective_scene.shared_scene_potential,
+                "subjective_scene_familiarity": subjective_scene.familiarity,
             },
         },
         "turn_delta": {
             "kind": conversation_phase,
-            "preferred_act": "leave_return_point_from_anchor" if guarded else "light_bounce",
+            "preferred_act": "leave_return_point_from_anchor"
+            if guarded
+            else "light_bounce",
         },
     }
 
@@ -394,12 +422,17 @@ def _render_response_guideline(reaction_contract: dict[str, Any]) -> str:
     timing_mode = str(reaction_contract.get("timing_mode") or "")
 
     if stance == "hold":
-        return "まだ聞きに行かず、少し間を保つ。必要なら短い hold / defer に留める。"
-    if stance == "join" and scale == "small" and question_budget == 0 and interpretation_budget == "none":
-        return "小さく一緒に受ける。説明要求や解釈は足さず、共有モーメントのサイズを保つ。"
+        return "まだ聞きに行かず、少し間を保つ。説明や解釈より hold / defer を優先する。"
+    if (
+        stance == "join"
+        and scale == "small"
+        and question_budget == 0
+        and interpretation_budget == "none"
+    ):
+        return "小さく一緒に受ける。質問や解釈は足さず、共有モーメントのサイズを保つ。"
     if timing_mode == "quick_ack":
-        return "短い相槌で受け、主導権は奪わない。"
-    return "現在の contract に従って、距離感と主導権を崩さない反応を選ぶ。"
+        return "短い相槌で受ける。主導権は奪わない。"
+    return "現在の contract に従って、過不足のない反応を選ぶ。"
 
 
 def _float01(value: Any) -> float:
@@ -412,7 +445,7 @@ def _float01(value: Any) -> float:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="EQNet の core loop を最小表示で確認する quickstart demo。",
+        description="EQNet の core loop と reaction contract を最短で確認する quickstart demo。",
     )
     parser.add_argument(
         "--scenario",
@@ -464,8 +497,14 @@ def main() -> int:
     print("[joint_state]")
     print(json.dumps(result["joint_state"], ensure_ascii=False, indent=2))
     print()
+    print("[expected_contract]")
+    print(json.dumps(result["expected_contract"], ensure_ascii=False, indent=2))
+    print()
     print("[reaction_contract]")
     print(json.dumps(result["reaction_contract"], ensure_ascii=False, indent=2))
+    print()
+    print("[evaluation]")
+    print(json.dumps(result["evaluation"], ensure_ascii=False, indent=2))
     print()
     print("[response_guideline]")
     print(result["response_guideline"])
