@@ -1,12 +1,200 @@
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping as MappingABC
+from dataclasses import dataclass, field
 from typing import Any, Mapping
+
+from .nonverbal_response_state import derive_nonverbal_response_state
+from .presence_hold_state import derive_presence_hold_state
+from .response_selection_state import derive_response_selection_state
+
+
+_ACTUATION_PLAN_CORE_KEYS = frozenset(
+    {
+        "execution_mode",
+        "primary_action",
+        "action_queue",
+        "reply_permission",
+        "wait_before_action",
+        "repair_window_commitment",
+        "outcome_goal",
+        "boundary_mode",
+        "attention_target",
+        "memory_write_priority",
+        "memory_write_class",
+        "memory_write_class_reason",
+        "contact_readiness",
+        "repair_bias",
+        "disclosure_depth",
+        "utterance_reason_relation_frame",
+        "utterance_reason_causal_frame",
+        "utterance_reason_memory_frame",
+        "utterance_reason_preserve",
+        "joint_mode",
+        "joint_reentry_room",
+        "joint_guard_signal",
+        "presence_hold_state",
+        "nonverbal_response_state",
+        "response_selection_state",
+        "response_channel",
+        "response_channel_score",
+        "organism_posture_name",
+        "external_field_name",
+        "terrain_basin_name",
+        "terrain_flow_name",
+        "situation_risk_name",
+        "emergency_posture_name",
+        "relational_continuity_name",
+        "relation_competition_name",
+        "social_topology_name",
+    }
+)
+
+
+@dataclass(frozen=True)
+class ActuationPlanContract(MappingABC[str, object]):
+    execution_mode: str = ""
+    primary_action: str = ""
+    action_queue: list[str] = field(default_factory=list)
+    reply_permission: str = ""
+    wait_before_action: str = ""
+    repair_window_commitment: str = ""
+    outcome_goal: str = ""
+    boundary_mode: str = ""
+    attention_target: str = ""
+    memory_write_priority: str = ""
+    memory_write_class: str = ""
+    memory_write_class_reason: str = ""
+    contact_readiness: float = 0.0
+    repair_bias: bool = False
+    disclosure_depth: str = ""
+    utterance_reason_relation_frame: str = ""
+    utterance_reason_causal_frame: str = ""
+    utterance_reason_memory_frame: str = ""
+    utterance_reason_preserve: str = ""
+    joint_mode: str = ""
+    joint_reentry_room: float = 0.0
+    joint_guard_signal: float = 0.0
+    presence_hold_state: dict[str, object] = field(default_factory=dict)
+    nonverbal_response_state: dict[str, object] = field(default_factory=dict)
+    response_selection_state: dict[str, object] = field(default_factory=dict)
+    response_channel: str = ""
+    response_channel_score: float = 0.0
+    organism_posture_name: str = ""
+    external_field_name: str = ""
+    terrain_basin_name: str = ""
+    terrain_flow_name: str = ""
+    situation_risk_name: str = ""
+    emergency_posture_name: str = ""
+    relational_continuity_name: str = ""
+    relation_competition_name: str = ""
+    social_topology_name: str = ""
+    extras: dict[str, object] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {
+            "execution_mode": self.execution_mode,
+            "primary_action": self.primary_action,
+            "action_queue": list(self.action_queue),
+            "reply_permission": self.reply_permission,
+            "wait_before_action": self.wait_before_action,
+            "repair_window_commitment": self.repair_window_commitment,
+            "outcome_goal": self.outcome_goal,
+            "boundary_mode": self.boundary_mode,
+            "attention_target": self.attention_target,
+            "memory_write_priority": self.memory_write_priority,
+            "memory_write_class": self.memory_write_class,
+            "memory_write_class_reason": self.memory_write_class_reason,
+            "contact_readiness": self.contact_readiness,
+            "repair_bias": self.repair_bias,
+            "disclosure_depth": self.disclosure_depth,
+            "utterance_reason_relation_frame": self.utterance_reason_relation_frame,
+            "utterance_reason_causal_frame": self.utterance_reason_causal_frame,
+            "utterance_reason_memory_frame": self.utterance_reason_memory_frame,
+            "utterance_reason_preserve": self.utterance_reason_preserve,
+            "joint_mode": self.joint_mode,
+            "joint_reentry_room": self.joint_reentry_room,
+            "joint_guard_signal": self.joint_guard_signal,
+            "presence_hold_state": dict(self.presence_hold_state),
+            "nonverbal_response_state": dict(self.nonverbal_response_state),
+            "response_selection_state": dict(self.response_selection_state),
+            "response_channel": self.response_channel,
+            "response_channel_score": self.response_channel_score,
+            "organism_posture_name": self.organism_posture_name,
+            "external_field_name": self.external_field_name,
+            "terrain_basin_name": self.terrain_basin_name,
+            "terrain_flow_name": self.terrain_flow_name,
+            "situation_risk_name": self.situation_risk_name,
+            "emergency_posture_name": self.emergency_posture_name,
+            "relational_continuity_name": self.relational_continuity_name,
+            "relation_competition_name": self.relation_competition_name,
+            "social_topology_name": self.social_topology_name,
+        }
+        data.update(self.extras)
+        return data
+
+    def __getitem__(self, key: str) -> object:
+        return self.to_dict()[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.to_dict())
+
+    def __len__(self) -> int:
+        return len(self.to_dict())
+
+
+def coerce_actuation_plan_contract(
+    value: Mapping[str, Any] | ActuationPlanContract | None,
+) -> ActuationPlanContract:
+    if isinstance(value, ActuationPlanContract):
+        return value
+    packet = dict(value or {})
+    extras = {key: packet[key] for key in packet.keys() - _ACTUATION_PLAN_CORE_KEYS}
+    return ActuationPlanContract(
+        execution_mode=str(packet.get("execution_mode") or "").strip(),
+        primary_action=str(packet.get("primary_action") or "").strip(),
+        action_queue=_as_text_list(packet.get("action_queue")),
+        reply_permission=str(packet.get("reply_permission") or "").strip(),
+        wait_before_action=str(packet.get("wait_before_action") or "").strip(),
+        repair_window_commitment=str(packet.get("repair_window_commitment") or "").strip(),
+        outcome_goal=str(packet.get("outcome_goal") or "").strip(),
+        boundary_mode=str(packet.get("boundary_mode") or "").strip(),
+        attention_target=str(packet.get("attention_target") or "").strip(),
+        memory_write_priority=str(packet.get("memory_write_priority") or "").strip(),
+        memory_write_class=str(packet.get("memory_write_class") or "").strip(),
+        memory_write_class_reason=str(packet.get("memory_write_class_reason") or "").strip(),
+        contact_readiness=_float01(packet.get("contact_readiness")),
+        repair_bias=bool(packet.get("repair_bias", False)),
+        disclosure_depth=str(packet.get("disclosure_depth") or "").strip(),
+        utterance_reason_relation_frame=str(packet.get("utterance_reason_relation_frame") or "").strip(),
+        utterance_reason_causal_frame=str(packet.get("utterance_reason_causal_frame") or "").strip(),
+        utterance_reason_memory_frame=str(packet.get("utterance_reason_memory_frame") or "").strip(),
+        utterance_reason_preserve=str(packet.get("utterance_reason_preserve") or "").strip(),
+        joint_mode=str(packet.get("joint_mode") or "").strip(),
+        joint_reentry_room=_float01(packet.get("joint_reentry_room")),
+        joint_guard_signal=_float01(packet.get("joint_guard_signal")),
+        presence_hold_state=dict(packet.get("presence_hold_state") or {}),
+        nonverbal_response_state=dict(packet.get("nonverbal_response_state") or {}),
+        response_selection_state=dict(packet.get("response_selection_state") or {}),
+        response_channel=str(packet.get("response_channel") or "").strip(),
+        response_channel_score=_float01(packet.get("response_channel_score")),
+        organism_posture_name=str(packet.get("organism_posture_name") or "").strip(),
+        external_field_name=str(packet.get("external_field_name") or "").strip(),
+        terrain_basin_name=str(packet.get("terrain_basin_name") or "").strip(),
+        terrain_flow_name=str(packet.get("terrain_flow_name") or "").strip(),
+        situation_risk_name=str(packet.get("situation_risk_name") or "").strip(),
+        emergency_posture_name=str(packet.get("emergency_posture_name") or "").strip(),
+        relational_continuity_name=str(packet.get("relational_continuity_name") or "").strip(),
+        relation_competition_name=str(packet.get("relation_competition_name") or "").strip(),
+        social_topology_name=str(packet.get("social_topology_name") or "").strip(),
+        extras=extras,
+    )
 
 
 def derive_actuation_plan(
     interaction_policy: Mapping[str, Any] | None,
     action_posture: Mapping[str, Any] | None,
-) -> dict[str, object]:
+) -> ActuationPlanContract:
     packet = dict(interaction_policy or {})
     contract = dict(packet.get("conversation_contract") or {})
     response_action = dict(contract.get("response_action_now") or {})
@@ -99,6 +287,24 @@ def derive_actuation_plan(
         posture.get("social_experiment_loop_state") or packet.get("social_experiment_loop_state") or {}
     )
     live_engagement_state = dict(posture.get("live_engagement_state") or packet.get("live_engagement_state") or {})
+    shared_moment_state = dict(posture.get("shared_moment_state") or packet.get("shared_moment_state") or {})
+    listener_action_state = dict(posture.get("listener_action_state") or packet.get("listener_action_state") or {})
+    utterance_reason_packet = dict(posture.get("utterance_reason_packet") or packet.get("utterance_reason_packet") or {})
+    subjective_scene_state = dict(
+        posture.get("subjective_scene_state") or packet.get("subjective_scene_state") or {}
+    )
+    self_other_attribution_state = dict(
+        posture.get("self_other_attribution_state")
+        or packet.get("self_other_attribution_state")
+        or {}
+    )
+    shared_presence_state = dict(
+        posture.get("shared_presence_state") or packet.get("shared_presence_state") or {}
+    )
+    joint_state = dict(posture.get("joint_state") or packet.get("joint_state") or {})
+    organism_state = dict(posture.get("organism_state") or packet.get("organism_state") or {})
+    external_field_state = dict(posture.get("external_field_state") or packet.get("external_field_state") or {})
+    terrain_dynamics_state = dict(posture.get("terrain_dynamics_state") or packet.get("terrain_dynamics_state") or {})
     situation_risk_state = dict(posture.get("situation_risk_state") or packet.get("situation_risk_state") or {})
     emergency_posture = dict(posture.get("emergency_posture") or packet.get("emergency_posture") or {})
     relational_continuity_state = dict(posture.get("relational_continuity_state") or packet.get("relational_continuity_state") or {})
@@ -137,6 +343,91 @@ def derive_actuation_plan(
     live_engagement_name = str(live_engagement_state.get("state") or "").strip()
     live_engagement_score = _float01(live_engagement_state.get("score"))
     live_primary_move = str(live_engagement_state.get("primary_move") or "").strip()
+    shared_moment_name = str(shared_moment_state.get("state") or "").strip()
+    shared_moment_kind = str(shared_moment_state.get("moment_kind") or "").strip()
+    shared_moment_score = _float01(shared_moment_state.get("score"))
+    shared_moment_jointness = _float01(shared_moment_state.get("jointness"))
+    shared_moment_afterglow = _float01(shared_moment_state.get("afterglow"))
+    listener_action_name = str(listener_action_state.get("state") or "").strip()
+    utterance_reason_state = str(utterance_reason_packet.get("state") or "").strip()
+    utterance_reason_offer = str(utterance_reason_packet.get("offer") or "").strip()
+    utterance_reason_question_policy = str(
+        utterance_reason_packet.get("question_policy") or ""
+    ).strip()
+    utterance_reason_relation_frame = str(
+        posture.get("utterance_reason_relation_frame")
+        or utterance_reason_packet.get("relation_frame")
+        or ""
+    ).strip()
+    utterance_reason_causal_frame = str(
+        posture.get("utterance_reason_causal_frame")
+        or utterance_reason_packet.get("causal_frame")
+        or ""
+    ).strip()
+    utterance_reason_memory_frame = str(
+        posture.get("utterance_reason_memory_frame")
+        or utterance_reason_packet.get("memory_frame")
+        or ""
+    ).strip()
+    utterance_reason_preserve = str(
+        posture.get("utterance_reason_preserve")
+        or utterance_reason_packet.get("preserve")
+        or ""
+    ).strip()
+    joint_mode = str(
+        posture.get("joint_mode")
+        or joint_state.get("dominant_mode")
+        or ""
+    ).strip()
+    joint_shared_delight = _float01(joint_state.get("shared_delight"))
+    joint_shared_tension = _float01(joint_state.get("shared_tension"))
+    joint_common_ground = _float01(joint_state.get("common_ground"))
+    joint_attention = _float01(joint_state.get("joint_attention"))
+    joint_mutual_room = _float01(joint_state.get("mutual_room"))
+    joint_coupling_strength = _float01(joint_state.get("coupling_strength"))
+    joint_reentry_room = _float01(
+        posture.get("joint_reentry_room")
+        or (
+            joint_common_ground * 0.24
+            + joint_attention * 0.18
+            + joint_mutual_room * 0.18
+            + joint_coupling_strength * 0.18
+            + joint_shared_delight * 0.12
+            + (0.08 if joint_mode in {"delighted_jointness", "shared_attention"} else 0.0)
+            - joint_shared_tension * 0.14
+        )
+    )
+    joint_guard_signal = _float01(
+        posture.get("joint_guard_signal")
+        or (
+            joint_shared_tension * 0.36
+            + (0.12 if joint_mode in {"repair_attunement", "strained_jointness"} else 0.0)
+        )
+    )
+    organism_posture_name = str(
+        posture.get("organism_posture_name")
+        or organism_state.get("dominant_posture")
+        or ""
+    ).strip()
+    external_field_name = str(
+        posture.get("external_field_name")
+        or external_field_state.get("dominant_field")
+        or ""
+    ).strip()
+    terrain_basin_name = str(
+        posture.get("terrain_basin_name")
+        or terrain_dynamics_state.get("dominant_basin")
+        or ""
+    ).strip()
+    terrain_flow_name = str(
+        posture.get("terrain_flow_name")
+        or terrain_dynamics_state.get("dominant_flow")
+        or ""
+    ).strip()
+    external_continuity_pull = _float01(external_field_state.get("continuity_pull"))
+    external_safety_envelope = _float01(external_field_state.get("safety_envelope"))
+    terrain_recovery_gradient = _float01(terrain_dynamics_state.get("recovery_gradient"))
+    terrain_barrier_height = _float01(terrain_dynamics_state.get("barrier_height"))
     situation_risk_name = str(situation_risk_state.get("state") or "").strip()
     situation_risk_immediacy = _float01(situation_risk_state.get("immediacy"))
     emergency_posture_name = str(emergency_posture.get("state") or "").strip()
@@ -461,6 +752,199 @@ def derive_actuation_plan(
             primary_action = "hold_thread_openings"
         wait_before_action = "measured" if wait_before_action == "brief" else wait_before_action
 
+    bright_shared_smile_active = (
+        live_engagement_name in {"pickup_comment", "riff_with_comment", "seed_topic"}
+        and live_engagement_score >= 0.42
+        and shared_moment_name == "shared_moment"
+        and (
+            shared_moment_kind in {"laugh", "relief", "pleasant_surprise"}
+            or utterance_reason_offer in {"brief_shared_smile", "small_shared_relief", "tiny_shared_win"}
+        )
+        and (
+            shared_moment_score * 0.52
+            + shared_moment_jointness * 0.28
+            + shared_moment_afterglow * 0.2
+        )
+        >= 0.34
+        and utterance_reason_state == "active"
+        and utterance_reason_question_policy in {"", "none"}
+        and listener_action_name in {"warm_laugh_ack", "playful_ack", "soft_ack"}
+        and joint_reentry_room >= 0.2
+        and body_recovery_guard_state == "open"
+        and body_homeostasis_name not in {"recovering", "depleted"}
+        and homeostasis_budget_name != "depleted"
+        and protection_mode_name not in {"contain", "stabilize", "shield"}
+        and emergency_dialogue_permission not in {"block", "allow_minimal"}
+        and situation_risk_name not in {"immediate_danger", "high_guard", "acute_threat"}
+    )
+    if bright_shared_smile_active and execution_mode in {
+        "attuned_contact",
+        "defer_with_presence",
+        "open_reflection",
+    }:
+        execution_mode = "shared_progression"
+        if live_engagement_name == "pickup_comment":
+            primary_action = "pick_up_comment"
+        elif live_engagement_name == "riff_with_comment":
+            primary_action = "riff_current_comment"
+        else:
+            primary_action = "seed_small_topic"
+        action_queue = _compact(
+            [
+                primary_action,
+                "weave_light_callback",
+                "keep_chat_loop_open",
+                *action_queue,
+            ]
+        )
+        reply_permission = "speak_briefly"
+        wait_before_action = "brief" if wait_before_action in {"brief", "measured"} else wait_before_action
+
+    relation_reentry_progression_active = (
+        strategy == "shared_world_next_step"
+        and live_engagement_name in {"pickup_comment", "riff_with_comment", "seed_topic"}
+        and utterance_reason_state == "active"
+        and (
+            utterance_reason_relation_frame in {"cross_context_bridge", "returning_pattern"}
+            or utterance_reason_causal_frame in {"reframing_cause", "memory_trigger_cause"}
+            or utterance_reason_memory_frame
+            in {
+                "echo_known_thread",
+                "name_small_return",
+                "name_distant_link",
+                "echo_returning_pattern",
+            }
+        )
+        and utterance_reason_question_policy in {"", "none"}
+        and organism_posture_name in {"play", "attune", "open", "steady"}
+        and external_field_name in {"continuity_field", "open_field", "shifting_field"}
+        and external_continuity_pull >= 0.34
+        and external_safety_envelope >= 0.24
+        and terrain_flow_name in {"recover", "reenter", "settle", "ignite"}
+        and terrain_basin_name in {"recovery_basin", "continuity_basin", "play_basin", "steady_basin"}
+        and terrain_recovery_gradient >= 0.28
+        and terrain_barrier_height <= 0.5
+        and joint_reentry_room >= 0.2
+        and body_recovery_guard_state == "open"
+        and body_homeostasis_name not in {"recovering", "depleted"}
+        and homeostasis_budget_name != "depleted"
+        and protection_mode_name not in {"contain", "stabilize", "shield"}
+        and emergency_dialogue_permission not in {"block", "allow_minimal"}
+        and situation_risk_name not in {"immediate_danger", "high_guard", "acute_threat"}
+    )
+    if relation_reentry_progression_active:
+        execution_mode = "shared_progression"
+        if live_engagement_name == "pickup_comment":
+            primary_action = "pick_up_comment"
+        elif live_engagement_name == "riff_with_comment":
+            primary_action = "riff_current_comment"
+        else:
+            primary_action = "seed_small_topic"
+        action_queue = _compact(
+            [
+                primary_action,
+                "keep_history_bridge_visible",
+                "keep_shared_thread",
+                "map_next_step",
+                *action_queue,
+            ]
+        )
+        reply_permission = "speak_briefly" if reply_permission in {"speak", "speak_forward"} else reply_permission
+        wait_before_action = "brief" if wait_before_action in {"brief", "measured"} else wait_before_action
+
+    field_reentry_progression_active = (
+        strategy == "shared_world_next_step"
+        and live_engagement_name in {"pickup_comment", "riff_with_comment", "seed_topic"}
+        and organism_posture_name in {"play", "attune", "open", "steady"}
+        and external_field_name in {"continuity_field", "open_field", "shifting_field"}
+        and external_continuity_pull >= 0.34
+        and external_safety_envelope >= 0.28
+        and terrain_flow_name in {"recover", "reenter", "settle", "ignite"}
+        and terrain_basin_name in {"recovery_basin", "continuity_basin", "play_basin", "steady_basin"}
+        and terrain_recovery_gradient >= 0.28
+        and terrain_barrier_height <= 0.62
+        and joint_reentry_room >= 0.2
+        and body_recovery_guard_state == "open"
+        and protection_mode_name not in {"contain", "stabilize", "shield"}
+        and emergency_dialogue_permission not in {"block", "allow_minimal"}
+        and situation_risk_name not in {"immediate_danger", "high_guard", "acute_threat"}
+    )
+    if field_reentry_progression_active:
+        execution_mode = "shared_progression"
+        if live_engagement_name == "pickup_comment":
+            primary_action = "pick_up_comment"
+        elif live_engagement_name == "riff_with_comment":
+            primary_action = "riff_current_comment"
+        else:
+            primary_action = "seed_small_topic"
+        action_queue = _compact(
+            [
+                primary_action,
+                "keep_shared_thread",
+                "map_next_step",
+                "keep_chat_loop_open",
+                *action_queue,
+            ]
+        )
+        reply_permission = "speak_briefly" if reply_permission in {"speak", "speak_forward"} else reply_permission
+        wait_before_action = "brief" if wait_before_action in {"brief", "measured"} else wait_before_action
+
+    relation_guarded_constraint_active = (
+        strategy == "respectful_wait"
+        and utterance_reason_state == "active"
+        and (
+            utterance_reason_relation_frame == "unfinished_link"
+            or utterance_reason_causal_frame in {"unfinished_thread_cause", "memory_trigger_cause"}
+            or utterance_reason_memory_frame
+            in {"keep_unfinished_link_near", "keep_known_thread_near", "echo_known_thread"}
+        )
+        and utterance_reason_preserve in {"", "do_not_overclaim"}
+        and terrain_basin_name in {"protective_basin", "diffuse_basin", "steady_basin"}
+        and terrain_flow_name in {"contain", "diffuse", "settle"}
+        and (
+            organism_posture_name in {"protect", "recover", "verify", "attune"}
+            or joint_guard_signal >= 0.32
+            or terrain_barrier_height >= 0.46
+        )
+    )
+    if relation_guarded_constraint_active:
+        execution_mode = "defer_with_presence"
+        primary_action = "hold_presence"
+        action_queue = _compact(
+            [
+                "protect_unfinished_link",
+                "leave_return_point",
+                "defer_contact",
+                *action_queue,
+            ]
+        )
+        reply_permission = "hold_or_brief"
+        wait_before_action = "measured" if wait_before_action == "brief" else wait_before_action
+
+    field_guarded_constraint_active = (
+        strategy == "respectful_wait"
+        and external_field_name in {"social_pressure_field", "formal_field", "hazard_field"}
+        and (
+            organism_posture_name in {"protect", "recover", "verify"}
+            or joint_guard_signal >= 0.42
+            or terrain_basin_name == "protective_basin"
+            or terrain_barrier_height >= 0.5
+        )
+    )
+    if field_guarded_constraint_active:
+        execution_mode = "defer_with_presence"
+        primary_action = "hold_presence"
+        action_queue = _compact(
+            [
+                "defer_contact",
+                "leave_return_point",
+                "respect_role_gradient",
+                *action_queue,
+            ]
+        )
+        reply_permission = "hold_or_brief"
+        wait_before_action = "measured" if wait_before_action == "brief" else wait_before_action
+
     live_engagement_active = (
         live_engagement_score >= 0.42
         and body_recovery_guard_state != "recovery_first"
@@ -531,75 +1015,145 @@ def derive_actuation_plan(
     elif situation_risk_name in {"guarded_context", "unstable_contact", "acute_threat"}:
         action_queue = _compact(["assess_context_shift", *action_queue])
 
-    return {
-        "execution_mode": execution_mode,
-        "primary_action": primary_action,
-        "action_queue": _compact(action_queue),
-        "reply_permission": reply_permission,
-        "wait_before_action": wait_before_action,
-        "repair_window_commitment": repair_window_commitment,
-        "outcome_goal": outcome_goal,
-        "boundary_mode": boundary_mode,
-        "attention_target": attention_target,
-        "memory_write_priority": memory_write_priority,
-        "memory_write_class": memory_write_class,
-        "memory_write_class_reason": memory_write_class_reason,
-        "affordance_priority": affordance_priority,
-        "do_not_cross": do_not_cross,
-        "other_person_state": other_person_state,
-        "resonance_prioritize_actions": resonance_prioritize_actions,
-        "resonance_avoid_actions": resonance_avoid_actions,
-        "conversational_objects": conversational_objects,
-        "object_operations": object_operations,
-        "interaction_effects": interaction_effects,
-        "interaction_judgement_view": interaction_judgement_view,
-        "contact_readiness": round(contact_readiness, 4),
-        "repair_bias": repair_bias,
-        "disclosure_depth": disclosure_depth,
-        "qualia_planner_view": qualia_planner_view,
-        "terrain_readout": terrain_readout,
-        "protection_mode": protection_mode,
-        "body_recovery_guard": body_recovery_guard,
-        "body_homeostasis_state": body_homeostasis_state,
-        "body_homeostasis_name": body_homeostasis_name,
-        "body_homeostasis_score": body_homeostasis_score,
-        "homeostasis_budget_state": homeostasis_budget_state,
-        "homeostasis_budget_name": homeostasis_budget_name,
-        "homeostasis_budget_score": homeostasis_budget_score,
-        "initiative_readiness": initiative_readiness,
-        "learning_mode_state": learning_mode_state,
-        "learning_mode_name": learning_mode_name,
-        "learning_mode_probe_room": learning_mode_probe_room,
-        "commitment_state": commitment_state,
-        "commitment_mode": commitment_mode,
-        "commitment_target": commitment_target,
-        "commitment_score": commitment_score,
-        "social_experiment_loop_state": social_experiment_loop_state,
-        "social_experiment_name": social_experiment_name,
-        "social_experiment_probe_intensity": social_experiment_probe_intensity,
-        "live_engagement_state": live_engagement_state,
-        "live_engagement_name": live_engagement_name,
-        "live_engagement_score": live_engagement_score,
-        "live_primary_move": live_primary_move,
-        "situation_risk_state": situation_risk_state,
-        "situation_risk_name": situation_risk_name,
-        "situation_risk_immediacy": situation_risk_immediacy,
-        "emergency_posture": emergency_posture,
-        "emergency_posture_name": emergency_posture_name,
-        "emergency_posture_score": emergency_posture_score,
-        "emergency_dialogue_permission": emergency_dialogue_permission,
-        "emergency_primary_action": emergency_primary_action,
-        "relational_continuity_state": relational_continuity_state,
-        "relational_continuity_name": relational_continuity_name,
-        "relational_continuity_score": relational_continuity_score,
-        "relation_competition_state": relation_competition_state,
-        "relation_competition_name": relation_competition_name,
-        "relation_competition_level": relation_competition_level,
-        "social_topology_state": social_topology_state,
-        "social_topology_name": social_topology_name,
-        "social_topology_score": social_topology_score,
-        "insight_event": insight_event,
-    }
+    presence_hold_state = derive_presence_hold_state(
+        live_engagement_state=live_engagement_state,
+        listener_action_state=listener_action_state,
+        shared_moment_state=shared_moment_state,
+        utterance_reason_packet=utterance_reason_packet,
+        joint_state=joint_state,
+        organism_state=organism_state,
+        external_field_state=external_field_state,
+        terrain_dynamics_state=terrain_dynamics_state,
+    ).to_dict()
+    nonverbal_response_state = derive_nonverbal_response_state(
+        listener_action_state=listener_action_state,
+        presence_hold_state=presence_hold_state,
+        shared_moment_state=shared_moment_state,
+        live_engagement_state=live_engagement_state,
+        utterance_reason_packet=utterance_reason_packet,
+        terrain_dynamics_state=terrain_dynamics_state,
+        joint_state=joint_state,
+    ).to_dict()
+    response_selection_state = derive_response_selection_state(
+        primary_action=primary_action,
+        execution_mode=execution_mode,
+        reply_permission=reply_permission,
+        defer_dominance=defer_dominance,
+        live_engagement_state=live_engagement_state,
+        presence_hold_state=presence_hold_state,
+        nonverbal_response_state=nonverbal_response_state,
+        shared_moment_state=shared_moment_state,
+        utterance_reason_packet=utterance_reason_packet,
+        subjective_scene_state=subjective_scene_state,
+        self_other_attribution_state=self_other_attribution_state,
+        shared_presence_state=shared_presence_state,
+    ).to_dict()
+    response_channel = str(response_selection_state.get("channel") or "speak")
+    if response_channel == "backchannel":
+        action_queue = _compact(["offer_backchannel_token", "keep_turn_soft", *action_queue])
+        reply_permission = "backchannel_or_brief"
+    elif response_channel == "hold":
+        action_queue = _compact(["hold_silence_window", *action_queue])
+        if reply_permission == "speak":
+            reply_permission = "hold_or_brief"
+    elif response_channel == "defer":
+        action_queue = _compact(["leave_return_point", *action_queue])
+        if reply_permission == "speak":
+            reply_permission = "hold_or_brief"
+
+    return ActuationPlanContract(
+        execution_mode=execution_mode,
+        primary_action=primary_action,
+        action_queue=_compact(action_queue),
+        reply_permission=reply_permission,
+        wait_before_action=wait_before_action,
+        repair_window_commitment=repair_window_commitment,
+        outcome_goal=outcome_goal,
+        boundary_mode=boundary_mode,
+        attention_target=attention_target,
+        memory_write_priority=memory_write_priority,
+        memory_write_class=memory_write_class,
+        memory_write_class_reason=memory_write_class_reason,
+        contact_readiness=round(contact_readiness, 4),
+        repair_bias=repair_bias,
+        disclosure_depth=disclosure_depth,
+        utterance_reason_relation_frame=utterance_reason_relation_frame,
+        utterance_reason_causal_frame=utterance_reason_causal_frame,
+        utterance_reason_memory_frame=utterance_reason_memory_frame,
+        utterance_reason_preserve=utterance_reason_preserve,
+        joint_mode=joint_mode,
+        joint_reentry_room=joint_reentry_room,
+        joint_guard_signal=joint_guard_signal,
+        presence_hold_state=presence_hold_state,
+        nonverbal_response_state=nonverbal_response_state,
+        response_selection_state=response_selection_state,
+        response_channel=response_channel,
+        response_channel_score=_float01(response_selection_state.get("score")),
+        organism_posture_name=organism_posture_name,
+        external_field_name=external_field_name,
+        terrain_basin_name=terrain_basin_name,
+        terrain_flow_name=terrain_flow_name,
+        situation_risk_name=situation_risk_name,
+        emergency_posture_name=emergency_posture_name,
+        relational_continuity_name=relational_continuity_name,
+        relation_competition_name=relation_competition_name,
+        social_topology_name=social_topology_name,
+        extras={
+            "affordance_priority": affordance_priority,
+            "do_not_cross": do_not_cross,
+            "other_person_state": other_person_state,
+            "resonance_prioritize_actions": resonance_prioritize_actions,
+            "resonance_avoid_actions": resonance_avoid_actions,
+            "conversational_objects": conversational_objects,
+            "object_operations": object_operations,
+            "interaction_effects": interaction_effects,
+            "interaction_judgement_view": interaction_judgement_view,
+            "qualia_planner_view": qualia_planner_view,
+            "terrain_readout": terrain_readout,
+            "protection_mode": protection_mode,
+            "body_recovery_guard": body_recovery_guard,
+            "body_homeostasis_state": body_homeostasis_state,
+            "body_homeostasis_name": body_homeostasis_name,
+            "body_homeostasis_score": body_homeostasis_score,
+            "homeostasis_budget_state": homeostasis_budget_state,
+            "homeostasis_budget_name": homeostasis_budget_name,
+            "homeostasis_budget_score": homeostasis_budget_score,
+            "initiative_readiness": initiative_readiness,
+            "learning_mode_state": learning_mode_state,
+            "learning_mode_name": learning_mode_name,
+            "learning_mode_probe_room": learning_mode_probe_room,
+            "commitment_state": commitment_state,
+            "commitment_mode": commitment_mode,
+            "commitment_target": commitment_target,
+            "commitment_score": commitment_score,
+            "social_experiment_loop_state": social_experiment_loop_state,
+            "social_experiment_name": social_experiment_name,
+            "social_experiment_probe_intensity": social_experiment_probe_intensity,
+            "live_engagement_state": live_engagement_state,
+            "live_engagement_name": live_engagement_name,
+            "live_engagement_score": live_engagement_score,
+            "live_primary_move": live_primary_move,
+            "utterance_reason_state": utterance_reason_state,
+            "utterance_reason_offer": utterance_reason_offer,
+            "joint_state": joint_state,
+            "organism_state": organism_state,
+            "external_field_state": external_field_state,
+            "terrain_dynamics_state": terrain_dynamics_state,
+            "situation_risk_state": situation_risk_state,
+            "situation_risk_immediacy": situation_risk_immediacy,
+            "emergency_posture": emergency_posture,
+            "emergency_posture_score": emergency_posture_score,
+            "emergency_dialogue_permission": emergency_dialogue_permission,
+            "emergency_primary_action": emergency_primary_action,
+            "relational_continuity_state": relational_continuity_state,
+            "relational_continuity_score": relational_continuity_score,
+            "relation_competition_state": relation_competition_state,
+            "relation_competition_level": relation_competition_level,
+            "social_topology_state": social_topology_state,
+            "social_topology_score": social_topology_score,
+            "insight_event": insight_event,
+        },
+    )
 
 
 def _compact(values: list[str]) -> list[str]:
@@ -612,3 +1166,7 @@ def _float01(value: Any) -> float:
     except (TypeError, ValueError):
         numeric = 0.0
     return max(0.0, min(1.0, numeric))
+
+
+def _as_text_list(values: Any) -> list[str]:
+    return [str(item) for item in values or [] if str(item).strip()]
