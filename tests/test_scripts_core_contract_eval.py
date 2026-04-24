@@ -21,3 +21,20 @@ def test_core_contract_eval_summary_includes_prompt_baseline_failures() -> None:
     ]
     assert baseline_results
     assert any(result["passed"] is False for result in baseline_results)
+
+
+def test_core_contract_eval_summary_exposes_llm_expression_bridge_request() -> None:
+    summary = build_core_contract_eval_summary()
+    by_name = {
+        scenario["scenario_name"]: scenario
+        for scenario in summary["scenarios"]
+    }
+
+    speak_request = by_name["small_shared_moment"]["llm_expression_request"]
+    hold_request = by_name["guarded_uncertainty"]["llm_expression_request"]
+
+    assert speak_request["should_call_llm"] is True
+    assert speak_request["contract"]["response_channel"] == "speak"
+    assert "質問で終えない" in speak_request["user_prompt"]
+    assert hold_request["should_call_llm"] is False
+    assert hold_request["fallback_action"]["type"] == "nonverbal"

@@ -54,6 +54,7 @@ def build_core_contract_eval_summary() -> dict[str, Any]:
                 "expected_contract": result["expected_contract"],
                 "reaction_contract": result["reaction_contract"],
                 "evaluation": evaluation,
+                "llm_expression_request": result["llm_expression_request"],
                 "prompt_baselines": _build_prompt_baseline_results(scenario_name),
                 "response_guideline": result["response_guideline"],
             }
@@ -132,6 +133,12 @@ def main() -> int:
                     f"  - {sample['model_label']}: "
                     f"passed={baseline_eval['passed']} score={baseline_eval['score']}"
                 )
+        request = scenario["llm_expression_request"]
+        print(
+            "llm bridge: "
+            f"should_call={request['should_call_llm']} "
+            f"channel={request['action_channel']}"
+        )
         print(f"guideline: {scenario['response_guideline']}")
         print()
     return 0

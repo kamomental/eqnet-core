@@ -21,6 +21,11 @@ from .llm_bridge_contract import (
     LLMBridgeContractViolation,
     review_llm_bridge_text,
 )
+from .llm_expression_bridge import (
+    LLMExpressionBridgePolicy,
+    LLMExpressionRequest,
+    build_llm_expression_request,
+)
 from .surface_expression_selector import (
     SurfaceExpressionCandidate,
     SurfaceExpressionProfile,
@@ -40,9 +45,12 @@ __all__ = [
     "ExpressionAdapter",
     "LLMBridgeContractReview",
     "LLMBridgeContractViolation",
+    "LLMExpressionBridgePolicy",
+    "LLMExpressionRequest",
     "QUALIA_HINT_VERSION",
     "build_expression_hints_from_gate_result",
     "review_llm_bridge_text",
+    "build_llm_expression_request",
     "render_response",
     "derive_content_skeleton",
     "derive_content_sequence",

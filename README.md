@@ -479,8 +479,11 @@ python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMM
    - `expected_contract`
    - `reaction_contract`
    - `evaluation`
+   - `llm_expression_request`
    - `prompt_baselines`
    - `response_guideline`
+
+   `llm_expression_request` は、定型文の代替ではなく、同じ LLM を状態契約つき表出層として呼ぶための foreground です。`response_channel=hold` のときは LLM を呼ばず、非発話行動として保持します。
 
 4. **既定シナリオ**
    - `small_shared_moment`

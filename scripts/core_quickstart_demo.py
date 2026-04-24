@@ -48,6 +48,10 @@ _CONTRACT_EVAL_MODULE = _load_module(
     "core_quickstart_contract_eval",
     "inner_os/evaluation/conversation_contract_eval.py",
 )
+_LLM_EXPRESSION_BRIDGE_MODULE = _load_module(
+    "core_quickstart_llm_expression_bridge",
+    "inner_os/expression/llm_expression_bridge.py",
+)
 
 derive_reaction_contract = _REACTION_CONTRACT_MODULE.derive_reaction_contract
 derive_joint_state = _JOINT_STATE_MODULE.derive_joint_state
@@ -60,6 +64,9 @@ derive_subjective_scene_state = _SUBJECTIVE_SCENE_MODULE.derive_subjective_scene
 CORE_QUICKSTART_EXPECTATIONS = _CONTRACT_EVAL_MODULE.CORE_QUICKSTART_EXPECTATIONS
 evaluate_reaction_contract_against_expectation = (
     _CONTRACT_EVAL_MODULE.evaluate_reaction_contract_against_expectation
+)
+build_llm_expression_request = (
+    _LLM_EXPRESSION_BRIDGE_MODULE.build_llm_expression_request
 )
 
 
@@ -304,6 +311,14 @@ def build_core_demo_result(
         reaction_contract=reaction_contract.to_dict(),
         expectation=expectation,
     )
+    llm_expression_request = build_llm_expression_request(
+        input_text=text,
+        reaction_contract=reaction_contract.to_dict(),
+        joint_state=joint_state.to_dict(),
+        shared_presence=shared_presence.to_dict(),
+        subjective_scene=subjective_scene.to_dict(),
+        self_other_attribution=attribution.to_dict(),
+    )
 
     return {
         "scenario": {
@@ -318,6 +333,7 @@ def build_core_demo_result(
         "expected_contract": expectation.to_dict(),
         "evaluation": evaluation.to_dict(),
         "reaction_contract": reaction_contract.to_dict(),
+        "llm_expression_request": llm_expression_request.to_dict(),
         "response_guideline": _render_response_guideline(reaction_contract.to_dict()),
     }
 
@@ -505,6 +521,9 @@ def main() -> int:
     print()
     print("[evaluation]")
     print(json.dumps(result["evaluation"], ensure_ascii=False, indent=2))
+    print()
+    print("[llm_expression_request]")
+    print(json.dumps(result["llm_expression_request"], ensure_ascii=False, indent=2))
     print()
     print("[response_guideline]")
     print(result["response_guideline"])
