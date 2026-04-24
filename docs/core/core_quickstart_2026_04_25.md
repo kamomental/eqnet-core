@@ -29,6 +29,13 @@ JSON で確認する場合:
 python scripts/core_quickstart_demo.py --json
 ```
 
+全シナリオをまとめて評価する場合:
+
+```bash
+python scripts/core_contract_eval.py
+python scripts/core_contract_eval.py --json
+```
+
 ## 既定シナリオ
 
 - `small_shared_moment`
@@ -50,6 +57,9 @@ python scripts/core_quickstart_demo.py --json
 `evaluation` では、シナリオごとに定義した期待 contract と actual contract を比較し、
 `stance / scale / question_budget / interpretation_budget / response_channel / continuity / timing / distance`
 の違反を機械的に確認できます。
+
+`core_contract_eval.py` は既定シナリオを一括で回し、
+`passed / score / violations` を一覧化します。
 
 ## 位置づけ
 

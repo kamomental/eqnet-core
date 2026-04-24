@@ -468,6 +468,7 @@ python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMM
    - Windows: `quickstart_core.bat`
    - macOS / Linux: `./quickstart_core.sh`
    - 直接実行: `python scripts/core_quickstart_demo.py`
+   - 一括評価: `python scripts/core_contract_eval.py`
 
 3. **何が見えるか**
    - `subjective_scene`
