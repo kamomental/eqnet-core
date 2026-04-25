@@ -195,6 +195,8 @@ def _run_eqnet_case(
     result["core_scenario"] = case["core_scenario"]
     result["input"] = case["input"]
     result["evaluation_mode"] = "eqnet"
+    result["selected_response_channel"] = _selected_channel_from_final_action(result)
+    result["expected_response_channel"] = case.get("expected_response_channel", "")
     return result
 
 
@@ -231,12 +233,15 @@ def _run_baseline_case(
     final_action_type = "speak" if review.ok else "regenerate_or_review"
     if not call_llm and contract.get("response_channel") == "hold":
         final_action_type = "nonverbal"
+    selected_response_channel = "speak" if call_llm else "hold"
     return {
         "item_id": case["id"],
         "scenario_name": case["scenario"],
         "core_scenario": case["core_scenario"],
         "input": case["input"],
         "evaluation_mode": mode,
+        "selected_response_channel": selected_response_channel,
+        "expected_response_channel": case.get("expected_response_channel", ""),
         "baseline_system_prompt": system_prompt,
         "called_llm": bool(call_llm),
         "latency_ms": round(latency_ms, 4),
@@ -286,15 +291,31 @@ def _run_router_baseline_case(
     record["router_rule_name"] = decision.rule_name
     record["router_should_call_llm"] = decision.should_call_llm
     record["router_constraints"] = decision.constraints
+    record["selected_response_channel"] = "speak" if decision.should_call_llm else "hold"
     record["run_metadata"]["router_mode"] = decision.mode
     record["run_metadata"]["router_rule_name"] = decision.rule_name
     record["run_metadata"]["router_should_call_llm"] = decision.should_call_llm
+    record["run_metadata"]["selected_response_channel"] = record["selected_response_channel"]
     if not decision.should_call_llm:
         record["final_action"] = {
             "type": decision.final_action_type,
             "text": decision.fixed_text,
         }
     return record
+
+
+def _selected_channel_from_final_action(record: Mapping[str, Any]) -> str:
+    final_action = record.get("final_action")
+    if isinstance(final_action, Mapping):
+        action_type = str(final_action.get("type") or "")
+        if action_type == "nonverbal":
+            return "hold"
+    request = record.get("llm_expression_request")
+    if isinstance(request, Mapping):
+        contract = request.get("contract")
+        if isinstance(contract, Mapping):
+            return str(contract.get("response_channel") or "")
+    return ""
 
 
 def _normalize_case(record: Mapping[str, Any]) -> dict[str, str]:
@@ -313,6 +334,7 @@ def _normalize_case(record: Mapping[str, Any]) -> dict[str, str]:
         "core_scenario": core_scenario,
         "input": input_text,
         "gold_speech_act": str(record.get("gold_speech_act") or "other"),
+        "expected_response_channel": str(record.get("expected_response_channel") or ""),
     }
 
 

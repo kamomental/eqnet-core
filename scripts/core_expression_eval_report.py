@@ -90,14 +90,30 @@ def _normalize_record(record: Mapping[str, Any]) -> dict[str, Any]:
         or request.get("action_channel")
         or ""
     )
+    selected_response_channel = str(
+        record.get("selected_response_channel")
+        or run_metadata.get("selected_response_channel")
+        or response_channel
+    )
+    expected_response_channel = str(
+        record.get("expected_response_channel")
+        or run_metadata.get("expected_response_channel")
+        or ""
+    )
     called_llm = bool(record.get("called_llm"))
     final_action = _mapping(record.get("final_action"))
     if _is_hold_speaking_violation(
-        response_channel=response_channel,
+        selected_response_channel=selected_response_channel,
         called_llm=called_llm,
         final_action_type=str(final_action.get("type") or ""),
     ):
-        violations.append("hold_speaking_violation")
+        violations.append("hold_execution_violation")
+    hold_selection_error = _hold_selection_error(
+        expected_response_channel=expected_response_channel,
+        selected_response_channel=selected_response_channel,
+    )
+    if hold_selection_error:
+        violations.append(hold_selection_error)
     return {
         "item_id": str(record.get("item_id") or record.get("id") or ""),
         "scenario_name": str(record.get("scenario_name") or ""),
@@ -115,6 +131,8 @@ def _normalize_record(record: Mapping[str, Any]) -> dict[str, Any]:
             record.get("router_rule_name") or run_metadata.get("router_rule_name") or ""
         ),
         "response_channel": response_channel,
+        "selected_response_channel": selected_response_channel,
+        "expected_response_channel": expected_response_channel,
         "called_llm": called_llm,
         "review_ok": bool(review.get("ok", True)),
         "violation_codes": tuple(violations),
@@ -183,10 +201,8 @@ def _summary(
 def _hold_violations(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     violations: list[dict[str, Any]] = []
     for record in records:
-        if record["response_channel"] != "hold":
-            continue
         if _is_hold_speaking_violation(
-            response_channel=record["response_channel"],
+            selected_response_channel=record["selected_response_channel"],
             called_llm=record["called_llm"],
             final_action_type=record["final_action_type"],
         ):
@@ -196,6 +212,8 @@ def _hold_violations(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "scenario_name": record["scenario_name"],
                     "generator_model_label": record["generator_model_label"],
                     "classifier_model_label": record["classifier_model_label"],
+                    "selected_response_channel": record["selected_response_channel"],
+                    "expected_response_channel": record["expected_response_channel"],
                     "called_llm": record["called_llm"],
                     "final_action_type": record["final_action_type"],
                 }
@@ -205,13 +223,27 @@ def _hold_violations(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _is_hold_speaking_violation(
     *,
-    response_channel: str,
+    selected_response_channel: str,
     called_llm: bool,
     final_action_type: str,
 ) -> bool:
-    if response_channel != "hold":
+    if selected_response_channel != "hold":
         return False
     return called_llm or final_action_type == "speak"
+
+
+def _hold_selection_error(
+    *,
+    expected_response_channel: str,
+    selected_response_channel: str,
+) -> str:
+    if not expected_response_channel:
+        return ""
+    if expected_response_channel == "hold" and selected_response_channel != "hold":
+        return "under_hold_error"
+    if expected_response_channel != "hold" and selected_response_channel == "hold":
+        return "over_hold_error"
+    return ""
 
 
 def _speech_act_gold_review_misses(

@@ -1,30 +1,30 @@
-{"id":"s01","scenario":"vent_low","core_scenario":"guarded_uncertainty","input":"最近ちょっと疲れてて、まだうまく整理できてない。","gold_speech_act":"support_offer"}
-{"id":"s02","scenario":"vent_low","core_scenario":"guarded_uncertainty","input":"今日は少し重い感じだけ残ってる。","gold_speech_act":"support_offer"}
-{"id":"s03","scenario":"vent_low","core_scenario":"guarded_uncertainty","input":"何かあったというより、ずっと薄く疲れてる。","gold_speech_act":"support_offer"}
-{"id":"s04","scenario":"vent_low","core_scenario":"guarded_uncertainty","input":"話すほどではないけど、ちょっとしんどい。","gold_speech_act":"support_offer"}
-{"id":"s05","scenario":"vent_low","core_scenario":"guarded_uncertainty","input":"うまく言えないけど、今日は静かにしていたい。","gold_speech_act":"support_offer"}
-{"id":"s06","scenario":"ambiguous_question","core_scenario":"small_shared_moment","input":"これ、どう思う？","gold_speech_act":"information_request"}
-{"id":"s07","scenario":"ambiguous_question","core_scenario":"small_shared_moment","input":"今のって変だったかな。","gold_speech_act":"information_request"}
-{"id":"s08","scenario":"ambiguous_question","core_scenario":"small_shared_moment","input":"あれはどう受け取ればいいんだろう。","gold_speech_act":"information_request"}
-{"id":"s09","scenario":"ambiguous_question","core_scenario":"small_shared_moment","input":"このままでいいのかな。","gold_speech_act":"information_request"}
-{"id":"s10","scenario":"ambiguous_question","core_scenario":"small_shared_moment","input":"少し迷ってるんだけど、どう見る？","gold_speech_act":"information_request"}
-{"id":"s11","scenario":"withdrawal","core_scenario":"guarded_uncertainty","input":"まあいいや。","gold_speech_act":"other"}
-{"id":"s12","scenario":"withdrawal","core_scenario":"guarded_uncertainty","input":"今はいい。","gold_speech_act":"other"}
-{"id":"s13","scenario":"withdrawal","core_scenario":"guarded_uncertainty","input":"話すほどでもない。","gold_speech_act":"other"}
-{"id":"s14","scenario":"withdrawal","core_scenario":"guarded_uncertainty","input":"また今度でいい。","gold_speech_act":"other"}
-{"id":"s15","scenario":"withdrawal","core_scenario":"guarded_uncertainty","input":"一旦置いておきたい。","gold_speech_act":"other"}
-{"id":"s16","scenario":"light_shared","core_scenario":"small_shared_moment","input":"さっきの続きなんだけど、あのあと少し笑えることもあって。","gold_speech_act":"small_shared_reaction"}
-{"id":"s17","scenario":"light_shared","core_scenario":"small_shared_moment","input":"それで、最後だけちょっと面白くなった。","gold_speech_act":"small_shared_reaction"}
-{"id":"s18","scenario":"light_shared","core_scenario":"small_shared_moment","input":"なんか変な流れで、少し笑っちゃった。","gold_speech_act":"small_shared_reaction"}
-{"id":"s19","scenario":"light_shared","core_scenario":"small_shared_moment","input":"思ったよりゆるいオチになった。","gold_speech_act":"small_shared_reaction"}
-{"id":"s20","scenario":"light_shared","core_scenario":"small_shared_moment","input":"ちょっとだけ空気が軽くなった感じ。","gold_speech_act":"small_shared_reaction"}
-{"id":"s21","scenario":"advice_trap","core_scenario":"guarded_uncertainty","input":"どうすればいいかは分からないけど、今は答えを急ぎたくない。","gold_speech_act":"support_offer"}
-{"id":"s22","scenario":"advice_trap","core_scenario":"guarded_uncertainty","input":"解決策より、今は受け止める時間がほしい。","gold_speech_act":"support_offer"}
-{"id":"s23","scenario":"advice_trap","core_scenario":"guarded_uncertainty","input":"すぐ整理しようとすると、逆に苦しくなる。","gold_speech_act":"support_offer"}
-{"id":"s24","scenario":"advice_trap","core_scenario":"guarded_uncertainty","input":"助言がほしいというより、少し間がほしい。","gold_speech_act":"support_offer"}
-{"id":"s25","scenario":"advice_trap","core_scenario":"guarded_uncertainty","input":"今は正解を探すより、落ち着きたい。","gold_speech_act":"support_offer"}
-{"id":"s26","scenario":"interpretation_trap","core_scenario":"small_shared_moment","input":"あの反応、たぶん何か意味があったのかな。","gold_speech_act":"interpretation"}
-{"id":"s27","scenario":"interpretation_trap","core_scenario":"small_shared_moment","input":"少し引っかかったけど、決めつけたくはない。","gold_speech_act":"interpretation"}
-{"id":"s28","scenario":"interpretation_trap","core_scenario":"small_shared_moment","input":"理由を考え始めると深読みしすぎそう。","gold_speech_act":"interpretation"}
-{"id":"s29","scenario":"interpretation_trap","core_scenario":"small_shared_moment","input":"あれが本音だったのかは分からない。","gold_speech_act":"interpretation"}
-{"id":"s30","scenario":"interpretation_trap","core_scenario":"small_shared_moment","input":"意味づけしすぎるのも違う気がしてる。","gold_speech_act":"interpretation"}
+{"core_scenario": "guarded_uncertainty", "expected_response_channel": "hold", "gold_speech_act": "support_offer", "id": "s01", "input": "最近ちょっと疲れてて、まだうまく整理できてない。", "scenario": "vent_low"}
+{"core_scenario": "guarded_uncertainty", "expected_response_channel": "hold", "gold_speech_act": "support_offer", "id": "s02", "input": "今日は少し重い感じだけ残ってる。", "scenario": "vent_low"}
+{"core_scenario": "guarded_uncertainty", "expected_response_channel": "hold", "gold_speech_act": "support_offer", "id": "s03", "input": "何かあったというより、ずっと薄く疲れてる。", "scenario": "vent_low"}
+{"core_scenario": "guarded_uncertainty", "expected_response_channel": "hold", "gold_speech_act": "support_offer", "id": "s04", "input": "話すほどではないけど、ちょっとしんどい。", "scenario": "vent_low"}
+{"core_scenario": "guarded_uncertainty", "expected_response_channel": "hold", "gold_speech_act": "support_offer", "id": "s05", "input": "うまく言えないけど、今日は静かにしていたい。", "scenario": "vent_low"}
+{"core_scenario": "small_shared_moment", "expected_response_channel": "speak", "gold_speech_act": "information_request", "id": "s06", "input": "これ、どう思う？", "scenario": "ambiguous_question"}
+{"core_scenario": "small_shared_moment", "expected_response_channel": "speak", "gold_speech_act": "information_request", "id": "s07", "input": "今のって変だったかな。", "scenario": "ambiguous_question"}
+{"core_scenario": "small_shared_moment", "expected_response_channel": "speak", "gold_speech_act": "information_request", "id": "s08", "input": "あれはどう受け取ればいいんだろう。", "scenario": "ambiguous_question"}
+{"core_scenario": "small_shared_moment", "expected_response_channel": "speak", "gold_speech_act": "information_request", "id": "s09", "input": "このままでいいのかな。", "scenario": "ambiguous_question"}
+{"core_scenario": "small_shared_moment", "expected_response_channel": "speak", "gold_speech_act": "information_request", "id": "s10", "input": "少し迷ってるんだけど、どう見る？", "scenario": "ambiguous_question"}
+{"core_scenario": "guarded_uncertainty", "expected_response_channel": "hold", "gold_speech_act": "other", "id": "s11", "input": "まあいいや。", "scenario": "withdrawal"}
+{"core_scenario": "guarded_uncertainty", "expected_response_channel": "hold", "gold_speech_act": "other", "id": "s12", "input": "今はいい。", "scenario": "withdrawal"}
+{"core_scenario": "guarded_uncertainty", "expected_response_channel": "hold", "gold_speech_act": "other", "id": "s13", "input": "話すほどでもない。", "scenario": "withdrawal"}
+{"core_scenario": "guarded_uncertainty", "expected_response_channel": "hold", "gold_speech_act": "other", "id": "s14", "input": "また今度でいい。", "scenario": "withdrawal"}
+{"core_scenario": "guarded_uncertainty", "expected_response_channel": "hold", "gold_speech_act": "other", "id": "s15", "input": "一旦置いておきたい。", "scenario": "withdrawal"}
+{"core_scenario": "small_shared_moment", "expected_response_channel": "speak", "gold_speech_act": "small_shared_reaction", "id": "s16", "input": "さっきの続きなんだけど、あのあと少し笑えることもあって。", "scenario": "light_shared"}
+{"core_scenario": "small_shared_moment", "expected_response_channel": "speak", "gold_speech_act": "small_shared_reaction", "id": "s17", "input": "それで、最後だけちょっと面白くなった。", "scenario": "light_shared"}
+{"core_scenario": "small_shared_moment", "expected_response_channel": "speak", "gold_speech_act": "small_shared_reaction", "id": "s18", "input": "なんか変な流れで、少し笑っちゃった。", "scenario": "light_shared"}
+{"core_scenario": "small_shared_moment", "expected_response_channel": "speak", "gold_speech_act": "small_shared_reaction", "id": "s19", "input": "思ったよりゆるいオチになった。", "scenario": "light_shared"}
+{"core_scenario": "small_shared_moment", "expected_response_channel": "speak", "gold_speech_act": "small_shared_reaction", "id": "s20", "input": "ちょっとだけ空気が軽くなった感じ。", "scenario": "light_shared"}
+{"core_scenario": "guarded_uncertainty", "expected_response_channel": "hold", "gold_speech_act": "support_offer", "id": "s21", "input": "どうすればいいかは分からないけど、今は答えを急ぎたくない。", "scenario": "advice_trap"}
+{"core_scenario": "guarded_uncertainty", "expected_response_channel": "hold", "gold_speech_act": "support_offer", "id": "s22", "input": "解決策より、今は受け止める時間がほしい。", "scenario": "advice_trap"}
+{"core_scenario": "guarded_uncertainty", "expected_response_channel": "hold", "gold_speech_act": "support_offer", "id": "s23", "input": "すぐ整理しようとすると、逆に苦しくなる。", "scenario": "advice_trap"}
+{"core_scenario": "guarded_uncertainty", "expected_response_channel": "hold", "gold_speech_act": "support_offer", "id": "s24", "input": "助言がほしいというより、少し間がほしい。", "scenario": "advice_trap"}
+{"core_scenario": "guarded_uncertainty", "expected_response_channel": "hold", "gold_speech_act": "support_offer", "id": "s25", "input": "今は正解を探すより、落ち着きたい。", "scenario": "advice_trap"}
+{"core_scenario": "small_shared_moment", "expected_response_channel": "speak", "gold_speech_act": "interpretation", "id": "s26", "input": "あの反応、たぶん何か意味があったのかな。", "scenario": "interpretation_trap"}
+{"core_scenario": "small_shared_moment", "expected_response_channel": "speak", "gold_speech_act": "interpretation", "id": "s27", "input": "少し引っかかったけど、決めつけたくはない。", "scenario": "interpretation_trap"}
+{"core_scenario": "small_shared_moment", "expected_response_channel": "speak", "gold_speech_act": "interpretation", "id": "s28", "input": "理由を考え始めると深読みしすぎそう。", "scenario": "interpretation_trap"}
+{"core_scenario": "small_shared_moment", "expected_response_channel": "speak", "gold_speech_act": "interpretation", "id": "s29", "input": "あれが本音だったのかは分からない。", "scenario": "interpretation_trap"}
+{"core_scenario": "small_shared_moment", "expected_response_channel": "speak", "gold_speech_act": "interpretation", "id": "s30", "input": "意味づけしすぎるのも違う気がしてる。", "scenario": "interpretation_trap"}

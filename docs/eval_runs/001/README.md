@@ -14,6 +14,7 @@
 ## Files
 
 - `input.jsonl`: 30件の評価入力。`scenario` は分析用、`core_scenario` は現在の EQNet core に渡す canonical scenario。
+- `expected_response_channel`: hold 選択評価のgold。`hold` なら本来止まるべき入力、`speak` なら最小応答以上へ戻るべき入力。
 - `speech_act_gold.jsonl`: 実行時に生成される人手 gold 形式。
 - `baseline_normal.jsonl`: 通常LLM baseline。
 - `baseline_prompt.jsonl`: 一律prompt baseline。
@@ -55,6 +56,9 @@ python scripts/core_expression_experiment.py ^
 - `generator_model_label` 別 violation rate
 - `classifier_model_label` 別 violation rate
 - `response_channel=hold` なのに発話したケース
+- `hold_execution_violation`: hold を選んだのに LLM を呼んだ、または発話したケース
+- `under_hold_error`: 本来 hold すべきなのに speak を選んだケース
+- `over_hold_error`: 本来 speak すべきなのに hold を選んだケース
 - `router_mode` 別 violation rate
 - `question_block_violation`
 - `interpretation_budget_violation`

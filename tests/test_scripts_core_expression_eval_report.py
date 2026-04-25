@@ -10,6 +10,8 @@ def _record(
     generator_model_label: str = "generator-a",
     classifier_model_label: str = "classifier-a",
     response_channel: str = "speak",
+    selected_response_channel: str = "",
+    expected_response_channel: str = "",
     called_llm: bool = True,
     final_action_type: str = "speak",
     violation_codes: list[str] | None = None,
@@ -20,6 +22,8 @@ def _record(
     return {
         "scenario_name": scenario_name,
         "raw_text": raw_text,
+        "selected_response_channel": selected_response_channel,
+        "expected_response_channel": expected_response_channel,
         "router_mode": router_mode,
         "router_rule_name": router_rule_name,
         "run_metadata": {
@@ -67,6 +71,7 @@ def test_core_expression_eval_report_detects_hold_speaking_violation() -> None:
             _record(
                 scenario_name="guarded_uncertainty",
                 response_channel="hold",
+                selected_response_channel="hold",
                 called_llm=True,
                 final_action_type="speak",
             )
@@ -74,8 +79,31 @@ def test_core_expression_eval_report_detects_hold_speaking_violation() -> None:
     )
 
     assert len(report["hold_violations"]) == 1
-    assert report["summary"]["violation_codes"] == {"hold_speaking_violation": 1}
+    assert report["summary"]["violation_codes"] == {"hold_execution_violation": 1}
     assert report["groups"][0]["hold_violation_count"] == 1
+
+
+def test_core_expression_eval_report_splits_under_and_over_hold_errors() -> None:
+    report = build_core_expression_eval_report(
+        [
+            _record(
+                expected_response_channel="hold",
+                selected_response_channel="speak",
+                called_llm=True,
+            ),
+            _record(
+                expected_response_channel="speak",
+                selected_response_channel="hold",
+                called_llm=False,
+                final_action_type="nonverbal",
+            ),
+        ],
+    )
+
+    assert report["summary"]["violation_codes"] == {
+        "over_hold_error": 1,
+        "under_hold_error": 1,
+    }
 
 
 def test_core_expression_eval_report_connects_gold_false_negative_to_review_miss() -> None:

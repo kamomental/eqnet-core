@@ -56,6 +56,8 @@ LLM 表出評価は、次の 3 段比較を正規の最小比較にします。
 
 `baseline_router` は EQNet ではありません。状態を持たず、学習せず、重みづけもせず、明示ルールだけで mode を選ぶ比較対象です。これにより、単なる prompt 改善ではなく、状態制御がどの条件で効くかを評価できます。
 
+hold 評価は `hold_execution_violation`、`under_hold_error`、`over_hold_error` に分けます。単に話さない能力ではなく、止まるべき時に止まることと、戻るべき時に戻ることを別々に測ります。
+
 ### Main Path
 
 EQNet の正規入口は、次の core loop です。
