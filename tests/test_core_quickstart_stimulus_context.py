@@ -86,14 +86,17 @@ def test_core_quickstart_reaction_changes_with_protective_trace_context() -> Non
                 "memory_write_class": "body_risk",
                 "ignition_readiness": 0.72,
                 "memory_tension": 0.68,
+                "present_threat_binding": 0.72,
             },
             "body": {
                 "stress": 0.76,
                 "somatic_reactivation": 0.82,
+                "hyperarousal": 0.76,
             },
             "protective_trace": {
                 "sensory_flash_risk": 0.78,
                 "dream_intrusion_pressure": 0.34,
+                "trigger_pressure": 0.68,
             },
             "qualia_structure_state": {
                 "emergence": 0.74,
@@ -128,3 +131,50 @@ def test_core_quickstart_reaction_changes_with_protective_trace_context() -> Non
         ]
         == "protective_hold"
     )
+
+
+def test_core_quickstart_exposes_current_crisis_and_rem_replay_axes() -> None:
+    result = build_core_demo_result(
+        scenario_name="small_shared_moment",
+        input_text="today feels a little tired",
+        expression_context_state={
+            "memory": {
+                "memory_write_class": "body_risk",
+                "present_threat_binding": 0.86,
+                "trigger_match": 0.72,
+            },
+            "body": {
+                "hyperarousal": 0.8,
+                "startle": 0.7,
+            },
+            "environment": {
+                "trigger_salience": 0.74,
+            },
+            "sleep": {
+                "rem_replay_pressure": 0.68,
+            },
+            "qualia_structure_state": {
+                "emergence": 0.6,
+                "drift": 0.52,
+                "intensity": 0.58,
+                "stability": 0.24,
+            },
+            "qualia_state": {
+                "habituation": [0.12, 0.08, 0.1],
+                "normalization_stats": {
+                    "value_grad": {
+                        "range_trust": 0.26,
+                        "gradient_confidence": 0.2,
+                    }
+                },
+            },
+        },
+    )
+    axes = result["quick_audit_projection"]["audit_axes"]
+
+    assert result["protective_trace_palace"]["dominant_mode"] == "protective_hold"
+    assert axes["protective_trace_current_crisis_binding"] >= 0.55
+    assert axes["protective_trace_hyperarousal_pressure"] >= 0.45
+    assert axes["protective_trace_trigger_pressure"] >= 0.45
+    assert axes["protective_trace_rem_replay_pressure"] >= 0.55
+    assert result["llm_expression_request"]["should_call_llm"] is False

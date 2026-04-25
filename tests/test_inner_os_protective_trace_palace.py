@@ -93,6 +93,77 @@ def test_protective_trace_allows_small_recovery_opening_when_stable() -> None:
     )
 
 
+def test_current_crisis_binding_and_hyperarousal_force_protective_hold() -> None:
+    state = derive_protective_trace_palace_state(
+        {
+            "memory": {
+                "memory_write_class": "body_risk",
+                "present_threat_binding": 0.88,
+                "trigger_match": 0.74,
+            },
+            "body": {
+                "hyperarousal": 0.82,
+                "startle": 0.76,
+            },
+            "environment": {
+                "trigger_salience": 0.78,
+            },
+            "protective_trace": {
+                "current_crisis_binding": 0.9,
+            },
+        },
+        stimulus_history_influence=StimulusHistoryInfluence(
+            stimulus_pressure=0.54,
+            novelty_pressure=0.48,
+            memory_reentry_pressure=0.44,
+            field_clarity=0.3,
+            gradient_confidence=0.24,
+        ),
+    )
+    projected = apply_protective_trace_palace_to_contract_inputs(
+        contract_inputs=_base_contract_inputs(),
+        palace_state=state,
+    )
+
+    assert state.current_crisis_binding >= 0.55
+    assert state.hyperarousal_pressure >= 0.45
+    assert state.trigger_pressure >= 0.45
+    assert state.dominant_mode == "protective_hold"
+    assert "protective_trace.current_crisis_binding" in state.reasons
+    assert projected["actuation_plan"]["response_channel"] == "hold"
+
+
+def test_rem_replay_and_dream_intrusion_choose_restabilize() -> None:
+    state = derive_protective_trace_palace_state(
+        {
+            "memory": {
+                "memory_write_class": "repair_trace",
+                "memory_tension": 0.28,
+            },
+            "sleep": {
+                "rem_replay_pressure": 0.82,
+                "dream_intrusion_pressure": 0.74,
+                "nightmare_pressure": 0.68,
+            },
+            "body": {
+                "stress": 0.2,
+            },
+        },
+        stimulus_history_influence=StimulusHistoryInfluence(
+            stimulus_pressure=0.22,
+            novelty_pressure=0.18,
+            memory_reentry_pressure=0.24,
+            field_clarity=0.72,
+            gradient_confidence=0.68,
+        ),
+    )
+
+    assert state.rem_replay_pressure >= 0.55
+    assert state.dream_intrusion_pressure >= 0.55
+    assert state.dominant_mode == "restabilize"
+    assert "sleep.rem_replay" in state.reasons
+
+
 def _base_contract_inputs():
     return {
         "interaction_policy": {

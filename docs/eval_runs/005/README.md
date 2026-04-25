@@ -11,7 +11,11 @@
 `ProtectiveTracePalaceState` は以下を持つ。
 
 - `protective_trace_density`
+- `current_crisis_binding`
 - `reentry_sensitivity`
+- `trigger_pressure`
+- `hyperarousal_pressure`
+- `rem_replay_pressure`
 - `sensory_flash_risk`
 - `dream_intrusion_pressure`
 - `somatic_reactivation`
@@ -38,7 +42,8 @@
 - `homeostasis`: `load`, `recovery_need`, `recovery_capacity`
 - `safety`: `dialogue_permission`, `risk_pressure`, `boundary_pressure`
 - `emergency`: `urgency`, `risk_pressure`
-- `sleep`: `dream_intrusion_pressure`, `nightmare_pressure`, `replay_pressure`
+- `sleep`: `rem_replay_pressure`, `dream_intrusion_pressure`, `nightmare_pressure`, `replay_pressure`
+- `environment`: `trigger_salience`, `threat_cue_pressure`
 - `protective_trace`: explicit protective trace axes
 - `stimulus_history_influence`: field clarity, novelty, stimulus pressure, memory reentry pressure
 
@@ -46,6 +51,14 @@
 
 - `protective_hold` / `restabilize`: `response_channel=hold`, `shape_id=reflect_hold`, `question_budget=0`
 - `safe_reconsolidation` / `recovery_opening`: speak を許すが、質問なし、小さな `reflect_step` に寄せる
+
+## 恐怖記憶の現在危機化
+
+今回の追加で、恐怖記憶が「過去の出来事」として定着せず「現在の危機」として再入場する状態を `current_crisis_binding` として分けた。
+
+これは記憶内容のラベルではなく、反応場の読み方である。`current_crisis_binding` が高く、同時に `hyperarousal_pressure` や `trigger_pressure` が高い場合は、意味づけや助言ではなく `protective_hold` を優先する。
+
+また、眠りの浅い REM 期の感情記憶再演は `rem_replay_pressure` として分け、`dream_intrusion_pressure` と合わせて `restabilize` に寄せる。これは夢内容を解釈するためではなく、unsafe replay を安定化前に進めないための監査軸である。
 
 ## 確認結果
 
@@ -66,6 +79,8 @@ uv run pytest tests\test_inner_os_protective_trace_palace.py tests\test_core_qui
 - `body_risk` + 高い再入場圧 + 低い field clarity + 身体再活性化では `protective_hold` になり、LLM を呼ばない。
 - `repair_trace` / `safe_repeat` + 高い recovery capacity + 高い trusted window では `safe_reconsolidation` になり、小さな speak を許す。
 - quickstart の同一入力でも、保護的痕跡がない通常文脈では `speak`、保護的痕跡が強い文脈では `hold` になる。
+- `present_threat_binding` + `trigger_match` + `hyperarousal` では `current_crisis_binding` が上がり、`protective_hold` になる。
+- `rem_replay_pressure` + `dream_intrusion_pressure` では `restabilize` になる。
 
 ## メタ分析
 

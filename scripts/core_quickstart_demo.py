@@ -506,9 +506,21 @@ def _build_quick_audit_projection(
             "protective_trace_density": dict(protective_trace_palace or {}).get(
                 "protective_trace_density", 0.0
             ),
+            "protective_trace_current_crisis_binding": dict(
+                protective_trace_palace or {}
+            ).get("current_crisis_binding", 0.0),
             "protective_trace_reentry_sensitivity": dict(
                 protective_trace_palace or {}
             ).get("reentry_sensitivity", 0.0),
+            "protective_trace_trigger_pressure": dict(
+                protective_trace_palace or {}
+            ).get("trigger_pressure", 0.0),
+            "protective_trace_hyperarousal_pressure": dict(
+                protective_trace_palace or {}
+            ).get("hyperarousal_pressure", 0.0),
+            "protective_trace_rem_replay_pressure": dict(
+                protective_trace_palace or {}
+            ).get("rem_replay_pressure", 0.0),
             "protective_trace_stabilization_need": dict(
                 protective_trace_palace or {}
             ).get("stabilization_need", 0.0),
