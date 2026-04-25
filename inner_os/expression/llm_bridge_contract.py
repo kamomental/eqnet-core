@@ -110,6 +110,25 @@ _SMALL_SHARED_REACTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?:ちょっと楽になる|少し気が楽になる|和む|ほっとする)"),
 )
 
+_INFORMATION_REQUEST_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?:教えて|聞かせて|話して|共有して|描写して)"),
+    re.compile(r"(?:何|なに|なぜ|どうして|どんな|どのよう).{0,16}(?:ですか|ますか|でしょうか|でしたか|かな)"),
+    re.compile(r"(?:どう|どんな).{0,16}(?:感じ|気持ち|出来事|こと|流れ)"),
+)
+
+_INTERPRETATION_ACT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?:つまり|要するに|ということ|という意味)"),
+    re.compile(r"(?:かもしれません|かもしれない|のでしょう|んだろう|ように思(?:える|えます)|ように見える)"),
+    re.compile(r"(?:意味|影響|理由|原因|証拠|サイン|きっかけ|受け止め方)"),
+    re.compile(r"(?:気持ち|心|感覚).{0,12}(?:変化|軽く|緩ん|彩って|表れて)"),
+)
+
+_HEAVY_SURFACE_ACT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?:整理しましょう|受け入れて|休んで|体調管理|あなたのペース)"),
+    re.compile(r"(?:見守って|観察して|振り返って|深く考え|焦点を当てて)"),
+    re.compile(r"(?:一つの入り口|大切です|必要があります|してみてください)"),
+)
+
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
@@ -185,29 +204,64 @@ def _matches_any_pattern(
     return any(pattern.search(normalized) for pattern in patterns)
 
 
+@dataclass(frozen=True)
+class _SentenceFunctionSignal:
+    requests_information: bool = False
+    interprets_meaning: bool = False
+    heavy_surface_act: bool = False
+
+
+def _sentence_function_signal(sentence: str) -> _SentenceFunctionSignal:
+    normalized = _text(sentence)
+    if not normalized:
+        return _SentenceFunctionSignal()
+    requests_information = (
+        "?" in normalized
+        or "？" in normalized
+        or _matches_any_pattern(normalized, _INFORMATION_REQUEST_PATTERNS)
+    )
+    interprets_meaning = _matches_any_pattern(
+        normalized,
+        _INTERPRETATION_ACT_PATTERNS,
+    )
+    heavy_surface_act = _matches_any_pattern(
+        normalized,
+        _HEAVY_SURFACE_ACT_PATTERNS,
+    )
+    return _SentenceFunctionSignal(
+        requests_information=requests_information,
+        interprets_meaning=interprets_meaning,
+        heavy_surface_act=heavy_surface_act,
+    )
+
+
 def _classify_small_shared_moment_sentence(sentence: str) -> set[str]:
     normalized = _text(sentence)
     if not normalized:
         return set()
+    signal = _sentence_function_signal(normalized)
     classes: set[str] = set()
     if _contains_uncertainty_meta(normalized):
         classes.add("uncertainty_meta")
-    if _contains_question(normalized):
+    if _contains_question(normalized) or signal.requests_information:
         classes.add("question")
     if _contains_any(normalized, _ELICITATION_PHRASES) or _matches_any_pattern(
         normalized,
         _ELICITATION_PATTERNS,
-    ):
+    ) or signal.heavy_surface_act:
         classes.add("elicitation")
     if _contains_any(normalized, _ASSISTANT_ATTRACTOR_PHRASES) or _matches_any_pattern(
         normalized,
         _ASSISTANT_ATTRACTOR_PATTERNS,
-    ):
+    ) or signal.heavy_surface_act:
         classes.add("assistant_attractor")
     if _contains_any(
         normalized,
         _INTERPRETIVE_BRIGHT_PHRASES,
-    ) or _matches_any_pattern(normalized, _INTERPRETIVE_BRIGHT_PATTERNS):
+    ) or _matches_any_pattern(
+        normalized,
+        _INTERPRETIVE_BRIGHT_PATTERNS,
+    ) or signal.interprets_meaning:
         classes.add("interpretive_bright")
     if _matches_any_pattern(normalized, _SMALL_SHARED_REACTION_PATTERNS):
         classes.add("small_shared_reaction")
@@ -287,9 +341,11 @@ class _LLMBridgeReviewContext:
     normalized_fallback_text: str
     question_policy: str
     interpretation_budget: str
+    scale: str
     sentence_cap: int
     sentences: tuple[str, ...]
     sentence_classes: tuple[set[str], ...]
+    sentence_signals: tuple[_SentenceFunctionSignal, ...]
 
 
 def _non_meta_sentence_count(context: _LLMBridgeReviewContext) -> int:
@@ -311,6 +367,15 @@ def _detect_common_violations(
             LLMBridgeContractViolation(
                 code="uncertainty_meta_violation",
                 detail="raw text に推定信頼度や不確実要因などの meta text が混ざっています。",
+            )
+        )
+    if context.scale in {"micro", "small"} and any(
+        signal.heavy_surface_act for signal in context.sentence_signals
+    ):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="surface_scale_violation",
+                detail="reaction_contract の scale に対して、発話行為が重くなっています。",
             )
         )
     return violations
@@ -464,6 +529,10 @@ def review_llm_bridge_text(
         _classify_small_shared_moment_sentence(sentence)
         for sentence in sentences
     ]
+    sentence_signals = [
+        _sentence_function_signal(sentence)
+        for sentence in sentences
+    ]
     sentence_cap = 0
     if scale == "micro":
         sentence_cap = 1
@@ -477,9 +546,11 @@ def review_llm_bridge_text(
         normalized_fallback_text=normalized_fallback_text,
         question_policy=question_policy,
         interpretation_budget=interpretation_budget,
+        scale=scale,
         sentence_cap=sentence_cap,
         sentences=tuple(sentences),
         sentence_classes=tuple(sentence_classes),
+        sentence_signals=tuple(sentence_signals),
     )
 
     if not is_small_shared_moment:

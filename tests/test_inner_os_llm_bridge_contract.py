@@ -262,3 +262,45 @@ def test_review_llm_bridge_text_does_not_treat_plain_ippo_as_interpretation() ->
 
     assert review.ok is True
     assert "interpretive_bright_violation" not in review.violation_codes()
+
+
+def test_review_llm_bridge_text_detects_information_request_without_question_mark() -> None:
+    review = review_llm_bridge_text(
+        raw_text="それ、少しだけ教えてもらえると助かります。",
+        reaction_contract={
+            "scale": "small",
+            "question_budget": 0,
+            "interpretation_budget": "none",
+        },
+    )
+
+    assert review.ok is False
+    assert "question_block_violation" in review.violation_codes()
+
+
+def test_review_llm_bridge_text_detects_interpretation_without_keyword_list_hit() -> None:
+    review = review_llm_bridge_text(
+        raw_text="つまり、それは少し気持ちが変化してきたということですね。",
+        reaction_contract={
+            "scale": "medium",
+            "question_budget": 1,
+            "interpretation_budget": "none",
+        },
+    )
+
+    assert review.ok is False
+    assert "interpretation_budget_violation" in review.violation_codes()
+
+
+def test_review_llm_bridge_text_detects_heavy_surface_act_for_small_scale() -> None:
+    review = review_llm_bridge_text(
+        raw_text="今は深く考えずに、ゆっくり休んでみてください。",
+        reaction_contract={
+            "scale": "small",
+            "question_budget": 1,
+            "interpretation_budget": "low",
+        },
+    )
+
+    assert review.ok is False
+    assert "surface_scale_violation" in review.violation_codes()
