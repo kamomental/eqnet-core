@@ -93,6 +93,31 @@ def compile_surface_policy(
     if timing_mode == "held_open":
         prohibited.append("close_or_conclude")
 
+    if _has_forward_brightness_contradiction(
+        interpretation_budget=interpretation_budget,
+        shape_id=shape_id,
+        strategy=_text(contract.get("strategy")),
+        initiative=initiative,
+        execution_mode=_text(contract.get("execution_mode")),
+    ):
+        max_sentences = min(max_sentences, 1)
+        allowed = ["minimal_acknowledgement", "surface_mirror"]
+        prohibited.extend(
+            [
+                "positive_spin",
+                "attribute_motive",
+                "summarize_as_truth",
+                "normalize_or_advise",
+            ]
+        )
+        fallback_shape_id = "low_inference_ack"
+    else:
+        fallback_shape_id = _fallback_shape_id(
+            response_channel=response_channel,
+            shape_id=shape_id,
+            scale=scale,
+        )
+
     return SurfacePolicy(
         response_channel=response_channel,
         max_sentences=max_sentences,
@@ -102,11 +127,7 @@ def compile_surface_policy(
         brightness_budget=brightness_budget,
         allowed_acts=tuple(_dedupe(allowed)),
         prohibited_acts=tuple(_dedupe(prohibited)),
-        fallback_shape_id=_fallback_shape_id(
-            response_channel=response_channel,
-            shape_id=shape_id,
-            scale=scale,
-        ),
+        fallback_shape_id=fallback_shape_id,
     )
 
 
@@ -128,6 +149,24 @@ def _fallback_shape_id(*, response_channel: str, shape_id: str, scale: str) -> s
     if scale == "micro":
         return "micro_ack"
     return "minimal_ack"
+
+
+def _has_forward_brightness_contradiction(
+    *,
+    interpretation_budget: str,
+    shape_id: str,
+    strategy: str,
+    initiative: str,
+    execution_mode: str,
+) -> bool:
+    if interpretation_budget != "none":
+        return False
+    return (
+        shape_id == "bright_bounce"
+        or strategy == "shared_world_next_step"
+        or initiative == "co_move"
+        or execution_mode == "shared_progression"
+    )
 
 
 def _text(value: Any) -> str:

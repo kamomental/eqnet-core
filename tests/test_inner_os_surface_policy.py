@@ -41,12 +41,35 @@ def test_compile_surface_policy_keeps_speak_contract_as_surface_view() -> None:
     )
 
     assert policy.response_channel == "speak"
-    assert policy.max_sentences == 2
+    assert policy.max_sentences == 1
     assert policy.question_budget == 0
     assert policy.interpretation_budget == "none"
     assert policy.advice_budget == 0
     assert policy.brightness_budget == 0
-    assert "natural_surface_text" in policy.allowed_acts
+    assert "minimal_acknowledgement" in policy.allowed_acts
+    assert "surface_mirror" in policy.allowed_acts
     assert "ask_question" in policy.prohibited_acts
     assert "infer_hidden_feeling" in policy.prohibited_acts
-    assert policy.fallback_shape_id == "bright_bounce_minimal"
+    assert "positive_spin" in policy.prohibited_acts
+    assert "attribute_motive" in policy.prohibited_acts
+    assert policy.fallback_shape_id == "low_inference_ack"
+
+
+def test_compile_surface_policy_does_not_guard_non_bright_speak_contract() -> None:
+    policy = compile_surface_policy(
+        {
+            "response_channel": "speak",
+            "scale": "small",
+            "question_budget": 0,
+            "interpretation_budget": "none",
+            "initiative": "receive",
+            "distance_mode": "steady",
+            "timing_mode": "quick_ack",
+            "shape_id": "plain_ack",
+        }
+    )
+
+    assert policy.max_sentences == 2
+    assert "natural_surface_text" in policy.allowed_acts
+    assert "positive_spin" not in policy.prohibited_acts
+    assert policy.fallback_shape_id == "plain_ack_minimal"

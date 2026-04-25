@@ -23,6 +23,7 @@ def test_core_llm_expression_eval_dry_run_exposes_state_conditioned_request() ->
     assert request["surface_policy"]["response_channel"] == "speak"
     assert "surface_policy" in request["user_prompt"]
     assert "reaction_contract" in request["user_prompt"]
+    assert "明るく言い換えない" in request["user_prompt"]
     assert result["review"]["ok"] is True
 
 

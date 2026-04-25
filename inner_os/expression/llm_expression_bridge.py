@@ -184,6 +184,7 @@ def _render_user_prompt(
         f"反応の大きさは {scale} に保つ。",
         f"最大文数は {max_sentences} 文。",
     ]
+    constraints.extend(_surface_policy_constraint_texts(surface_policy))
     if question_budget <= 0:
         constraints.append("質問で終えない。聞き出しに行かない。")
     else:
@@ -201,6 +202,39 @@ def _render_user_prompt(
     if not include_raw_observation:
         payload["raw_observation_policy"] = "raw observation は渡さない。状態要約だけを使う。"
     return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _surface_policy_constraint_texts(surface_policy: Mapping[str, Any]) -> list[str]:
+    allowed = {
+        str(item)
+        for item in surface_policy.get("allowed_acts") or []
+        if str(item).strip()
+    }
+    prohibited = {
+        str(item)
+        for item in surface_policy.get("prohibited_acts") or []
+        if str(item).strip()
+    }
+    constraints: list[str] = []
+    if {"minimal_acknowledgement", "surface_mirror"}.issubset(allowed):
+        constraints.append("短い受け止め、または相手の表面表現の最小反映だけにする。")
+    if "ask_question" in prohibited:
+        constraints.append("質問しない。確認しない。")
+    if prohibited.intersection(
+        {"infer_hidden_feeling", "explain_meaning", "attribute_motive", "summarize_as_truth"}
+    ):
+        constraints.append("相手の内面、理由、意味、動機を推測しない。")
+    if prohibited.intersection({"offer_advice", "normalize_or_advise"}):
+        constraints.append("助言、方針化、正しさの提示をしない。")
+    if prohibited.intersection({"bright_reframe", "positive_spin"}):
+        constraints.append("明るく言い換えない。前向きに整えない。")
+    if "assistant_attractor" in prohibited:
+        constraints.append("支援者、相談員、カウンセラーの口調に寄せない。")
+    if "continue_conversation" in prohibited:
+        constraints.append("会話を広げない。次の話題を促さない。")
+    if "close_or_conclude" in prohibited:
+        constraints.append("結論づけない。終わらせない。")
+    return constraints
 
 
 def _build_fallback_action(contract: Mapping[str, Any]) -> dict[str, Any]:
