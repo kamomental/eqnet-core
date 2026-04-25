@@ -333,8 +333,73 @@ def build_core_demo_result(
         "expected_contract": expectation.to_dict(),
         "evaluation": evaluation.to_dict(),
         "reaction_contract": reaction_contract.to_dict(),
+        "quick_audit_projection": _build_quick_audit_projection(
+            scenario=scenario,
+            contract_inputs=contract_inputs,
+            subjective_scene=subjective_scene,
+            attribution=attribution,
+            shared_presence=shared_presence,
+            joint_state=joint_state.to_dict(),
+            reaction_contract=reaction_contract.to_dict(),
+        ),
         "llm_expression_request": llm_expression_request.to_dict(),
         "response_guideline": _render_response_guideline(reaction_contract.to_dict()),
+    }
+
+
+def _build_quick_audit_projection(
+    *,
+    scenario: CoreDemoScenario,
+    contract_inputs: dict[str, Any],
+    subjective_scene: SubjectiveSceneState,
+    attribution: SelfOtherAttributionState,
+    shared_presence: SharedPresenceState,
+    joint_state: dict[str, Any],
+    reaction_contract: dict[str, Any],
+) -> dict[str, Any]:
+    surface_context = dict(contract_inputs.get("surface_context_packet") or {})
+    source_state = dict(surface_context.get("source_state") or {})
+    action_posture = dict(contract_inputs.get("action_posture") or {})
+    actuation_plan = dict(contract_inputs.get("actuation_plan") or {})
+    return {
+        "schema_version": "quick_audit_projection.v1",
+        "route": "core_quickstart",
+        "note": "Compact audit view for quickstart; response_planner remains the full audit route.",
+        "reaction_contract": dict(reaction_contract),
+        "action_posture": action_posture,
+        "actuation_plan": actuation_plan,
+        "surface_context_source_state": source_state,
+        "surface_context_profile": dict(surface_context.get("surface_profile") or {}),
+        "surface_context_constraints": dict(surface_context.get("constraints") or {}),
+        "organism_state": dict(scenario.organism_state),
+        "external_field_state": dict(scenario.external_field_state),
+        "memory_dynamics_state": dict(scenario.memory_dynamics_state),
+        "joint_state": dict(joint_state),
+        "shared_presence": shared_presence.to_dict(),
+        "subjective_scene": subjective_scene.to_dict(),
+        "self_other_attribution": attribution.to_dict(),
+        "audit_axes": {
+            "response_channel": reaction_contract.get("response_channel"),
+            "stance": reaction_contract.get("stance"),
+            "scale": reaction_contract.get("scale"),
+            "question_budget": reaction_contract.get("question_budget"),
+            "interpretation_budget": reaction_contract.get("interpretation_budget"),
+            "memory_ignition_mode": scenario.memory_dynamics_state.get("ignition_mode", ""),
+            "memory_activation_confidence": scenario.memory_dynamics_state.get(
+                "activation_confidence", 0.0
+            ),
+            "memory_tension": scenario.memory_dynamics_state.get("memory_tension", 0.0),
+            "organism_protective_tension": scenario.organism_state.get(
+                "protective_tension", 0.0
+            ),
+            "external_field_safety_envelope": scenario.external_field_state.get(
+                "safety_envelope", 0.0
+            ),
+            "joint_common_ground": joint_state.get("common_ground", 0.0),
+            "joint_shared_tension": joint_state.get("shared_tension", 0.0),
+            "shared_presence_boundary_stability": shared_presence.boundary_stability,
+            "self_other_unknown_likelihood": attribution.unknown_likelihood,
+        },
     }
 
 

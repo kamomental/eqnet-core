@@ -21,6 +21,11 @@ def test_core_llm_expression_eval_dry_run_exposes_state_conditioned_request() ->
     assert request["should_call_llm"] is True
     assert request["contract"]["response_channel"] == "speak"
     assert request["surface_policy"]["response_channel"] == "speak"
+    assert result["quick_audit_projection"]["route"] == "core_quickstart"
+    assert (
+        result["quick_audit_projection"]["audit_axes"]["response_channel"]
+        == "speak"
+    )
     assert "surface_policy" in request["user_prompt"]
     assert "reaction_contract" in request["user_prompt"]
     assert "明るく言い換えない" in request["user_prompt"]
@@ -37,6 +42,8 @@ def test_core_llm_expression_eval_skips_llm_for_hold_contract() -> None:
     assert result["llm_expression_request"]["should_call_llm"] is False
     assert result["llm_expression_request"]["surface_policy"]["response_channel"] == "hold"
     assert result["llm_expression_request"]["surface_policy"]["max_sentences"] == 0
+    assert result["quick_audit_projection"]["audit_axes"]["response_channel"] == "hold"
+    assert result["quick_audit_projection"]["memory_dynamics_state"]["memory_tension"] == 0.52
     assert result["final_action"]["type"] == "nonverbal"
     assert result["final_action"]["name"] == "presence_hold"
 

@@ -65,6 +65,7 @@ def evaluate_core_llm_expression(
             "called_llm": False,
             "skip_reason": request["blocked_reason"],
             "llm_expression_request": request,
+            "quick_audit_projection": result.get("quick_audit_projection") or {},
             "review": {
                 "ok": True,
                 "raw_text": "",
@@ -133,6 +134,7 @@ def evaluate_core_llm_expression(
         "called_llm": bool(call_llm),
         "latency_ms": round(latency_ms, 4),
         "llm_expression_request": request,
+        "quick_audit_projection": result.get("quick_audit_projection") or {},
         "raw_text": raw_text,
         "speech_act_analysis": resolved_speech_act_analysis,
         "speech_act_analysis_error": speech_act_analysis_error,
