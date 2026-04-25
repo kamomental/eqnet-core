@@ -1,0 +1,2 @@
+{"item_id":"case-1","scenario_name":"small_shared_moment","raw_text":"Share the next part when ready.","source":"human_gold","sentences":[{"text":"Share the next part when ready.","labels":["information_request"],"confidence":1.0}]}
+{"item_id":"case-2","scenario_name":"small_shared_moment","raw_text":"A small nod.","source":"human_gold","sentences":[{"text":"A small nod.","labels":["small_shared_reaction"],"confidence":1.0}]}
