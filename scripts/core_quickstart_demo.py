@@ -472,7 +472,6 @@ def _context_guard_pressure(expression_context: dict[str, Any]) -> float:
     temperament = _context_group(expression_context, "temperament")
     identity = _context_group(expression_context, "identity")
     green_kernel = _context_group(expression_context, "green_kernel")
-    norm = _context_group(expression_context, "norm")
 
     symbolic_pressure = 0.0
     if _context_text(safety, "dialogue_permission") == "boundary_only":
@@ -491,7 +490,6 @@ def _context_guard_pressure(expression_context: dict[str, Any]) -> float:
         _context_float(temperament, "protect_floor"),
         _context_float(identity, "boundary_need"),
         _context_float(green_kernel, "guardedness"),
-        _context_float(norm, "privacy_level"),
     )
     return max(symbolic_pressure, numeric_pressure)
 
