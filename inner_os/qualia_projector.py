@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Protocol, Sequence
 
 import numpy as np
 from numpy.typing import NDArray
 
 from .observation_model import Matrix, Observation, ObservationLayout, Vector
+from .orchestration.field_normalization import (
+    FieldNormalizationConfig,
+    FieldNormalizationResult,
+    normalize_field_values,
+)
 from .self_estimator import Estimate, EstimatorHealth
 
 
@@ -22,6 +27,7 @@ class QualiaState:
     trust_applied: float
     degraded: bool
     reason: str | None
+    normalization_stats: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -35,6 +41,7 @@ class QualiaState:
             "trust_applied": float(self.trust_applied),
             "degraded": bool(self.degraded),
             "reason": self.reason,
+            "normalization_stats": self.normalization_stats,
         }
 
 
@@ -62,6 +69,8 @@ class BasicQualiaProjector:
     theta_q: float = 1.4
     habituation_decay: float = 0.86
     precision_floor: float = 1.0e-6
+    normalization_global_range: float = 1.0
+    normalization_fog_density: float = 0.0
     projector_matrix: Matrix | None = None
 
     def project(
@@ -89,13 +98,18 @@ class BasicQualiaProjector:
         observability = self._observability(obs, est)
         body_coupling = self._body_coupling(obs.layout, obs.mask, est.H, state_dim)
         habituation = self._habituation(prev_h, prev_q)
+        observability_norm = self._normalize_with_stats(observability)
+        precision_norm = self._normalize_with_stats(precision)
+        body_norm = self._normalize_with_stats(body_coupling)
+        value_norm = self._normalize_with_stats(value_grad)
+        habituation_norm = self._normalize_with_stats(habituation)
 
         gate_raw = (
-            self.alpha_observability * _normalize(observability)
-            + self.alpha_precision * _normalize(precision)
-            + self.alpha_body * _normalize(body_coupling)
-            + self.alpha_value * _normalize(value_grad)
-            - self.alpha_habituation * _normalize(habituation)
+            self.alpha_observability * observability_norm.values
+            + self.alpha_precision * precision_norm.values
+            + self.alpha_body * body_norm.values
+            + self.alpha_value * value_norm.values
+            - self.alpha_habituation * habituation_norm.values
             - self.theta_q
         )
         gate = _sigmoid(gate_raw).astype(np.float32)
@@ -118,6 +132,13 @@ class BasicQualiaProjector:
             trust_applied=float(health.trust),
             degraded=bool(health.degraded),
             reason=health.reason,
+            normalization_stats={
+                "observability": observability_norm.stats.to_dict(),
+                "precision": precision_norm.stats.to_dict(),
+                "body_coupling": body_norm.stats.to_dict(),
+                "value_grad": value_norm.stats.to_dict(),
+                "habituation": habituation_norm.stats.to_dict(),
+            },
         )
 
     def _projector(self, state_dim: int) -> Matrix:
@@ -163,6 +184,16 @@ class BasicQualiaProjector:
             + (1.0 - self.habituation_decay) * np.abs(prev_q)
         ).astype(np.float32)
 
+    def _normalize(self, values: Vector) -> Vector:
+        return self._normalize_with_stats(values).values.astype(np.float32)
+
+    def _normalize_with_stats(self, values: Vector) -> FieldNormalizationResult:
+        return _normalize(
+            values,
+            global_range=self.normalization_global_range,
+            fog_density=self.normalization_fog_density,
+        )
+
 
 def _as_vector(values: Sequence[float], size: int, name: str) -> Vector:
     vector = np.asarray(list(values), dtype=np.float32).reshape(-1)
@@ -171,14 +202,27 @@ def _as_vector(values: Sequence[float], size: int, name: str) -> Vector:
     return vector.astype(np.float32)
 
 
-def _normalize(values: Vector) -> Vector:
+def _normalize(
+    values: Vector,
+    *,
+    global_range: float = 1.0,
+    fog_density: float = 0.0,
+) -> FieldNormalizationResult:
     if values.size == 0:
-        return values.astype(np.float32)
-    clipped = np.log1p(np.maximum(values.astype(np.float32), 0.0))
-    scale = float(np.max(clipped))
-    if scale <= 1.0e-6:
-        return np.zeros_like(clipped, dtype=np.float32)
-    return (clipped / scale).astype(np.float32)
+        return normalize_field_values(
+            values.astype(np.float32),
+            FieldNormalizationConfig(
+                global_range=global_range,
+                fog_density=fog_density,
+            ),
+        )
+    return normalize_field_values(
+        values.astype(np.float32),
+        FieldNormalizationConfig(
+            global_range=global_range,
+            fog_density=fog_density,
+        ),
+    )
 
 
 def _sigmoid(values: Vector) -> Vector:

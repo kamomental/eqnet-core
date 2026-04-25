@@ -2,6 +2,7 @@ import numpy as np
 
 from inner_os.observation_model import TensorObservationModel
 from inner_os.qualia_projector import BasicQualiaProjector
+from inner_os.qualia_projector import _normalize
 from inner_os.self_estimator import ResidualLinearSelfEstimator, evaluate_estimator_health
 
 
@@ -55,6 +56,8 @@ def test_qualia_projector_returns_component_vectors_and_respects_shape_contract(
     assert state.observability.shape == (4,)
     assert state.body_coupling.shape == (4,)
     assert state.trust_applied == health.trust
+    assert "value_grad" in state.normalization_stats
+    assert "range_trust" in state.normalization_stats["value_grad"]
 
 
 def test_qualia_projector_uses_predict_only_health_to_hold_close_to_previous_qualia() -> None:
@@ -147,6 +150,17 @@ def test_qualia_projector_value_gradient_changes_gate_and_qualia() -> None:
     assert not np.allclose(base.gate, shifted.gate)
     assert shifted.gate[2] > base.gate[2]
     assert shifted.value_grad[2] > base.value_grad[2]
+
+
+def test_qualia_projector_normalization_keeps_small_axes_visible_under_outlier() -> None:
+    values = np.array([0.2, 0.21, 0.22, 8.0], dtype=np.float32)
+    result = _normalize(values, global_range=1.0)
+    normalized = result.values
+
+    assert float(normalized[1]) > 0.0
+    assert float(normalized[2]) > float(normalized[0])
+    assert float(normalized[-1]) <= 1.0
+    assert result.stats.range_trust < 0.5
 
 
 def test_qualia_projector_habituation_suppresses_gate() -> None:
