@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import json
 import os
+import argparse
 import sys
 import urllib.error
 import urllib.request
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional
 
 from dotenv import load_dotenv
 
@@ -50,7 +51,37 @@ def fetch_models(base: str, key: str, timeout: float = 5.0) -> Dict:
         return json.load(resp)
 
 
+def _model_id(entry: object) -> str:
+    if not isinstance(entry, dict):
+        return ""
+    return str(entry.get("id") or "").strip()
+
+
+def find_preferred_models(models: Iterable[dict], prefer: str) -> list[str]:
+    marker = str(prefer or "").strip().lower()
+    if not marker:
+        return []
+    return [
+        model_id
+        for model_id in (_model_id(entry) for entry in models)
+        if model_id and marker in model_id.lower()
+    ]
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="List models exposed by the configured OpenAI-compatible endpoint.",
+    )
+    parser.add_argument(
+        "--prefer",
+        default="",
+        help="Show exact model IDs matching this marker, e.g. gemma-4-e4b-it.",
+    )
+    return parser
+
+
 def main() -> int:
+    args = _build_parser().parse_args()
     read_env()
     target = _build_target()
     if not target:
@@ -78,7 +109,7 @@ def main() -> int:
 
     print("[llm] available models:")
     for entry in data[:15]:
-        ident = entry.get("id", "(unknown-id)")
+        ident = _model_id(entry) or "(unknown-id)"
         ctx = entry.get("context_length") or entry.get("context_window")
         owner = entry.get("owned_by") or entry.get("object")
         extras = []
@@ -91,6 +122,17 @@ def main() -> int:
 
     if len(data) > 15:
         print(f"  ... and {len(data) - 15} more")
+
+    matches = find_preferred_models(data, args.prefer)
+    if args.prefer:
+        if matches:
+            print(f"[llm] matches for {args.prefer}:")
+            for ident in matches:
+                print(f"  - {ident}")
+            print("[llm] example eval flags:")
+            print(f"  --generator-model {matches[0]} --generator-model-label {matches[0]}")
+        else:
+            print(f"[llm] no model matched prefer marker: {args.prefer}")
 
     model_hint = os.getenv("OPENAI_MODEL") or os.getenv("LMSTUDIO_MODEL")
     if model_hint:

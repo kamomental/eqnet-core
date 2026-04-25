@@ -21,7 +21,7 @@ PREFER = [
     s.strip()
     for s in os.getenv(
         "LLM_MODEL_PREFER",
-        os.getenv("LMSTUDIO_MODEL_PREFER", "Qwen,Llama,Phi,Nous,Deepseek"),
+        os.getenv("LMSTUDIO_MODEL_PREFER", "Gemma,Qwen,Llama,Phi,Nous,Deepseek"),
     ).split(",")
     if s.strip()
 ]
@@ -55,7 +55,7 @@ def _lm_model() -> Optional[str]:
 def _preferred_model_markers() -> List[str]:
     raw = os.getenv(
         "LLM_MODEL_PREFER",
-        os.getenv("LMSTUDIO_MODEL_PREFER", "Qwen,Llama,Phi,Nous,Deepseek"),
+        os.getenv("LMSTUDIO_MODEL_PREFER", "Gemma,Qwen,Llama,Phi,Nous,Deepseek"),
     )
     markers = [s.strip() for s in raw.split(",") if s.strip()]
     return markers or list(PREFER)
