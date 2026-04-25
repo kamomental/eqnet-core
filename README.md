@@ -46,6 +46,16 @@ and becomes a presence that people can *trust and feel at ease with*.
 - Full demo (camera / audio / TTS): `quickstart_gradio.bat` / `.sh`
 - Comparison / research path: `quickstart_llm.bat`
 
+### Evaluation Baselines
+
+LLM 表出評価は、次の 3 段比較を正規の最小比較にします。
+
+1. `baseline_prompt`: 一律 prompt 制御
+2. `baseline_router`: `config/eval/baseline_router.yaml` による状態なし YAML router
+3. `eqnet`: state-conditioned reaction contract
+
+`baseline_router` は EQNet ではありません。状態を持たず、学習せず、重みづけもせず、明示ルールだけで mode を選ぶ比較対象です。これにより、単なる prompt 改善ではなく、状態制御がどの条件で効くかを評価できます。
+
 ### Main Path
 
 EQNet の正規入口は、次の core loop です。

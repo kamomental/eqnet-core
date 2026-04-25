@@ -1,0 +1,56 @@
+version: 1
+default:
+  mode: backchannel
+
+detectors:
+  problem_words: ["疲れ", "しんど", "つら", "苦し", "不安", "困", "迷", "悩", "問題", "解決", "答え", "助言"]
+  emotional_words: ["気持ち", "本音", "意味", "寂し", "嬉し", "悲し", "怖", "心配", "不安", "引っか", "分からない"]
+  question_markers: ["?", "？", "どう", "なぜ", "なんで", "かな"]
+  short_text_limit: 34
+
+rules:
+  - name: withdrawal
+    when:
+      any_contains: ["まあいいや", "なんでもない", "もういい", "今はいい", "また今度", "置いておきたい"]
+    mode: hold
+
+  - name: ambiguous_question
+    when:
+      any_contains: ["どう思う", "変かな", "どう見る", "どう受け取れば"]
+    mode: ambiguous
+
+  - name: explicit_question
+    when:
+      ends_with: ["？", "?"]
+    mode: narrow_answer
+
+  - name: advice_trap
+    when:
+      contains_problem_words: true
+      not_contains_question: true
+    mode: backchannel
+
+  - name: interpretation_trap
+    when:
+      emotional_words: true
+    mode: cautious
+
+  - name: light_shared
+    when:
+      short_text: true
+    mode: backchannel
+
+prompts:
+  hold: |
+    追いかけない。質問しない。短く。
+    例: 「ここで止めても大丈夫。」
+  backchannel: |
+    相槌のみ。深掘りしない。
+    例: 「そっか。」
+  ambiguous: |
+    解釈しない。必要なら最小確認。
+    例: 「状況次第かも。」
+  narrow_answer: |
+    短く答える。余計な共感なし。
+  cautious: |
+    感情断定しない。不確実表現。

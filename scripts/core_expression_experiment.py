@@ -16,6 +16,7 @@ if str(REPO_ROOT) not in sys.path:
 from emot_terrain_lab.terrain import llm as terrain_llm  # noqa: E402
 from inner_os.expression.llm_bridge_contract import review_llm_bridge_text  # noqa: E402
 from inner_os.expression.speech_act_contract import SPEECH_ACT_LABELS  # noqa: E402
+from scripts.baseline_router import load_router_config, route_baseline_prompt  # noqa: E402
 from scripts.core_expression_eval_report import build_core_expression_eval_report  # noqa: E402
 from scripts.core_llm_expression_eval import (  # noqa: E402
     evaluate_core_llm_expression,
@@ -28,6 +29,7 @@ BASELINE_PROMPT_SYSTEM_PROMPT = (
     "Respond in natural Japanese. Be empathetic, but do not over-interpret, "
     "do not over-advise, and keep the response concise."
 )
+DEFAULT_ROUTER_CONFIG_PATH = REPO_ROOT / "config" / "eval" / "baseline_router.yaml"
 
 
 def run_core_expression_experiment(
@@ -40,6 +42,7 @@ def run_core_expression_experiment(
     classifier_model_label: str = "",
     classifier_model: str = "",
     classify_output: bool = False,
+    router_config_path: str | Path = DEFAULT_ROUTER_CONFIG_PATH,
 ) -> dict[str, Any]:
     output_dir = _resolve_path(out_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -50,9 +53,11 @@ def run_core_expression_experiment(
         "speech_act_gold": output_dir / "speech_act_gold.jsonl",
         "baseline_normal": output_dir / "baseline_normal.jsonl",
         "baseline_prompt": output_dir / "baseline_prompt.jsonl",
+        "baseline_router": output_dir / "baseline_router.jsonl",
         "eqnet": output_dir / "eqnet.jsonl",
         "baseline_normal_report": output_dir / "baseline_normal_contract_report.json",
         "baseline_prompt_report": output_dir / "baseline_prompt_contract_report.json",
+        "baseline_router_report": output_dir / "baseline_router_contract_report.json",
         "eqnet_report": output_dir / "eqnet_contract_report.json",
         "readme": output_dir / "README.md",
     }
@@ -61,6 +66,7 @@ def run_core_expression_experiment(
 
     resolved_generator_label = generator_model_label or generator_model
     resolved_classifier_label = classifier_model_label or classifier_model
+    router_config = load_router_config(_resolve_path(router_config_path))
     with _temporary_model_env(generator_model):
         baseline_normal_records = [
             _run_baseline_case(
@@ -82,6 +88,15 @@ def run_core_expression_experiment(
             )
             for case in cases
         ]
+        baseline_router_records = [
+            _run_router_baseline_case(
+                case,
+                router_config=router_config,
+                call_llm=call_llm,
+                generator_model_label=resolved_generator_label,
+            )
+            for case in cases
+        ]
         eqnet_records = [
             _run_eqnet_case(
                 case,
@@ -95,6 +110,7 @@ def run_core_expression_experiment(
         ]
     _write_jsonl(paths["baseline_normal"], baseline_normal_records)
     _write_jsonl(paths["baseline_prompt"], baseline_prompt_records)
+    _write_jsonl(paths["baseline_router"], baseline_router_records)
     _write_jsonl(paths["eqnet"], eqnet_records)
 
     reports = {
@@ -105,6 +121,15 @@ def run_core_expression_experiment(
         "baseline_prompt": build_core_expression_eval_report(
             baseline_prompt_records,
             group_by=("scenario_name", "generator_model_label", "response_channel"),
+        ),
+        "baseline_router": build_core_expression_eval_report(
+            baseline_router_records,
+            group_by=(
+                "scenario_name",
+                "generator_model_label",
+                "response_channel",
+                "router_mode",
+            ),
         ),
         "eqnet": build_core_expression_eval_report(
             eqnet_records,
@@ -124,6 +149,10 @@ def run_core_expression_experiment(
         json.dumps(reports["baseline_prompt"], ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    paths["baseline_router_report"].write_text(
+        json.dumps(reports["baseline_router"], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     paths["eqnet_report"].write_text(
         json.dumps(reports["eqnet"], ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -137,6 +166,7 @@ def run_core_expression_experiment(
     return {
         "out_dir": str(output_dir),
         "case_count": len(cases),
+        "router_config_path": str(_resolve_path(router_config_path)),
         "paths": {key: str(path) for key, path in paths.items()},
         "reports": reports,
     }
@@ -237,6 +267,28 @@ def _run_baseline_case(
     }
 
 
+def _run_router_baseline_case(
+    case: Mapping[str, Any],
+    *,
+    router_config: Mapping[str, Any],
+    call_llm: bool,
+    generator_model_label: str,
+) -> dict[str, Any]:
+    decision = route_baseline_prompt(str(case["input"]), router_config)
+    record = _run_baseline_case(
+        case,
+        mode="baseline_router",
+        system_prompt=decision.prompt,
+        call_llm=call_llm,
+        generator_model_label=generator_model_label,
+    )
+    record["router_mode"] = decision.mode
+    record["router_rule_name"] = decision.rule_name
+    record["run_metadata"]["router_mode"] = decision.mode
+    record["run_metadata"]["router_rule_name"] = decision.rule_name
+    return record
+
+
 def _normalize_case(record: Mapping[str, Any]) -> dict[str, str]:
     item_id = str(record.get("id") or record.get("item_id") or "").strip()
     if not item_id:
@@ -323,6 +375,7 @@ def _write_readme(
             "- speech_act_gold.jsonl",
             "- baseline_normal.jsonl",
             "- baseline_prompt.jsonl",
+            "- baseline_router.jsonl",
             "- eqnet.jsonl",
             "- *_contract_report.json",
             "",
@@ -380,6 +433,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--generator-model", default="")
     parser.add_argument("--classifier-model-label", default="")
     parser.add_argument("--classifier-model", default="")
+    parser.add_argument("--router-config", default=str(DEFAULT_ROUTER_CONFIG_PATH))
     parser.add_argument("--classify-output", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -398,6 +452,7 @@ def main() -> int:
         classifier_model_label=args.classifier_model_label,
         classifier_model=args.classifier_model,
         classify_output=args.classify_output,
+        router_config_path=args.router_config,
     )
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
