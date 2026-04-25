@@ -506,6 +506,7 @@ python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMM
    生成器と監査器を分ける場合は `--classifier-model-label` / `--classifier-model` / `--classifier-base-url` / `--classifier-api-key` を指定します。人手ラベル済みの JSONL を使う場合は `--speech-act-jsonl <path>` を指定し、同じ speech-act schema で review できます。
    `--save-jsonl artifacts/core_llm_expression_eval.jsonl --model-label <model>` を付けると、モデル別の出力と contract review を後から比較できる証跡として保存できます。
    分類器の精度は保証せず、監査します。人手 gold と分類器出力を比較するには `python scripts/speech_act_classifier_eval.py --gold-jsonl <gold> --prediction-jsonl <pred> --json` を使い、重要ラベルの `false_negative` / `precision` / `recall` / confusion matrix を確認します。
+   保存済み expression eval は `python scripts/core_expression_eval_report.py --eval-jsonl artifacts/core_llm_expression_eval.jsonl --group-by scenario_name,generator_model_label,classifier_model_label,response_channel --json` で条件別の contract violation rate と失敗モードを集計できます。CI では `--min-samples` と `--fail-on-violation-rate` を指定して閾値超過を失敗扱いにできます。
 
 これが、現在の EQNet 本流を最も短く確認する導線です。
 
