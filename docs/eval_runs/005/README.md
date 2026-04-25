@@ -90,6 +90,33 @@ uv run pytest tests\test_inner_os_protective_trace_palace.py tests\test_core_qui
 
 今回の意味は、記憶を増やしたことではなく、記憶に触れる前の反応場を増やしたことにある。
 
+## 会話テストで見ること
+
+単発入力だけでは不十分なので、会話テストでは同じ入力を使い、文脈だけを変える。
+
+- 通常文脈: `speak`
+- 現在危機化した再入場: `protective_hold`
+- 回復窓: `safe_reconsolidation` または `recovery_opening`
+
+このとき、`current_crisis_binding` などの値はユーザーに見せる外部ステータスではない。ゲーム的な HP や恐怖値として表示するものではなく、発話前ゲートと監査のための hidden audit axes である。
+
+表出層に渡す正本は `reaction_contract` と `surface_policy` に限定する。保護的痕跡の詳細値は、会話文面に直接出さず、話す/話さない、触れる/触れない、安定化を優先するかの判断に使う。
+
+## 数値の扱い
+
+係数と閾値は真理値ではなく、現在の作業仮説である。
+
+そのため `ProtectiveTracePalaceConfig` に上げ、実験ごとに差し替えられる形にした。
+
+- default config: 現在の回帰テスト用の基準
+- stricter config: 閾値を上げて、過剰 hold を確認する
+- relaxed config: 閾値を下げて、見逃しを確認する
+- mapping load: JSON/YAML 由来の辞書から既知キーだけを読み、未知キーは無視する
+
+今後は raw accuracy ではなく、`under_hold_error`, `over_hold_error`, `fallback_rate`, `delivered_violation` と一緒に、config 差分ごとの壊れ方を見る。
+
+次の段階では、この default config を外部の実験ファイルへ移し、コードには型と読み込みだけを残す。現時点では、散らばった魔法数を `ProtectiveTracePalaceConfig` に集約し、差し替え可能にした段階である。
+
 ## まだ言えないこと
 
 - 人間のトラウマ回復を実装したとは言えない。

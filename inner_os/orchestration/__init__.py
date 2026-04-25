@@ -12,6 +12,7 @@ from .field_normalization import (
     normalize_field_values,
 )
 from .protective_trace_palace import (
+    ProtectiveTracePalaceConfig,
     ProtectiveTracePalaceState,
     apply_protective_trace_palace_to_contract_inputs,
     derive_protective_trace_palace_state,
@@ -27,6 +28,7 @@ __all__ = [
     "FieldNormalizationConfig",
     "FieldNormalizationResult",
     "FieldNormalizationStats",
+    "ProtectiveTracePalaceConfig",
     "ProtectiveTracePalaceState",
     "StimulusHistoryInfluence",
     "apply_context_influence_to_contract_inputs",

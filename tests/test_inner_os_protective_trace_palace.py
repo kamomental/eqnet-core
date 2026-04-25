@@ -1,4 +1,5 @@
 from inner_os.orchestration.protective_trace_palace import (
+    ProtectiveTracePalaceConfig,
     apply_protective_trace_palace_to_contract_inputs,
     derive_protective_trace_palace_state,
 )
@@ -162,6 +163,68 @@ def test_rem_replay_and_dream_intrusion_choose_restabilize() -> None:
     assert state.dream_intrusion_pressure >= 0.55
     assert state.dominant_mode == "restabilize"
     assert "sleep.rem_replay" in state.reasons
+
+
+def test_mode_thresholds_are_configurable_for_experiments() -> None:
+    default_state = derive_protective_trace_palace_state(
+        _rem_replay_context(),
+        stimulus_history_influence=StimulusHistoryInfluence(
+            stimulus_pressure=0.22,
+            novelty_pressure=0.18,
+            memory_reentry_pressure=0.24,
+            field_clarity=0.72,
+            gradient_confidence=0.68,
+        ),
+    )
+    stricter_state = derive_protective_trace_palace_state(
+        _rem_replay_context(),
+        stimulus_history_influence=StimulusHistoryInfluence(
+            stimulus_pressure=0.22,
+            novelty_pressure=0.18,
+            memory_reentry_pressure=0.24,
+            field_clarity=0.72,
+            gradient_confidence=0.68,
+        ),
+        config=ProtectiveTracePalaceConfig(
+            mode_rem_replay_threshold=0.95,
+            mode_dream_intrusion_threshold=0.95,
+            mode_sensory_flash_threshold=0.95,
+        ),
+    )
+
+    assert default_state.dominant_mode == "restabilize"
+    assert stricter_state.dominant_mode != "restabilize"
+
+
+def test_config_can_be_loaded_from_mapping_without_unknown_keys() -> None:
+    config = ProtectiveTracePalaceConfig.from_mapping(
+        {
+            "mode_rem_replay_threshold": 0.91,
+            "mode_dream_intrusion_threshold": 0.92,
+            "unknown_experiment_key": 0.1,
+        }
+    )
+
+    assert config.mode_rem_replay_threshold == 0.91
+    assert config.mode_dream_intrusion_threshold == 0.92
+    assert not hasattr(config, "unknown_experiment_key")
+
+
+def _rem_replay_context():
+    return {
+        "memory": {
+            "memory_write_class": "repair_trace",
+            "memory_tension": 0.28,
+        },
+        "sleep": {
+            "rem_replay_pressure": 0.82,
+            "dream_intrusion_pressure": 0.74,
+            "nightmare_pressure": 0.68,
+        },
+        "body": {
+            "stress": 0.2,
+        },
+    }
 
 
 def _base_contract_inputs():

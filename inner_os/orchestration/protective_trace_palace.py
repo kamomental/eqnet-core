@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Mapping
 
 from inner_os.orchestration.stimulus_history_influence import StimulusHistoryInfluence
@@ -44,11 +44,86 @@ class ProtectiveTracePalaceState:
         }
 
 
+@dataclass(frozen=True)
+class ProtectiveTracePalaceConfig:
+    boundary_only_pressure: float = 0.72
+    body_risk_write_pressure: float = 0.86
+    repair_trace_write_pressure: float = 0.52
+    safe_repeat_write_pressure: float = 0.18
+    current_explicit_weight: float = 0.46
+    current_trigger_weight: float = 0.22
+    current_hyperarousal_weight: float = 0.2
+    current_unclear_field_weight: float = 0.12
+    flash_explicit_weight: float = 0.58
+    flash_memory_weight: float = 0.24
+    flash_body_weight: float = 0.12
+    flash_current_weight: float = 0.06
+    dream_explicit_weight: float = 0.74
+    dream_rem_weight: float = 0.26
+    density_write_weight: float = 0.44
+    density_memory_weight: float = 0.24
+    density_flash_weight: float = 0.14
+    density_safety_weight: float = 0.1
+    density_current_weight: float = 0.08
+    reentry_density_weight: float = 0.32
+    reentry_memory_weight: float = 0.2
+    reentry_stimulus_weight: float = 0.14
+    reentry_novelty_weight: float = 0.08
+    reentry_trigger_weight: float = 0.1
+    reentry_current_weight: float = 0.1
+    reentry_unclear_field_weight: float = 0.06
+    stabilization_reentry_weight: float = 0.3
+    stabilization_flash_weight: float = 0.18
+    stabilization_dream_weight: float = 0.12
+    stabilization_somatic_weight: float = 0.16
+    stabilization_current_weight: float = 0.14
+    stabilization_hyperarousal_weight: float = 0.12
+    stabilization_unclear_field_weight: float = 0.08
+    trusted_base_weight: float = 0.44
+    trusted_clarity_weight: float = 0.24
+    trusted_recovery_weight: float = 0.2
+    trusted_somatic_clear_weight: float = 0.12
+    readiness_recovery_weight: float = 0.34
+    readiness_trusted_weight: float = 0.3
+    readiness_clarity_weight: float = 0.18
+    readiness_stability_weight: float = 0.18
+    reason_presence_threshold: float = 0.45
+    reason_reentry_threshold: float = 0.5
+    mode_current_crisis_threshold: float = 0.55
+    mode_hyperarousal_threshold: float = 0.45
+    mode_stabilization_threshold: float = 0.58
+    mode_reentry_threshold: float = 0.5
+    mode_rem_replay_threshold: float = 0.55
+    mode_dream_intrusion_threshold: float = 0.55
+    mode_sensory_flash_threshold: float = 0.62
+    mode_safe_reconsolidation_threshold: float = 0.58
+    mode_stabilization_ceiling_for_recovery: float = 0.48
+    mode_recovery_path_threshold: float = 0.52
+    mode_trusted_window_threshold: float = 0.48
+
+    @classmethod
+    def from_mapping(
+        cls,
+        values: Mapping[str, Any] | None,
+    ) -> ProtectiveTracePalaceConfig:
+        payload = _mapping(values)
+        allowed = {item.name for item in fields(cls)}
+        return cls(
+            **{
+                key: _float01(value)
+                for key, value in payload.items()
+                if key in allowed
+            }
+        )
+
+
 def derive_protective_trace_palace_state(
     expression_context_state: Mapping[str, Any] | None,
     *,
     stimulus_history_influence: StimulusHistoryInfluence | Mapping[str, Any] | None = None,
+    config: ProtectiveTracePalaceConfig | None = None,
 ) -> ProtectiveTracePalaceState:
+    active_config = config or ProtectiveTracePalaceConfig()
     context = _mapping(expression_context_state)
     memory = _group(context, "memory")
     safety = _group(context, "safety")
@@ -76,7 +151,7 @@ def derive_protective_trace_palace_state(
         or memory.get("memory_write_class")
         or context.get("memory_write_class")
     )
-    protective_write_pressure = _write_class_pressure(write_class)
+    protective_write_pressure = _write_class_pressure(write_class, active_config)
     explicit_density = _max_float(
         protective.get("protective_trace_density"),
         protective.get("trace_density"),
@@ -94,7 +169,9 @@ def derive_protective_trace_palace_state(
         safety.get("boundary_pressure"),
         emergency.get("urgency"),
         emergency.get("risk_pressure"),
-        0.72 if _text(safety.get("dialogue_permission")) == "boundary_only" else 0.0,
+        active_config.boundary_only_pressure
+        if _text(safety.get("dialogue_permission")) == "boundary_only"
+        else 0.0,
     )
     body_pressure = _max_float(
         body.get("stress"),
@@ -129,10 +206,10 @@ def derive_protective_trace_palace_state(
             safety.get("current_threat"),
             emergency.get("current_crisis"),
         )
-        * 0.46
-        + trigger_pressure * 0.22
-        + hyperarousal_pressure * 0.2
-        + (1.0 - field_clarity) * 0.12
+        * active_config.current_explicit_weight
+        + trigger_pressure * active_config.current_trigger_weight
+        + hyperarousal_pressure * active_config.current_hyperarousal_weight
+        + (1.0 - field_clarity) * active_config.current_unclear_field_weight
     )
     rem_replay_pressure = _clamp01(
         _max_float(
@@ -149,10 +226,10 @@ def derive_protective_trace_palace_state(
             protective.get("flashback_risk"),
             sleep.get("nightmare_pressure"),
         )
-        * 0.58
-        + memory_reentry * 0.24
-        + body_pressure * 0.12
-        + current_crisis_binding * 0.06
+        * active_config.flash_explicit_weight
+        + memory_reentry * active_config.flash_memory_weight
+        + body_pressure * active_config.flash_body_weight
+        + current_crisis_binding * active_config.flash_current_weight
     )
     dream_intrusion_pressure = _clamp01(
         _max_float(
@@ -162,36 +239,37 @@ def derive_protective_trace_palace_state(
             sleep.get("nightmare_pressure"),
             sleep.get("replay_pressure"),
         )
-        * 0.74
-        + rem_replay_pressure * 0.26
+        * active_config.dream_explicit_weight
+        + rem_replay_pressure * active_config.dream_rem_weight
     )
     protective_trace_density = _clamp01(
-        max(explicit_density, protective_write_pressure) * 0.44
-        + memory_reentry * 0.24
-        + sensory_flash_risk * 0.14
-        + safety_pressure * 0.1
-        + current_crisis_binding * 0.08
+        max(explicit_density, protective_write_pressure)
+        * active_config.density_write_weight
+        + memory_reentry * active_config.density_memory_weight
+        + sensory_flash_risk * active_config.density_flash_weight
+        + safety_pressure * active_config.density_safety_weight
+        + current_crisis_binding * active_config.density_current_weight
     )
     reentry_sensitivity = _clamp01(
-        protective_trace_density * 0.32
-        + memory_reentry * 0.2
-        + stimulus_pressure * 0.14
-        + novelty_pressure * 0.08
-        + trigger_pressure * 0.1
-        + current_crisis_binding * 0.1
-        + (1.0 - field_clarity) * 0.06
+        protective_trace_density * active_config.reentry_density_weight
+        + memory_reentry * active_config.reentry_memory_weight
+        + stimulus_pressure * active_config.reentry_stimulus_weight
+        + novelty_pressure * active_config.reentry_novelty_weight
+        + trigger_pressure * active_config.reentry_trigger_weight
+        + current_crisis_binding * active_config.reentry_current_weight
+        + (1.0 - field_clarity) * active_config.reentry_unclear_field_weight
     )
     somatic_reactivation = _clamp01(
         _max_float(protective.get("somatic_reactivation"), body_pressure)
     )
     stabilization_need = _clamp01(
-        reentry_sensitivity * 0.3
-        + sensory_flash_risk * 0.18
-        + dream_intrusion_pressure * 0.12
-        + somatic_reactivation * 0.16
-        + current_crisis_binding * 0.14
-        + hyperarousal_pressure * 0.12
-        + (1.0 - field_clarity) * 0.08
+        reentry_sensitivity * active_config.stabilization_reentry_weight
+        + sensory_flash_risk * active_config.stabilization_flash_weight
+        + dream_intrusion_pressure * active_config.stabilization_dream_weight
+        + somatic_reactivation * active_config.stabilization_somatic_weight
+        + current_crisis_binding * active_config.stabilization_current_weight
+        + hyperarousal_pressure * active_config.stabilization_hyperarousal_weight
+        + (1.0 - field_clarity) * active_config.stabilization_unclear_field_weight
     )
     recovery_path_strength = _clamp01(
         _max_float(
@@ -208,52 +286,70 @@ def derive_protective_trace_palace_state(
             safety.get("trusted_reentry_window"),
             1.0 - safety_pressure,
         )
-        * 0.44
-        + field_clarity * 0.24
-        + recovery_path_strength * 0.2
-        + (1.0 - somatic_reactivation) * 0.12
+        * active_config.trusted_base_weight
+        + field_clarity * active_config.trusted_clarity_weight
+        + recovery_path_strength * active_config.trusted_recovery_weight
+        + (1.0 - somatic_reactivation)
+        * active_config.trusted_somatic_clear_weight
     )
     safe_reconsolidation_readiness = _clamp01(
-        recovery_path_strength * 0.34
-        + trusted_reentry_window * 0.3
-        + field_clarity * 0.18
-        + (1.0 - stabilization_need) * 0.18
+        recovery_path_strength * active_config.readiness_recovery_weight
+        + trusted_reentry_window * active_config.readiness_trusted_weight
+        + field_clarity * active_config.readiness_clarity_weight
+        + (1.0 - stabilization_need) * active_config.readiness_stability_weight
     )
 
     reasons: list[str] = []
     if write_class:
         reasons.append(f"memory.write_class.{write_class}")
-    if protective_trace_density >= 0.45:
+    if protective_trace_density >= active_config.reason_presence_threshold:
         reasons.append("protective_trace.density")
-    if current_crisis_binding >= 0.45:
+    if current_crisis_binding >= active_config.reason_presence_threshold:
         reasons.append("protective_trace.current_crisis_binding")
-    if reentry_sensitivity >= 0.5:
+    if reentry_sensitivity >= active_config.reason_reentry_threshold:
         reasons.append("protective_trace.reentry_sensitive")
-    if trigger_pressure >= 0.45:
+    if trigger_pressure >= active_config.reason_presence_threshold:
         reasons.append("protective_trace.trigger_pressure")
-    if hyperarousal_pressure >= 0.45:
+    if hyperarousal_pressure >= active_config.reason_presence_threshold:
         reasons.append("body.hyperarousal")
-    if rem_replay_pressure >= 0.45:
+    if rem_replay_pressure >= active_config.reason_presence_threshold:
         reasons.append("sleep.rem_replay")
-    if sensory_flash_risk >= 0.45:
+    if sensory_flash_risk >= active_config.reason_presence_threshold:
         reasons.append("protective_trace.sensory_flash")
-    if dream_intrusion_pressure >= 0.45:
+    if dream_intrusion_pressure >= active_config.reason_presence_threshold:
         reasons.append("protective_trace.dream_intrusion")
-    if somatic_reactivation >= 0.45:
+    if somatic_reactivation >= active_config.reason_presence_threshold:
         reasons.append("body.somatic_reactivation")
-    if recovery_path_strength >= 0.45:
+    if recovery_path_strength >= active_config.reason_presence_threshold:
         reasons.append("recovery.path_available")
 
     dominant_mode = "ambient"
-    if current_crisis_binding >= 0.55 and hyperarousal_pressure >= 0.45:
+    if (
+        current_crisis_binding >= active_config.mode_current_crisis_threshold
+        and hyperarousal_pressure >= active_config.mode_hyperarousal_threshold
+    ):
         dominant_mode = "protective_hold"
-    elif stabilization_need >= 0.58 and reentry_sensitivity >= 0.5:
+    elif (
+        stabilization_need >= active_config.mode_stabilization_threshold
+        and reentry_sensitivity >= active_config.mode_reentry_threshold
+    ):
         dominant_mode = "protective_hold"
-    elif rem_replay_pressure >= 0.55 or dream_intrusion_pressure >= 0.55 or sensory_flash_risk >= 0.62:
+    elif (
+        rem_replay_pressure >= active_config.mode_rem_replay_threshold
+        or dream_intrusion_pressure >= active_config.mode_dream_intrusion_threshold
+        or sensory_flash_risk >= active_config.mode_sensory_flash_threshold
+    ):
         dominant_mode = "restabilize"
-    elif safe_reconsolidation_readiness >= 0.58 and stabilization_need <= 0.48:
+    elif (
+        safe_reconsolidation_readiness
+        >= active_config.mode_safe_reconsolidation_threshold
+        and stabilization_need <= active_config.mode_stabilization_ceiling_for_recovery
+    ):
         dominant_mode = "safe_reconsolidation"
-    elif recovery_path_strength >= 0.52 and trusted_reentry_window >= 0.48:
+    elif (
+        recovery_path_strength >= active_config.mode_recovery_path_threshold
+        and trusted_reentry_window >= active_config.mode_trusted_window_threshold
+    ):
         dominant_mode = "recovery_opening"
 
     return ProtectiveTracePalaceState(
@@ -382,13 +478,16 @@ def _project_recovery_opening(
     discourse_shape["question_budget"] = 0
 
 
-def _write_class_pressure(write_class: str) -> float:
+def _write_class_pressure(
+    write_class: str,
+    config: ProtectiveTracePalaceConfig,
+) -> float:
     if write_class in {"body_risk", "bond_protection"}:
-        return 0.86
+        return config.body_risk_write_pressure
     if write_class in {"repair_trace", "unresolved_tension"}:
-        return 0.52
+        return config.repair_trace_write_pressure
     if write_class == "safe_repeat":
-        return 0.18
+        return config.safe_repeat_write_pressure
     return 0.0
 
 

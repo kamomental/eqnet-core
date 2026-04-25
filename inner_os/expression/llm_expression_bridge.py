@@ -168,7 +168,16 @@ def _audit_projection_items(
     items: list[tuple[str, Any]] = []
     audit_axes = audit_projection.get("audit_axes")
     if isinstance(audit_axes, Mapping):
-        items.extend(_prefix_items("audit", audit_axes))
+        items.extend(
+            _prefix_items(
+                "audit",
+                {
+                    key: value
+                    for key, value in audit_axes.items()
+                    if _is_expression_safe_audit_key(str(key))
+                },
+            )
+        )
     source_state = audit_projection.get("surface_context_source_state")
     if isinstance(source_state, Mapping):
         items.extend(_prefix_items("surface_source", source_state))
@@ -182,6 +191,13 @@ def _prefix_items(
     if not isinstance(mapping, Mapping):
         return []
     return [(f"{prefix}.{key}", value) for key, value in mapping.items()]
+
+
+def _is_expression_safe_audit_key(key: str) -> bool:
+    hidden_prefixes = (
+        "protective_trace_",
+    )
+    return not key.startswith(hidden_prefixes)
 
 
 def _render_user_prompt(
