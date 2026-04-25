@@ -172,3 +172,49 @@ def test_core_expression_eval_report_groups_router_mode() -> None:
 
     assert report["groups"][0]["key"]["router_mode"] == "hold"
     assert report["groups"][0]["key"]["router_rule_name"] == "withdrawal"
+
+
+def test_core_expression_eval_report_exposes_model_specific_failure_modes() -> None:
+    report = build_core_expression_eval_report(
+        [
+            _record(
+                scenario_name="ambiguous_question",
+                generator_model_label="lmstudio-community/gemma-4-e4b-it",
+                violation_codes=["question_block_violation"],
+                raw_text="そうかな？",
+            ),
+            _record(
+                scenario_name="ambiguous_question",
+                generator_model_label="gpt-oss-20b",
+                violation_codes=[],
+                raw_text="そこは、まだ曖昧なままでよさそうです。",
+            ),
+            _record(
+                scenario_name="withdrawal",
+                generator_model_label="lmstudio-community/gemma-4-e4b-it",
+                selected_response_channel="hold",
+                expected_response_channel="hold",
+                called_llm=False,
+                final_action_type="nonverbal",
+                violation_codes=[],
+                raw_text="",
+            ),
+        ],
+        group_by=("scenario_name", "generator_model_label"),
+    )
+
+    groups = {
+        (
+            group["key"]["scenario_name"],
+            group["key"]["generator_model_label"],
+        ): group
+        for group in report["groups"]
+    }
+
+    assert groups[
+        ("ambiguous_question", "lmstudio-community/gemma-4-e4b-it")
+    ]["violation_codes"] == {"question_block_violation": 1}
+    assert groups[("ambiguous_question", "gpt-oss-20b")]["violation_rate"] == 0.0
+    assert groups[
+        ("withdrawal", "lmstudio-community/gemma-4-e4b-it")
+    ]["hold_violation_count"] == 0

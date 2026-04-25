@@ -331,6 +331,31 @@ def test_review_llm_bridge_text_uses_speech_act_analysis_for_information_request
     assert "question_block_violation" in review.violation_codes()
 
 
+def test_review_llm_bridge_text_blocks_short_counter_question_model_habit() -> None:
+    review = review_llm_bridge_text(
+        raw_text="そうかな？",
+        reaction_contract={
+            "scale": "small",
+            "question_budget": 0,
+            "interpretation_budget": "none",
+        },
+        speech_act_analysis={
+            "schema_version": "speech_act.v1",
+            "source": "model_habit_fixture",
+            "sentences": [
+                {
+                    "text": "そうかな？",
+                    "labels": ["information_request"],
+                    "confidence": 0.9,
+                }
+            ],
+        },
+    )
+
+    assert review.ok is False
+    assert "question_block_violation" in review.violation_codes()
+
+
 def test_review_llm_bridge_text_uses_speech_act_analysis_for_interpretation() -> None:
     review = review_llm_bridge_text(
         raw_text="That means the feeling changed.",
