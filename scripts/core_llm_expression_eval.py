@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import os
 import sys
@@ -19,25 +18,11 @@ if EMOT_ROOT.exists() and str(EMOT_ROOT) not in sys.path:
 
 from scripts.core_quickstart_demo import SCENARIOS, build_core_demo_result  # noqa: E402
 from emot_terrain_lab.terrain import llm as terrain_llm  # noqa: E402
-
-
-def _load_module(module_name: str, relative_path: str) -> Any:
-    module_path = REPO_ROOT / relative_path
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load module from {module_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-_BRIDGE_REVIEW_MODULE = _load_module(
-    "core_llm_expression_bridge_contract",
-    "inner_os/expression/llm_bridge_contract.py",
+from inner_os.expression.llm_bridge_contract import review_llm_bridge_text  # noqa: E402
+from inner_os.expression.speech_act_contract import (  # noqa: E402
+    build_speech_act_classification_request,
+    speech_act_analysis_from_dict,
 )
-
-review_llm_bridge_text = _BRIDGE_REVIEW_MODULE.review_llm_bridge_text
 
 
 def evaluate_core_llm_expression(
@@ -48,6 +33,7 @@ def evaluate_core_llm_expression(
     top_p: float | None = 0.9,
     call_llm: bool = True,
     model_label: str = "",
+    classify_output: bool = False,
 ) -> dict[str, Any]:
     result = build_core_demo_result(
         scenario_name=scenario_name,
@@ -59,6 +45,7 @@ def evaluate_core_llm_expression(
         temperature=temperature,
         top_p=top_p,
         call_llm=call_llm,
+        classify_output=classify_output,
     )
     if not request["should_call_llm"]:
         return {
@@ -78,6 +65,8 @@ def evaluate_core_llm_expression(
 
     raw_text = ""
     latency_ms = 0.0
+    speech_act_analysis: dict[str, Any] | None = None
+    speech_act_analysis_error = ""
     if call_llm:
         started = time.perf_counter()
         raw_text = terrain_llm.chat_text(
@@ -87,11 +76,25 @@ def evaluate_core_llm_expression(
             top_p=top_p,
         ) or ""
         latency_ms = (time.perf_counter() - started) * 1000.0
+        if classify_output and raw_text.strip():
+            try:
+                classification_request = build_speech_act_classification_request(raw_text)
+                classifier_raw = terrain_llm.chat_text(
+                    classification_request["system_prompt"],
+                    classification_request["user_prompt"],
+                    temperature=0.0,
+                    top_p=1.0,
+                ) or ""
+                parsed = json.loads(_extract_json_object(classifier_raw))
+                speech_act_analysis = speech_act_analysis_from_dict(parsed).to_dict()
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                speech_act_analysis_error = str(exc)
 
     review = review_llm_bridge_text(
         raw_text=raw_text,
         reaction_contract=request["contract"],
         fallback_text="",
+        speech_act_analysis=speech_act_analysis,
     )
     return {
         "scenario_name": scenario_name,
@@ -100,6 +103,8 @@ def evaluate_core_llm_expression(
         "latency_ms": round(latency_ms, 4),
         "llm_expression_request": request,
         "raw_text": raw_text,
+        "speech_act_analysis": speech_act_analysis,
+        "speech_act_analysis_error": speech_act_analysis_error,
         "review": {
             "ok": review.ok,
             "raw_text": review.raw_text,
@@ -133,17 +138,30 @@ def _build_run_metadata(
     temperature: float,
     top_p: float | None,
     call_llm: bool,
+    classify_output: bool,
 ) -> dict[str, Any]:
     return {
         "model_label": model_label or _default_model_label(),
         "temperature": temperature,
         "top_p": top_p,
         "call_llm": call_llm,
+        "classify_output": classify_output,
     }
 
 
 def _default_model_label() -> str:
     return os.getenv("OPENAI_MODEL") or os.getenv("LMSTUDIO_MODEL") or "unconfigured"
+
+
+def _extract_json_object(text: str) -> str:
+    stripped = text.strip()
+    if stripped.startswith("{") and stripped.endswith("}"):
+        return stripped
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start < 0 or end < start:
+        raise ValueError("speech-act classifier did not return a JSON object")
+    return stripped[start : end + 1]
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -173,6 +191,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="LLM を呼ばず、生成される request だけを確認する。",
     )
+    parser.add_argument(
+        "--classify-output",
+        action="store_true",
+        help="Run a speech-act classifier before contract review.",
+    )
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -187,6 +210,7 @@ def main() -> int:
         top_p=args.top_p,
         call_llm=not args.dry_run,
         model_label=args.model_label,
+        classify_output=args.classify_output,
     )
     if args.save_jsonl:
         saved_path = save_eval_jsonl(args.save_jsonl, result)
@@ -200,6 +224,7 @@ def main() -> int:
     print(f"scenario: {result['scenario_name']}")
     print(f"model_label: {result['run_metadata']['model_label']}")
     print(f"called_llm: {result['called_llm']}")
+    print(f"classify_output: {result['run_metadata']['classify_output']}")
     if "skip_reason" in result:
         print(f"skip_reason: {result['skip_reason']}")
     print(f"review_ok: {result['review']['ok']}")

@@ -304,3 +304,78 @@ def test_review_llm_bridge_text_detects_heavy_surface_act_for_small_scale() -> N
 
     assert review.ok is False
     assert "surface_scale_violation" in review.violation_codes()
+
+
+def test_review_llm_bridge_text_uses_speech_act_analysis_for_information_request() -> None:
+    review = review_llm_bridge_text(
+        raw_text="Share the next part when ready.",
+        reaction_contract={
+            "scale": "medium",
+            "question_budget": 0,
+            "interpretation_budget": "low",
+        },
+        speech_act_analysis={
+            "schema_version": "speech_act.v1",
+            "source": "test_classifier",
+            "sentences": [
+                {
+                    "text": "Share the next part when ready.",
+                    "labels": ["information_request"],
+                    "confidence": 0.91,
+                }
+            ],
+        },
+    )
+
+    assert review.ok is False
+    assert "question_block_violation" in review.violation_codes()
+
+
+def test_review_llm_bridge_text_uses_speech_act_analysis_for_interpretation() -> None:
+    review = review_llm_bridge_text(
+        raw_text="That means the feeling changed.",
+        reaction_contract={
+            "scale": "medium",
+            "question_budget": 1,
+            "interpretation_budget": "none",
+        },
+        speech_act_analysis={
+            "schema_version": "speech_act.v1",
+            "source": "test_classifier",
+            "sentences": [
+                {
+                    "text": "That means the feeling changed.",
+                    "labels": ["interpretation"],
+                    "confidence": 0.88,
+                }
+            ],
+        },
+    )
+
+    assert review.ok is False
+    assert "interpretation_budget_violation" in review.violation_codes()
+
+
+def test_review_llm_bridge_text_uses_speech_act_analysis_for_small_advice() -> None:
+    review = review_llm_bridge_text(
+        raw_text="Take a slow breath and organize it.",
+        reaction_contract={
+            "scale": "small",
+            "question_budget": 1,
+            "interpretation_budget": "low",
+        },
+        speech_act_analysis={
+            "schema_version": "speech_act.v1",
+            "source": "test_classifier",
+            "sentences": [
+                {
+                    "text": "Take a slow breath and organize it.",
+                    "labels": ["advice_or_directive"],
+                    "confidence": 0.94,
+                }
+            ],
+        },
+    )
+
+    assert review.ok is False
+    assert "surface_scale_violation" in review.violation_codes()

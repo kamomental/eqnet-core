@@ -26,6 +26,13 @@ from .llm_expression_bridge import (
     LLMExpressionRequest,
     build_llm_expression_request,
 )
+from .speech_act_contract import (
+    SPEECH_ACT_LABELS,
+    SpeechActAnalysis,
+    SpeechActSentence,
+    build_speech_act_classification_request,
+    speech_act_analysis_from_dict,
+)
 from .surface_expression_selector import (
     SurfaceExpressionCandidate,
     SurfaceExpressionProfile,
@@ -51,6 +58,11 @@ __all__ = [
     "build_expression_hints_from_gate_result",
     "review_llm_bridge_text",
     "build_llm_expression_request",
+    "SPEECH_ACT_LABELS",
+    "SpeechActAnalysis",
+    "SpeechActSentence",
+    "build_speech_act_classification_request",
+    "speech_act_analysis_from_dict",
     "render_response",
     "derive_content_skeleton",
     "derive_content_sequence",

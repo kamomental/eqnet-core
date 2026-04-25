@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import re
 from typing import Any, Mapping, Sequence
 
+from .speech_act_contract import SpeechActAnalysis, speech_act_analysis_from_dict
+
 
 _QUESTION_PHRASES: tuple[str, ...] = (
     "ですか",
@@ -346,6 +348,7 @@ class _LLMBridgeReviewContext:
     sentences: tuple[str, ...]
     sentence_classes: tuple[set[str], ...]
     sentence_signals: tuple[_SentenceFunctionSignal, ...]
+    speech_act_analysis: SpeechActAnalysis | None = None
 
 
 def _non_meta_sentence_count(context: _LLMBridgeReviewContext) -> int:
@@ -376,6 +379,53 @@ def _detect_common_violations(
             LLMBridgeContractViolation(
                 code="surface_scale_violation",
                 detail="reaction_contract の scale に対して、発話行為が重くなっています。",
+            )
+        )
+    return violations
+
+
+def _detect_speech_act_violations(
+    context: _LLMBridgeReviewContext,
+    *,
+    small_shared_moment: bool,
+) -> list[LLMBridgeContractViolation]:
+    analysis = context.speech_act_analysis
+    if analysis is None:
+        return []
+    violations: list[LLMBridgeContractViolation] = []
+    if context.question_policy == "none" and analysis.has_label("information_request"):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="question_block_violation",
+                detail="speech_act classifier detected an information_request while question_policy=none.",
+            )
+        )
+    if context.interpretation_budget == "none" and analysis.has_label("interpretation"):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="interpretation_budget_violation",
+                detail="speech_act classifier detected interpretation while interpretation_budget=none.",
+            )
+        )
+    if context.scale in {"micro", "small"} and analysis.has_label("advice_or_directive"):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="surface_scale_violation",
+                detail="speech_act classifier detected advice_or_directive for a micro/small response.",
+            )
+        )
+    if analysis.has_label("meta_commentary"):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="uncertainty_meta_violation",
+                detail="speech_act classifier detected evaluator or uncertainty meta-commentary in the output.",
+            )
+        )
+    if small_shared_moment and analysis.has_label("support_offer"):
+        violations.append(
+            LLMBridgeContractViolation(
+                code="assistant_attractor_violation",
+                detail="speech_act classifier detected support_offer in a small shared moment.",
             )
         )
     return violations
@@ -496,6 +546,7 @@ def review_llm_bridge_text(
     surface_context_packet: Mapping[str, Any] | None = None,
     reaction_contract: Mapping[str, Any] | None = None,
     fallback_text: str = "",
+    speech_act_analysis: Mapping[str, Any] | None = None,
 ) -> LLMBridgeContractReview:
     normalized_raw_text = _text(raw_text)
     normalized_fallback_text = _text(fallback_text)
@@ -533,6 +584,11 @@ def review_llm_bridge_text(
         _sentence_function_signal(sentence)
         for sentence in sentences
     ]
+    parsed_speech_act_analysis = (
+        speech_act_analysis_from_dict(speech_act_analysis)
+        if isinstance(speech_act_analysis, Mapping)
+        else None
+    )
     sentence_cap = 0
     if scale == "micro":
         sentence_cap = 1
@@ -551,10 +607,15 @@ def review_llm_bridge_text(
         sentences=tuple(sentences),
         sentence_classes=tuple(sentence_classes),
         sentence_signals=tuple(sentence_signals),
+        speech_act_analysis=parsed_speech_act_analysis,
     )
 
     if not is_small_shared_moment:
         violations = [
+            *_detect_speech_act_violations(
+                context,
+                small_shared_moment=False,
+            ),
             *_detect_common_violations(context),
             *_check_non_small_shared(context),
         ]
@@ -573,6 +634,10 @@ def review_llm_bridge_text(
         )
 
     violations = [
+        *_detect_speech_act_violations(
+            context,
+            small_shared_moment=True,
+        ),
         *_detect_common_violations(context),
         *_check_small_shared(context),
     ]

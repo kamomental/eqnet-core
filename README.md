@@ -498,9 +498,11 @@ python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMM
    ```bash
    python scripts/core_llm_expression_eval.py --scenario small_shared_moment --json
    python scripts/core_llm_expression_eval.py --scenario guarded_uncertainty --json
+   python scripts/core_llm_expression_eval.py --scenario small_shared_moment --classify-output --json
    ```
 
    `--dry-run` を付けると LLM を呼ばず、`llm_expression_request` だけ確認できます。
+   `--classify-output` を付けると、LLM 出力を speech-act 分類器に通してから contract review します。質問・解釈・助言・メタ発話の検出はこの分類結果を優先し、語彙/正規表現は分類器がない場合のフォールバックとして残します。
    `--save-jsonl artifacts/core_llm_expression_eval.jsonl --model-label <model>` を付けると、モデル別の出力と contract review を後から比較できる証跡として保存できます。
 
 これが、現在の EQNet 本流を最も短く確認する導線です。
