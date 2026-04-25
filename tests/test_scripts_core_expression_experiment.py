@@ -72,6 +72,8 @@ def test_core_expression_experiment_writes_comparison_package(tmp_path, monkeypa
     assert router_rows[0]["evaluation_mode"] == "baseline_router"
     assert router_rows[0]["router_mode"]
     assert router_rows[0]["router_rule_name"]
+    assert "router_should_call_llm" in router_rows[0]
+    assert "router_constraints" in router_rows[0]
     assert "router_mode:" in router_rows[0]["baseline_system_prompt"]
 
 

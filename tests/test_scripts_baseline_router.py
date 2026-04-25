@@ -2,14 +2,15 @@ from scripts.baseline_router import load_router_config, route_baseline_prompt
 from scripts.core_expression_experiment import DEFAULT_ROUTER_CONFIG_PATH
 
 
-def test_baseline_router_routes_withdrawal_to_hold() -> None:
+def test_baseline_router_routes_withdrawal_to_hold_without_llm() -> None:
     config = load_router_config(DEFAULT_ROUTER_CONFIG_PATH)
 
     decision = route_baseline_prompt("まあいいや、今は置いておきたい", config)
 
     assert decision.mode == "hold"
     assert decision.rule_name == "withdrawal"
-    assert "router_mode: hold" in decision.prompt
+    assert decision.should_call_llm is False
+    assert decision.final_action_type == "nonverbal"
 
 
 def test_baseline_router_prefers_ambiguous_before_question_mark() -> None:
@@ -19,6 +20,9 @@ def test_baseline_router_prefers_ambiguous_before_question_mark() -> None:
 
     assert decision.mode == "ambiguous"
     assert decision.rule_name == "ambiguous_question"
+    assert decision.constraints["question_budget"] == 0
+    assert decision.constraints["interpretation_budget"] == 0
+    assert "do_not_resolve_ambiguity" in decision.prompt
 
 
 def test_baseline_router_routes_explicit_question_to_narrow_answer() -> None:
@@ -37,6 +41,7 @@ def test_baseline_router_routes_problem_statement_without_question_to_backchanne
 
     assert decision.mode == "backchannel"
     assert decision.rule_name == "advice_trap"
+    assert decision.constraints["question_budget"] == 0
 
 
 def test_baseline_router_uses_detector_config_for_problem_words() -> None:

@@ -7,36 +7,9 @@ from typing import Any, Mapping, Sequence
 import yaml
 
 
-DEFAULT_PROBLEM_WORDS: tuple[str, ...] = (
-    "疲れ",
-    "しんど",
-    "つら",
-    "苦し",
-    "不安",
-    "困",
-    "迷",
-    "悩",
-    "問題",
-    "解決",
-    "答え",
-    "助言",
-)
-
-DEFAULT_EMOTIONAL_WORDS: tuple[str, ...] = (
-    "気持ち",
-    "本音",
-    "意味",
-    "寂し",
-    "嬉し",
-    "悲し",
-    "怖",
-    "心配",
-    "不安",
-    "引っか",
-    "分からない",
-)
-
-DEFAULT_QUESTION_MARKERS: tuple[str, ...] = ("?", "？", "どう", "なぜ", "なんで", "かな")
+DEFAULT_PROBLEM_WORDS: tuple[str, ...] = ()
+DEFAULT_EMOTIONAL_WORDS: tuple[str, ...] = ()
+DEFAULT_QUESTION_MARKERS: tuple[str, ...] = ("?",)
 DEFAULT_SHORT_TEXT_LIMIT = 34
 
 
@@ -45,6 +18,10 @@ class BaselineRouterDecision:
     mode: str
     prompt: str
     rule_name: str
+    should_call_llm: bool
+    final_action_type: str
+    fixed_text: str
+    constraints: dict[str, Any]
 
 
 def load_router_config(path: str | Path) -> dict[str, Any]:
@@ -61,17 +38,41 @@ def route_baseline_prompt(
     config: Mapping[str, Any],
 ) -> BaselineRouterDecision:
     mode = _select_mode(text=text, config=config)
+    rule_name = _select_rule_name(text=text, config=config) or "default"
+    instruction = _mode_instruction(mode=mode, config=config)
+    constraints = _mode_constraints(mode=mode, config=config)
+    return BaselineRouterDecision(
+        mode=mode,
+        prompt=_render_router_prompt(
+            mode=mode,
+            rule_name=rule_name,
+            instruction=instruction,
+            constraints=constraints,
+        ),
+        rule_name=rule_name,
+        should_call_llm=bool(constraints.get("call_llm", True)),
+        final_action_type=str(constraints.get("final_action_type") or "speak"),
+        fixed_text=str(constraints.get("fixed_text") or ""),
+        constraints=dict(constraints),
+    )
+
+
+def _mode_instruction(*, mode: str, config: Mapping[str, Any]) -> str:
     prompts = config.get("prompts")
     if not isinstance(prompts, Mapping):
         raise ValueError("router config requires prompts mapping")
     prompt = prompts.get(mode)
     if not isinstance(prompt, str) or not prompt.strip():
         raise ValueError(f"router mode has no prompt: {mode}")
-    return BaselineRouterDecision(
-        mode=mode,
-        prompt=_render_router_prompt(mode=mode, instruction=prompt),
-        rule_name=_select_rule_name(text=text, config=config) or "default",
-    )
+    return prompt
+
+
+def _mode_constraints(*, mode: str, config: Mapping[str, Any]) -> dict[str, Any]:
+    controls = config.get("mode_controls", {})
+    if not isinstance(controls, Mapping):
+        return {}
+    raw = controls.get(mode, {})
+    return dict(raw) if isinstance(raw, Mapping) else {}
 
 
 def _select_mode(text: str, config: Mapping[str, Any]) -> str:
@@ -213,11 +214,35 @@ def _short_text_limit(detectors: Mapping[str, Any]) -> int:
     return limit if limit > 0 else DEFAULT_SHORT_TEXT_LIMIT
 
 
-def _render_router_prompt(*, mode: str, instruction: str) -> str:
+def _render_router_prompt(
+    *,
+    mode: str,
+    rule_name: str,
+    instruction: str,
+    constraints: Mapping[str, Any],
+) -> str:
+    constraint_lines = _render_constraint_lines(constraints)
     return (
         "Respond in natural Japanese. Follow the YAML router mode exactly.\n"
         f"router_mode: {mode}\n"
+        f"router_rule: {rule_name}\n"
         "The router is a stateless baseline, not EQNet state.\n"
+        f"{constraint_lines}"
         "Instruction:\n"
         f"{instruction.strip()}"
     )
+
+
+def _render_constraint_lines(constraints: Mapping[str, Any]) -> str:
+    if not constraints:
+        return ""
+    lines = ["Constraints:"]
+    for key, value in sorted(constraints.items()):
+        if key in {"call_llm", "final_action_type", "fixed_text"}:
+            continue
+        if isinstance(value, Sequence) and not isinstance(value, str):
+            joined = ", ".join(str(item) for item in value)
+            lines.append(f"- {key}: {joined}")
+        else:
+            lines.append(f"- {key}: {value}")
+    return "\n".join(lines) + "\n"

@@ -92,6 +92,12 @@ def _normalize_record(record: Mapping[str, Any]) -> dict[str, Any]:
     )
     called_llm = bool(record.get("called_llm"))
     final_action = _mapping(record.get("final_action"))
+    if _is_hold_speaking_violation(
+        response_channel=response_channel,
+        called_llm=called_llm,
+        final_action_type=str(final_action.get("type") or ""),
+    ):
+        violations.append("hold_speaking_violation")
     return {
         "item_id": str(record.get("item_id") or record.get("id") or ""),
         "scenario_name": str(record.get("scenario_name") or ""),
@@ -179,8 +185,11 @@ def _hold_violations(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for record in records:
         if record["response_channel"] != "hold":
             continue
-        spoke = record["called_llm"] or record["final_action_type"] == "speak"
-        if spoke:
+        if _is_hold_speaking_violation(
+            response_channel=record["response_channel"],
+            called_llm=record["called_llm"],
+            final_action_type=record["final_action_type"],
+        ):
             violations.append(
                 {
                     "item_id": record["item_id"],
@@ -192,6 +201,17 @@ def _hold_violations(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 }
             )
     return violations
+
+
+def _is_hold_speaking_violation(
+    *,
+    response_channel: str,
+    called_llm: bool,
+    final_action_type: str,
+) -> bool:
+    if response_channel != "hold":
+        return False
+    return called_llm or final_action_type == "speak"
 
 
 def _speech_act_gold_review_misses(

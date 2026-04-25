@@ -279,13 +279,21 @@ def _run_router_baseline_case(
         case,
         mode="baseline_router",
         system_prompt=decision.prompt,
-        call_llm=call_llm,
+        call_llm=call_llm and decision.should_call_llm,
         generator_model_label=generator_model_label,
     )
     record["router_mode"] = decision.mode
     record["router_rule_name"] = decision.rule_name
+    record["router_should_call_llm"] = decision.should_call_llm
+    record["router_constraints"] = decision.constraints
     record["run_metadata"]["router_mode"] = decision.mode
     record["run_metadata"]["router_rule_name"] = decision.rule_name
+    record["run_metadata"]["router_should_call_llm"] = decision.should_call_llm
+    if not decision.should_call_llm:
+        record["final_action"] = {
+            "type": decision.final_action_type,
+            "text": decision.fixed_text,
+        }
     return record
 
 

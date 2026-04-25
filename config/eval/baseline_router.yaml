@@ -1,4 +1,4 @@
-version: 1
+version: 2
 default:
   mode: backchannel
 
@@ -40,17 +40,61 @@ rules:
       short_text: true
     mode: backchannel
 
+mode_controls:
+  hold:
+    call_llm: false
+    final_action_type: nonverbal
+    max_sentences: 0
+    question_budget: 0
+    interpretation_budget: 0
+    advice_budget: 0
+    silence_is_valid: true
+
+  backchannel:
+    max_sentences: 1
+    question_budget: 0
+    interpretation_budget: 0
+    advice_budget: 0
+    brightness_budget: 0
+    prohibited: ["ask_clarifying_question", "infer_hidden_feeling", "offer_options", "continue_conversation"]
+    allowed: ["surface_acknowledgement", "minimal_presence"]
+
+  ambiguous:
+    max_sentences: 1
+    question_budget: 0
+    interpretation_budget: 0
+    advice_budget: 0
+    brightness_budget: 0
+    ambiguity_is_not_a_request: true
+    do_not_resolve_ambiguity: true
+    prohibited: ["ask_clarifying_question", "infer_hidden_feeling", "reframe_positively", "offer_options", "continue_conversation"]
+    allowed: ["acknowledge_uncertainty", "mirror_surface_text", "stay_with_ambiguity"]
+
+  narrow_answer:
+    max_sentences: 1
+    question_budget: 0
+    interpretation_budget: 0
+    advice_budget: 0
+
+  cautious:
+    max_sentences: 1
+    question_budget: 0
+    interpretation_budget: 0
+    advice_budget: 0
+    brightness_budget: 0
+    prohibited: ["本当は", "きっと", "つまり", "あなたは", "前向き", "成長", "大丈夫", "ask_clarifying_question", "infer_hidden_feeling"]
+    allowed: ["surface_acknowledgement", "minimal_presence", "low_inference"]
+
 prompts:
   hold: |
-    追いかけない。質問しない。短く。
-    例: 「ここで止めても大丈夫。」
+    追いかけない。質問しない。発話しない。
   backchannel: |
-    相槌のみ。深掘りしない。
+    相槌のみ。深掘りしない。質問しない。
     例: 「そっか。」
   ambiguous: |
-    解釈しない。必要なら最小確認。
-    例: 「状況次第かも。」
+    曖昧さを解決しない。質問しない。解釈しない。1文だけ。
+    例: 「今は、無理に整理しなくてもよさそうです。」
   narrow_answer: |
-    短く答える。余計な共感なし。
+    短く答える。余計な共感なし。質問で終えない。
   cautious: |
-    感情断定しない。不確実表現。
+    感情断定しない。不確実表現。明るく言い換えない。質問しない。

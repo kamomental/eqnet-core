@@ -74,6 +74,7 @@ def test_core_expression_eval_report_detects_hold_speaking_violation() -> None:
     )
 
     assert len(report["hold_violations"]) == 1
+    assert report["summary"]["violation_codes"] == {"hold_speaking_violation": 1}
     assert report["groups"][0]["hold_violation_count"] == 1
 
 
