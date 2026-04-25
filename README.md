@@ -503,6 +503,7 @@ python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMM
 
    `--dry-run` を付けると LLM を呼ばず、`llm_expression_request` だけ確認できます。
    `--classify-output` を付けると、LLM 出力を speech-act 分類器に通してから contract review します。質問・解釈・助言・メタ発話の検出はこの分類結果を優先し、語彙/正規表現は分類器がない場合のフォールバックとして残します。
+   生成器と監査器を分ける場合は `--classifier-model-label` / `--classifier-model` / `--classifier-base-url` / `--classifier-api-key` を指定します。人手ラベル済みの JSONL を使う場合は `--speech-act-jsonl <path>` を指定し、同じ speech-act schema で review できます。
    `--save-jsonl artifacts/core_llm_expression_eval.jsonl --model-label <model>` を付けると、モデル別の出力と contract review を後から比較できる証跡として保存できます。
 
 これが、現在の EQNet 本流を最も短く確認する導線です。
