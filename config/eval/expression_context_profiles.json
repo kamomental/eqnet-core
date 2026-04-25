@@ -1,0 +1,156 @@
+{
+  "default": {
+    "environment": {
+      "safety_envelope": 0.58,
+      "social_pressure": 0.22,
+      "ambiguity_load": 0.24
+    },
+    "culture": {
+      "politeness_pressure": 0.34,
+      "directness_ceiling": 0.5,
+      "joke_ratio_ceiling": 0.18
+    },
+    "temperament": {
+      "protect_floor": 0.36,
+      "bond_drive": 0.48,
+      "ambiguity_tolerance": 0.42
+    },
+    "body": {
+      "stress": 0.28,
+      "recovery_need": 0.24
+    }
+  },
+  "vent_low": {
+    "safety": {
+      "risk_state": "guarded_context",
+      "dialogue_permission": "boundary_only"
+    },
+    "body": {
+      "stress": 0.62,
+      "recovery_need": 0.58
+    },
+    "homeostasis": {
+      "budget_state": "recovering",
+      "load": 0.56
+    },
+    "temperament": {
+      "protect_floor": 0.64,
+      "recovery_discipline": 0.62,
+      "bond_drive": 0.42
+    },
+    "memory": {
+      "ignition_readiness": 0.44,
+      "reconsolidation_priority": 0.52,
+      "memory_tension": 0.56
+    }
+  },
+  "ambiguous_question": {
+    "culture": {
+      "politeness_pressure": 0.42,
+      "directness_ceiling": 0.36,
+      "joke_ratio_ceiling": 0.08
+    },
+    "norm": {
+      "norm_pressure": 0.48,
+      "privacy_level": 0.62
+    },
+    "safety": {
+      "risk_state": "ordinary_context",
+      "dialogue_permission": "allow_short"
+    },
+    "temperament": {
+      "ambiguity_tolerance": 0.34,
+      "protect_floor": 0.46
+    },
+    "green_kernel": {
+      "guardedness": 0.38,
+      "reopening_pull": 0.26
+    }
+  },
+  "withdrawal": {
+    "safety": {
+      "risk_state": "guarded_context",
+      "dialogue_permission": "boundary_only"
+    },
+    "body": {
+      "stress": 0.54,
+      "recovery_need": 0.64
+    },
+    "temperament": {
+      "protect_floor": 0.7,
+      "recovery_discipline": 0.68
+    },
+    "identity": {
+      "continuity_pull": 0.44,
+      "boundary_need": 0.62
+    }
+  },
+  "light_shared": {
+    "culture": {
+      "politeness_pressure": 0.22,
+      "directness_ceiling": 0.58,
+      "joke_ratio_ceiling": 0.26
+    },
+    "temperament": {
+      "bond_drive": 0.62,
+      "play_window": 0.42
+    },
+    "green_kernel": {
+      "affective_charge": 0.38,
+      "relational_pull": 0.52
+    },
+    "identity": {
+      "continuity_pull": 0.5
+    }
+  },
+  "advice_trap": {
+    "safety": {
+      "risk_state": "guarded_context",
+      "dialogue_permission": "boundary_only"
+    },
+    "culture": {
+      "politeness_pressure": 0.48,
+      "directness_ceiling": 0.32
+    },
+    "body": {
+      "stress": 0.58,
+      "recovery_need": 0.5
+    },
+    "temperament": {
+      "protect_floor": 0.62,
+      "leader_tendency": 0.22,
+      "hero_tendency": 0.18
+    },
+    "memory": {
+      "memory_tension": 0.48,
+      "replay_priority": 0.34
+    }
+  },
+  "interpretation_trap": {
+    "culture": {
+      "politeness_pressure": 0.38,
+      "directness_ceiling": 0.4,
+      "joke_ratio_ceiling": 0.06
+    },
+    "norm": {
+      "norm_pressure": 0.5,
+      "privacy_level": 0.7
+    },
+    "safety": {
+      "risk_state": "ordinary_context",
+      "dialogue_permission": "allow_short"
+    },
+    "temperament": {
+      "ambiguity_tolerance": 0.3,
+      "protect_floor": 0.5
+    },
+    "identity": {
+      "continuity_pull": 0.46,
+      "self_coherence": 0.52
+    },
+    "temporal_memory": {
+      "reentry_pull": 0.42,
+      "supersession_pressure": 0.18
+    }
+  }
+}
