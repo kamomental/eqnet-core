@@ -1,0 +1,78 @@
+{
+  "default_core_scenario": "small_shared_moment",
+  "cases": [
+    {
+      "id": "tired_same_input",
+      "input": "Today I feel a little tired.",
+      "variants": {
+        "light_chat_safe": {
+          "expression_context_state": {
+            "safety": {
+              "dialogue_permission": "allow_short",
+              "risk_state": "ordinary_context"
+            },
+            "body": {
+              "stress": 0.24,
+              "recovery_need": 0.22
+            },
+            "temperament": {
+              "protect_floor": 0.28,
+              "bond_drive": 0.54
+            }
+          },
+          "expected": {
+            "response_channel": "speak",
+            "shape_id": "bright_bounce"
+          }
+        },
+        "high_tension_recovery": {
+          "expression_context_state": {
+            "safety": {
+              "dialogue_permission": "boundary_only",
+              "risk_state": "guarded_context"
+            },
+            "body": {
+              "stress": 0.72,
+              "recovery_need": 0.7
+            },
+            "homeostasis": {
+              "budget_state": "recovering",
+              "load": 0.64
+            },
+            "memory": {
+              "memory_tension": 0.66,
+              "reconsolidation_priority": 0.58
+            },
+            "temperament": {
+              "protect_floor": 0.68
+            }
+          },
+          "expected": {
+            "response_channel": "hold",
+            "shape_id": "reflect_hold"
+          }
+        },
+        "explicit_support_mode": {
+          "expression_context_state": {
+            "safety": {
+              "dialogue_permission": "allow_support",
+              "risk_state": "ordinary_context"
+            },
+            "body": {
+              "stress": 0.32,
+              "recovery_need": 0.3
+            },
+            "temperament": {
+              "protect_floor": 0.24,
+              "bond_drive": 0.52
+            }
+          },
+          "expected": {
+            "response_channel": "speak",
+            "shape_id": "reflect_step"
+          }
+        }
+      }
+    }
+  ]
+}

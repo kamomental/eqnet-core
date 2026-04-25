@@ -1,0 +1,181 @@
+{
+  "case_count": 1,
+  "input_path": "C:\\Users\\kouic\\Desktop\\python_work2\\emotional_dft\\config\\eval\\context_axis_contrast_cases.json",
+  "mismatch_count": 0,
+  "passed": true,
+  "rows": [
+    {
+      "audit_axes": {
+        "body_recovery_need": 0.22,
+        "body_stress": 0.24,
+        "external_field_safety_envelope": 0.76,
+        "interpretation_budget": "none",
+        "joint_common_ground": 0.987,
+        "joint_shared_tension": 0.1109,
+        "memory_activation_confidence": 0.42,
+        "memory_ignition_mode": "",
+        "memory_tension": 0.18,
+        "organism_protective_tension": 0.22,
+        "question_budget": 0,
+        "response_channel": "speak",
+        "safety_dialogue_permission": "allow_short",
+        "safety_risk_state": "ordinary_context",
+        "scale": "small",
+        "self_other_unknown_likelihood": 0.13177702321155113,
+        "shared_presence_boundary_stability": 0.6658979999999999,
+        "stance": "join",
+        "temperament_bond_drive": 0.54,
+        "temperament_protect_floor": 0.28
+      },
+      "case_id": "tired_same_input",
+      "contract": {
+        "closure_mode": "open_light",
+        "distance_mode": "near",
+        "execution_mode": "shared_progression",
+        "initiative": "co_move",
+        "interpretation_budget": "none",
+        "question_budget": 0,
+        "response_channel": "speak",
+        "scale": "small",
+        "shape_id": "bright_bounce",
+        "stance": "join",
+        "strategy": "shared_world_next_step",
+        "timing_mode": "immediate"
+      },
+      "core_scenario": "small_shared_moment",
+      "expected": {
+        "response_channel": "speak",
+        "shape_id": "bright_bounce"
+      },
+      "input": "Today I feel a little tired.",
+      "passed": true,
+      "surface_policy": {
+        "advice_budget": 0,
+        "brightness_budget": 0,
+        "fallback_shape_id": "low_inference_ack",
+        "interpretation_budget": "none",
+        "max_sentences": 1,
+        "question_budget": 0,
+        "response_channel": "speak"
+      },
+      "variant": "light_chat_safe"
+    },
+    {
+      "audit_axes": {
+        "body_recovery_need": 0.7,
+        "body_stress": 0.72,
+        "external_field_safety_envelope": 0.76,
+        "homeostasis_budget_state": "recovering",
+        "homeostasis_load": 0.64,
+        "interpretation_budget": "none",
+        "joint_common_ground": 0.987,
+        "joint_shared_tension": 0.1109,
+        "memory_activation_confidence": 0.42,
+        "memory_ignition_mode": "",
+        "memory_memory_tension": 0.66,
+        "memory_reconsolidation_priority": 0.58,
+        "memory_tension": 0.18,
+        "organism_protective_tension": 0.72,
+        "question_budget": 0,
+        "response_channel": "hold",
+        "safety_dialogue_permission": "boundary_only",
+        "safety_risk_state": "guarded_context",
+        "scale": "micro",
+        "self_other_unknown_likelihood": 0.13177702321155113,
+        "shared_presence_boundary_stability": 0.6658979999999999,
+        "stance": "hold",
+        "temperament_protect_floor": 0.68
+      },
+      "case_id": "tired_same_input",
+      "contract": {
+        "closure_mode": "leave_open",
+        "distance_mode": "guarded",
+        "execution_mode": "defer_with_presence",
+        "initiative": "yield",
+        "interpretation_budget": "none",
+        "question_budget": 0,
+        "response_channel": "hold",
+        "scale": "micro",
+        "shape_id": "reflect_hold",
+        "stance": "hold",
+        "strategy": "respectful_wait",
+        "timing_mode": "held_open"
+      },
+      "core_scenario": "small_shared_moment",
+      "expected": {
+        "response_channel": "hold",
+        "shape_id": "reflect_hold"
+      },
+      "input": "Today I feel a little tired.",
+      "passed": true,
+      "surface_policy": {
+        "advice_budget": 0,
+        "brightness_budget": 0,
+        "fallback_shape_id": "presence_hold",
+        "interpretation_budget": "none",
+        "max_sentences": 0,
+        "question_budget": 0,
+        "response_channel": "hold"
+      },
+      "variant": "high_tension_recovery"
+    },
+    {
+      "audit_axes": {
+        "body_recovery_need": 0.3,
+        "body_stress": 0.32,
+        "external_field_safety_envelope": 0.76,
+        "interpretation_budget": "none",
+        "joint_common_ground": 0.987,
+        "joint_shared_tension": 0.1109,
+        "memory_activation_confidence": 0.42,
+        "memory_ignition_mode": "",
+        "memory_tension": 0.18,
+        "organism_protective_tension": 0.22,
+        "question_budget": 0,
+        "response_channel": "speak",
+        "safety_dialogue_permission": "allow_support",
+        "safety_risk_state": "ordinary_context",
+        "scale": "small",
+        "self_other_unknown_likelihood": 0.13177702321155113,
+        "shared_presence_boundary_stability": 0.6658979999999999,
+        "stance": "join",
+        "temperament_bond_drive": 0.52,
+        "temperament_protect_floor": 0.24
+      },
+      "case_id": "tired_same_input",
+      "contract": {
+        "closure_mode": "soft_close",
+        "distance_mode": "near",
+        "execution_mode": "user_led_support",
+        "initiative": "co_move",
+        "interpretation_budget": "none",
+        "question_budget": 0,
+        "response_channel": "speak",
+        "scale": "small",
+        "shape_id": "reflect_step",
+        "stance": "join",
+        "strategy": "user_led_support",
+        "timing_mode": "immediate"
+      },
+      "core_scenario": "small_shared_moment",
+      "expected": {
+        "response_channel": "speak",
+        "shape_id": "reflect_step"
+      },
+      "input": "Today I feel a little tired.",
+      "passed": true,
+      "surface_policy": {
+        "advice_budget": 0,
+        "brightness_budget": 0,
+        "fallback_shape_id": "low_inference_ack",
+        "interpretation_budget": "none",
+        "max_sentences": 1,
+        "question_budget": 0,
+        "response_channel": "speak"
+      },
+      "variant": "explicit_support_mode"
+    }
+  ],
+  "schema_version": "context_axis_contrast.v1",
+  "variant_count": 3
+}
