@@ -56,6 +56,10 @@ _CONTEXT_INFLUENCE_MODULE = _load_module(
     "core_quickstart_context_influence",
     "inner_os/orchestration/context_influence.py",
 )
+_STIMULUS_HISTORY_INFLUENCE_MODULE = _load_module(
+    "core_quickstart_stimulus_history_influence",
+    "inner_os/orchestration/stimulus_history_influence.py",
+)
 
 derive_reaction_contract = _REACTION_CONTRACT_MODULE.derive_reaction_contract
 derive_joint_state = _JOINT_STATE_MODULE.derive_joint_state
@@ -75,6 +79,12 @@ build_llm_expression_request = (
 derive_context_influence = _CONTEXT_INFLUENCE_MODULE.derive_context_influence
 apply_context_influence_to_contract_inputs = (
     _CONTEXT_INFLUENCE_MODULE.apply_context_influence_to_contract_inputs
+)
+derive_stimulus_history_influence = (
+    _STIMULUS_HISTORY_INFLUENCE_MODULE.derive_stimulus_history_influence
+)
+apply_stimulus_history_influence_to_contract_inputs = (
+    _STIMULUS_HISTORY_INFLUENCE_MODULE.apply_stimulus_history_influence_to_contract_inputs
 )
 
 
@@ -324,6 +334,11 @@ def build_core_demo_result(
         contract_inputs=contract_inputs,
         influence=context_influence,
     )
+    stimulus_history_influence = derive_stimulus_history_influence(expression_context)
+    contract_inputs = apply_stimulus_history_influence_to_contract_inputs(
+        contract_inputs=contract_inputs,
+        influence=stimulus_history_influence,
+    )
     reaction_contract = derive_reaction_contract(**contract_inputs)
     expectation = CORE_QUICKSTART_EXPECTATIONS[scenario.name]
     evaluation = evaluate_reaction_contract_against_expectation(
@@ -340,6 +355,7 @@ def build_core_demo_result(
         reaction_contract=reaction_contract.to_dict(),
         expression_context_state=expression_context,
         context_influence=context_influence.to_dict(),
+        stimulus_history_influence=stimulus_history_influence.to_dict(),
     )
     llm_expression_request = build_llm_expression_request(
         input_text=text,
@@ -367,6 +383,7 @@ def build_core_demo_result(
         "quick_audit_projection": quick_audit_projection,
         "llm_expression_request": llm_expression_request.to_dict(),
         "context_influence": context_influence.to_dict(),
+        "stimulus_history_influence": stimulus_history_influence.to_dict(),
         "response_guideline": _render_response_guideline(reaction_contract.to_dict()),
     }
 
@@ -382,6 +399,7 @@ def _build_quick_audit_projection(
     reaction_contract: dict[str, Any],
     expression_context_state: dict[str, Any] | None = None,
     context_influence: dict[str, Any] | None = None,
+    stimulus_history_influence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     surface_context = dict(contract_inputs.get("surface_context_packet") or {})
     source_state = dict(surface_context.get("source_state") or {})
@@ -404,6 +422,7 @@ def _build_quick_audit_projection(
         "memory_dynamics_state": dict(scenario.memory_dynamics_state),
         "expression_context_state": expression_context,
         "context_influence": dict(context_influence or {}),
+        "stimulus_history_influence": dict(stimulus_history_influence or {}),
         "joint_state": dict(joint_state),
         "shared_presence": shared_presence.to_dict(),
         "subjective_scene": subjective_scene.to_dict(),
@@ -442,6 +461,24 @@ def _build_quick_audit_projection(
             ),
             "context_support_permission": dict(context_influence or {}).get(
                 "support_permission", ""
+            ),
+            "stimulus_pressure": dict(stimulus_history_influence or {}).get(
+                "stimulus_pressure", 0.0
+            ),
+            "stimulus_novelty_pressure": dict(stimulus_history_influence or {}).get(
+                "novelty_pressure", 0.0
+            ),
+            "stimulus_habituation_pressure": dict(stimulus_history_influence or {}).get(
+                "habituation_pressure", 0.0
+            ),
+            "stimulus_field_clarity": dict(stimulus_history_influence or {}).get(
+                "field_clarity", 0.0
+            ),
+            "stimulus_gradient_confidence": dict(stimulus_history_influence or {}).get(
+                "gradient_confidence", 0.0
+            ),
+            "stimulus_response_bias": dict(stimulus_history_influence or {}).get(
+                "response_bias", ""
             ),
             **context_axes,
         },
