@@ -131,6 +131,43 @@ def test_core_llm_expression_eval_can_use_separate_classifier_model(monkeypatch)
     assert result["speech_act_analysis"]["source"] == "separate_classifier"
 
 
+def test_core_llm_expression_eval_falls_back_after_model_counter_question(monkeypatch) -> None:
+    responses = iter(
+        [
+            "そうかな？",
+            (
+                '{"schema_version":"speech_act.v1","source":"test_classifier",'
+                '"sentences":[{"text":"そうかな？",'
+                '"labels":["information_request"],"confidence":0.9}]}'
+            ),
+        ]
+    )
+
+    def fake_chat_text(*args, **kwargs):
+        return next(responses)
+
+    monkeypatch.setattr(
+        core_llm_expression_eval.terrain_llm,
+        "chat_text",
+        fake_chat_text,
+    )
+
+    result = evaluate_core_llm_expression(
+        scenario_name="small_shared_moment",
+        call_llm=True,
+        classify_output=True,
+    )
+
+    assert result["review"]["ok"] is False
+    assert result["review"]["violations"][0]["code"] == "question_block_violation"
+    assert result["final_action"] == {
+        "type": "fallback_surface",
+        "text": "今は、そのまま受け取っておきます。",
+        "source": "surface_policy_fallback",
+    }
+    assert result["final_review"]["ok"] is True
+
+
 def test_speech_act_jsonl_loader_can_find_human_label(tmp_path) -> None:
     path = tmp_path / "speech_act.jsonl"
     path.write_text(

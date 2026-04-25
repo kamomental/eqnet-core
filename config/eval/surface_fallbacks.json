@@ -1,0 +1,6 @@
+{
+  "presence_hold": "",
+  "low_inference_ack": "今は、そのまま受け取っておきます。",
+  "micro_ack": "そうですね。",
+  "minimal_ack": "そうですね。"
+}

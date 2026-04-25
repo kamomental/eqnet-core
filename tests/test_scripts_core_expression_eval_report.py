@@ -15,6 +15,7 @@ def _record(
     called_llm: bool = True,
     final_action_type: str = "speak",
     violation_codes: list[str] | None = None,
+    delivered_violation_codes: list[str] | None = None,
     raw_text: str = "Share the next part when ready.",
     router_mode: str = "",
     router_rule_name: str = "",
@@ -39,6 +40,13 @@ def _record(
             "violations": [
                 {"code": code, "detail": code}
                 for code in (violation_codes or [])
+            ],
+        },
+        "final_review": {
+            "ok": not delivered_violation_codes,
+            "violations": [
+                {"code": code, "detail": code}
+                for code in (delivered_violation_codes or [])
             ],
         },
         "final_action": {"type": final_action_type},
@@ -218,3 +226,22 @@ def test_core_expression_eval_report_exposes_model_specific_failure_modes() -> N
     assert groups[
         ("withdrawal", "lmstudio-community/gemma-4-e4b-it")
     ]["hold_violation_count"] == 0
+
+
+def test_core_expression_eval_report_keeps_raw_and_delivered_violation_rates_separate() -> None:
+    report = build_core_expression_eval_report(
+        [
+            _record(
+                generator_model_label="lmstudio-community/gemma-4-e4b-it",
+                violation_codes=["question_block_violation"],
+                delivered_violation_codes=[],
+                raw_text="そうかな？",
+            )
+        ],
+        group_by=("generator_model_label",),
+    )
+
+    assert report["summary"]["violation_count"] == 1
+    assert report["summary"]["delivered_violation_count"] == 0
+    assert report["summary"]["violation_codes"] == {"question_block_violation": 1}
+    assert report["summary"]["delivered_violation_codes"] == {}

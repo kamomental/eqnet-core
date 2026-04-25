@@ -1,4 +1,7 @@
-from inner_os.expression.surface_policy import compile_surface_policy
+from inner_os.expression.surface_policy import (
+    compile_surface_policy,
+    render_surface_fallback,
+)
 
 
 def test_compile_surface_policy_turns_hold_contract_into_nonverbal_policy() -> None:
@@ -73,3 +76,10 @@ def test_compile_surface_policy_does_not_guard_non_bright_speak_contract() -> No
     assert "natural_surface_text" in policy.allowed_acts
     assert "positive_spin" not in policy.prohibited_acts
     assert policy.fallback_shape_id == "plain_ack_minimal"
+
+
+def test_render_surface_fallback_returns_low_inference_ack_text() -> None:
+    assert (
+        render_surface_fallback({"fallback_shape_id": "low_inference_ack"})
+        == "今は、そのまま受け取っておきます。"
+    )

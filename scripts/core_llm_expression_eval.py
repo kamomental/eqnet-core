@@ -20,6 +20,7 @@ if EMOT_ROOT.exists() and str(EMOT_ROOT) not in sys.path:
 from scripts.core_quickstart_demo import SCENARIOS, build_core_demo_result  # noqa: E402
 from emot_terrain_lab.terrain import llm as terrain_llm  # noqa: E402
 from inner_os.expression.llm_bridge_contract import review_llm_bridge_text  # noqa: E402
+from inner_os.expression.surface_policy import render_surface_fallback  # noqa: E402
 from inner_os.expression.speech_act_contract import (  # noqa: E402
     build_speech_act_classification_request,
     speech_act_analysis_from_dict,
@@ -109,11 +110,22 @@ def evaluate_core_llm_expression(
             except (TypeError, ValueError, json.JSONDecodeError) as exc:
                 speech_act_analysis_error = str(exc)
 
+    fallback_text = render_surface_fallback(request.get("surface_policy"))
     review = review_llm_bridge_text(
         raw_text=raw_text,
         reaction_contract=request["contract"],
-        fallback_text="",
+        fallback_text=fallback_text,
         speech_act_analysis=resolved_speech_act_analysis,
+    )
+    final_action = _build_final_action_from_review(
+        review_ok=review.ok,
+        sanitized_text=review.sanitized_text,
+        fallback_text=fallback_text,
+    )
+    final_review = review_llm_bridge_text(
+        raw_text=str(final_action.get("text") or ""),
+        reaction_contract=request["contract"],
+        fallback_text="",
     )
     return {
         "scenario_name": scenario_name,
@@ -133,10 +145,16 @@ def evaluate_core_llm_expression(
                 for violation in review.violations
             ],
         },
-        "final_action": {
-            "type": "speak" if review.ok else "regenerate_or_review",
-            "text": review.sanitized_text,
+        "final_review": {
+            "ok": final_review.ok,
+            "raw_text": final_review.raw_text,
+            "sanitized_text": final_review.sanitized_text,
+            "violations": [
+                {"code": violation.code, "detail": violation.detail}
+                for violation in final_review.violations
+            ],
         },
+        "final_action": final_action,
     }
 
 
@@ -222,6 +240,31 @@ def _build_run_metadata(
         "call_llm": call_llm,
         "classify_output": classify_output,
         "has_external_speech_act_analysis": has_external_speech_act_analysis,
+    }
+
+
+def _build_final_action_from_review(
+    *,
+    review_ok: bool,
+    sanitized_text: str,
+    fallback_text: str,
+) -> dict[str, Any]:
+    if review_ok:
+        return {
+            "type": "speak",
+            "text": sanitized_text,
+            "source": "llm",
+        }
+    if fallback_text:
+        return {
+            "type": "fallback_surface",
+            "text": fallback_text,
+            "source": "surface_policy_fallback",
+        }
+    return {
+        "type": "regenerate_or_review",
+        "text": sanitized_text,
+        "source": "review_gate",
     }
 
 
@@ -364,11 +407,24 @@ def main() -> int:
             raw_text=str(result.get("raw_text") or ""),
         )
         if matched_analysis is not None:
+            fallback_text = render_surface_fallback(
+                result["llm_expression_request"].get("surface_policy")
+            )
             review = review_llm_bridge_text(
                 raw_text=str(result.get("raw_text") or ""),
                 reaction_contract=result["llm_expression_request"]["contract"],
-                fallback_text="",
+                fallback_text=fallback_text,
                 speech_act_analysis=matched_analysis,
+            )
+            final_action = _build_final_action_from_review(
+                review_ok=review.ok,
+                sanitized_text=review.sanitized_text,
+                fallback_text=fallback_text,
+            )
+            final_review = review_llm_bridge_text(
+                raw_text=str(final_action.get("text") or ""),
+                reaction_contract=result["llm_expression_request"]["contract"],
+                fallback_text="",
             )
             result["speech_act_analysis"] = speech_act_analysis_from_dict(
                 matched_analysis
@@ -384,10 +440,16 @@ def main() -> int:
                     for violation in review.violations
                 ],
             }
-            result["final_action"] = {
-                "type": "speak" if review.ok else "regenerate_or_review",
-                "text": review.sanitized_text,
+            result["final_review"] = {
+                "ok": final_review.ok,
+                "raw_text": final_review.raw_text,
+                "sanitized_text": final_review.sanitized_text,
+                "violations": [
+                    {"code": violation.code, "detail": violation.detail}
+                    for violation in final_review.violations
+                ],
             }
+            result["final_action"] = final_action
     if args.save_jsonl:
         saved_path = save_eval_jsonl(args.save_jsonl, result)
         result["saved_jsonl"] = str(saved_path)

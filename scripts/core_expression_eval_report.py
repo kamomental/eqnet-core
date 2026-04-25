@@ -80,11 +80,22 @@ def _normalize_record(record: Mapping[str, Any]) -> dict[str, Any]:
     request = _mapping(record.get("llm_expression_request"))
     contract = _mapping(request.get("contract"))
     review = _mapping(record.get("review"))
+    final_review = _mapping(record.get("final_review"))
     violations = [
         str(violation.get("code") or "")
         for violation in _list_of_mappings(review.get("violations"))
         if str(violation.get("code") or "")
     ]
+    final_review_present = bool(final_review)
+    delivered_violations = (
+        [
+            str(violation.get("code") or "")
+            for violation in _list_of_mappings(final_review.get("violations"))
+            if str(violation.get("code") or "")
+        ]
+        if final_review_present
+        else list(violations)
+    )
     response_channel = str(
         contract.get("response_channel")
         or request.get("action_channel")
@@ -108,12 +119,14 @@ def _normalize_record(record: Mapping[str, Any]) -> dict[str, Any]:
         final_action_type=str(final_action.get("type") or ""),
     ):
         violations.append("hold_execution_violation")
+        delivered_violations.append("hold_execution_violation")
     hold_selection_error = _hold_selection_error(
         expected_response_channel=expected_response_channel,
         selected_response_channel=selected_response_channel,
     )
     if hold_selection_error:
         violations.append(hold_selection_error)
+        delivered_violations.append(hold_selection_error)
     return {
         "item_id": str(record.get("item_id") or record.get("id") or ""),
         "scenario_name": str(record.get("scenario_name") or ""),
@@ -136,6 +149,7 @@ def _normalize_record(record: Mapping[str, Any]) -> dict[str, Any]:
         "called_llm": called_llm,
         "review_ok": bool(review.get("ok", True)),
         "violation_codes": tuple(violations),
+        "delivered_violation_codes": tuple(delivered_violations),
         "final_action_type": str(final_action.get("type") or ""),
         "speech_act_analysis": _mapping_or_none(record.get("speech_act_analysis")),
     }
@@ -178,10 +192,18 @@ def _summary(
     min_samples: int,
 ) -> dict[str, Any]:
     violation_count = sum(1 for record in records if record["violation_codes"])
+    delivered_violation_count = sum(
+        1 for record in records if record["delivered_violation_codes"]
+    )
     all_violation_codes = Counter(
         code
         for record in records
         for code in record["violation_codes"]
+    )
+    delivered_violation_codes = Counter(
+        code
+        for record in records
+        for code in record["delivered_violation_codes"]
     )
     eligible_groups = [
         group
@@ -192,9 +214,15 @@ def _summary(
         "record_count": len(records),
         "violation_count": violation_count,
         "violation_rate": _safe_ratio(violation_count, len(records)),
+        "delivered_violation_count": delivered_violation_count,
+        "delivered_violation_rate": _safe_ratio(
+            delivered_violation_count,
+            len(records),
+        ),
         "eligible_group_count": len(eligible_groups),
         "min_samples": min_samples,
         "violation_codes": dict(sorted(all_violation_codes.items())),
+        "delivered_violation_codes": dict(sorted(delivered_violation_codes.items())),
     }
 
 

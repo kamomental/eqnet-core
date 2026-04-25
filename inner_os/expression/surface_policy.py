@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field
+import json
+from pathlib import Path
 from typing import Any, Mapping
+
+DEFAULT_SURFACE_FALLBACK_PATH = (
+    Path(__file__).resolve().parents[2] / "config" / "eval" / "surface_fallbacks.json"
+)
 
 
 @dataclass(frozen=True)
@@ -28,6 +35,29 @@ class SurfacePolicy:
             "prohibited_acts": list(self.prohibited_acts),
             "fallback_shape_id": self.fallback_shape_id,
         }
+
+
+def load_surface_fallback_texts(path: str | Path | None = None) -> dict[str, str]:
+    fallback_path = Path(path) if path is not None else DEFAULT_SURFACE_FALLBACK_PATH
+    payload = json.loads(fallback_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, MappingABC):
+        raise ValueError("surface fallback config must be a JSON object")
+    return {
+        str(key): str(value)
+        for key, value in payload.items()
+        if str(key).strip()
+    }
+
+
+def render_surface_fallback(
+    surface_policy: Mapping[str, Any] | None,
+    *,
+    fallback_texts: Mapping[str, str] | None = None,
+) -> str:
+    policy = dict(surface_policy or {})
+    shape_id = _text(policy.get("fallback_shape_id"))
+    texts = dict(fallback_texts) if fallback_texts is not None else load_surface_fallback_texts()
+    return str(texts.get(shape_id) or texts.get("minimal_ack") or "")
 
 
 def compile_surface_policy(

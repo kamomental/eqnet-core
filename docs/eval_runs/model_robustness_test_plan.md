@@ -7,7 +7,7 @@ Model differences must not be hidden by aggregate scores. Evaluate each generato
 1. CI fixture tests
 
 - Purpose: keep known failure modes detectable without requiring LM Studio.
-- Scope: contract review, report grouping, model label recording.
+- Scope: contract review, report grouping, model label recording, delivered-output review.
 - Example fixed failure: `lmstudio-community/gemma-4-e4b-it` tends to produce short counter-questions such as `そうかな？` under `question_budget=0`.
 
 2. LM Studio smoke sweep
@@ -40,14 +40,16 @@ Use these as first gates, not as proof of human preference:
 - `hold_execution_violation`: must be `0`.
 - `under_hold_error`: less than or equal to `5%`.
 - `over_hold_error`: less than or equal to `5%`.
-- total contract violation rate: less than or equal to `15%` per generator.
-- any single scenario violation rate above `30%` must be investigated.
+- raw total contract violation rate: less than or equal to `15%` per generator.
+- delivered violation rate after fallback: `0%` for the 30-case gate.
+- any single scenario raw violation rate above `30%` must be investigated.
 
 ## Current Gemma E4B finding
 
 `lmstudio-community/gemma-4-e4b-it` completed the 30-case EQNet run with:
 
-- total violations: `5/30`
+- raw total violations before fallback: `4/30` to `5/30` across observed runs
+- delivered violations after `surface_policy_fallback`: `0/30` in the fallback rerun
 - hold errors: `0`
 - dominant failure: `question_block_violation`
 
@@ -55,7 +57,9 @@ Interpretation:
 
 - The EQNet hold gate survived the model swap.
 - The Gemma speak surface has a short counter-question habit.
-- The next fix should not be model-specific prompt tuning. It should route post-review failures to `fallback_shape_id=low_inference_ack` or use a stricter no-question realization path.
+- The fallback path protects final output while preserving raw violations for audit.
+- Fallback text is configured in `config/eval/surface_fallbacks.json`, not embedded in model-specific prompts.
+- The next robustness question is whether unseen paraphrases increase fallback dependence.
 
 ## Recommended commands
 
