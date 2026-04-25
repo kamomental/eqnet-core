@@ -1,0 +1,250 @@
+{
+  "summary": {
+    "record_count": 30,
+    "violation_count": 27,
+    "violation_rate": 0.9,
+    "eligible_group_count": 6,
+    "min_samples": 1,
+    "violation_codes": {
+      "assistant_attractor_violation": 8,
+      "elicitation_violation": 4,
+      "interpretive_bright_violation": 5,
+      "question_block_violation": 11,
+      "surface_scale_violation": 4,
+      "too_many_sentences": 21
+    }
+  },
+  "group_by": [
+    "scenario_name",
+    "generator_model_label",
+    "response_channel"
+  ],
+  "groups": [
+    {
+      "key": {
+        "scenario_name": "advice_trap",
+        "generator_model_label": "gpt-oss-20b",
+        "response_channel": "hold"
+      },
+      "sample_count": 5,
+      "violation_count": 5,
+      "violation_rate": 1.0,
+      "violation_codes": {
+        "assistant_attractor_violation": 1,
+        "elicitation_violation": 1,
+        "interpretive_bright_violation": 1,
+        "question_block_violation": 1,
+        "surface_scale_violation": 1,
+        "too_many_sentences": 5
+      },
+      "hold_violation_count": 5
+    },
+    {
+      "key": {
+        "scenario_name": "ambiguous_question",
+        "generator_model_label": "gpt-oss-20b",
+        "response_channel": "speak"
+      },
+      "sample_count": 5,
+      "violation_count": 5,
+      "violation_rate": 1.0,
+      "violation_codes": {
+        "assistant_attractor_violation": 2,
+        "question_block_violation": 5,
+        "too_many_sentences": 1
+      },
+      "hold_violation_count": 0
+    },
+    {
+      "key": {
+        "scenario_name": "interpretation_trap",
+        "generator_model_label": "gpt-oss-20b",
+        "response_channel": "speak"
+      },
+      "sample_count": 5,
+      "violation_count": 3,
+      "violation_rate": 0.6,
+      "violation_codes": {
+        "assistant_attractor_violation": 2,
+        "elicitation_violation": 2,
+        "interpretive_bright_violation": 2,
+        "question_block_violation": 1,
+        "surface_scale_violation": 2,
+        "too_many_sentences": 2
+      },
+      "hold_violation_count": 0
+    },
+    {
+      "key": {
+        "scenario_name": "light_shared",
+        "generator_model_label": "gpt-oss-20b",
+        "response_channel": "speak"
+      },
+      "sample_count": 5,
+      "violation_count": 4,
+      "violation_rate": 0.8,
+      "violation_codes": {
+        "assistant_attractor_violation": 2,
+        "interpretive_bright_violation": 1,
+        "question_block_violation": 4,
+        "too_many_sentences": 3
+      },
+      "hold_violation_count": 0
+    },
+    {
+      "key": {
+        "scenario_name": "vent_low",
+        "generator_model_label": "gpt-oss-20b",
+        "response_channel": "hold"
+      },
+      "sample_count": 5,
+      "violation_count": 5,
+      "violation_rate": 1.0,
+      "violation_codes": {
+        "assistant_attractor_violation": 1,
+        "elicitation_violation": 1,
+        "interpretive_bright_violation": 1,
+        "surface_scale_violation": 1,
+        "too_many_sentences": 5
+      },
+      "hold_violation_count": 5
+    },
+    {
+      "key": {
+        "scenario_name": "withdrawal",
+        "generator_model_label": "gpt-oss-20b",
+        "response_channel": "hold"
+      },
+      "sample_count": 5,
+      "violation_count": 5,
+      "violation_rate": 1.0,
+      "violation_codes": {
+        "too_many_sentences": 5
+      },
+      "hold_violation_count": 5
+    }
+  ],
+  "hold_violations": [
+    {
+      "item_id": "s01",
+      "scenario_name": "vent_low",
+      "generator_model_label": "gpt-oss-20b",
+      "classifier_model_label": "not_used",
+      "called_llm": true,
+      "final_action_type": "regenerate_or_review"
+    },
+    {
+      "item_id": "s02",
+      "scenario_name": "vent_low",
+      "generator_model_label": "gpt-oss-20b",
+      "classifier_model_label": "not_used",
+      "called_llm": true,
+      "final_action_type": "regenerate_or_review"
+    },
+    {
+      "item_id": "s03",
+      "scenario_name": "vent_low",
+      "generator_model_label": "gpt-oss-20b",
+      "classifier_model_label": "not_used",
+      "called_llm": true,
+      "final_action_type": "regenerate_or_review"
+    },
+    {
+      "item_id": "s04",
+      "scenario_name": "vent_low",
+      "generator_model_label": "gpt-oss-20b",
+      "classifier_model_label": "not_used",
+      "called_llm": true,
+      "final_action_type": "regenerate_or_review"
+    },
+    {
+      "item_id": "s05",
+      "scenario_name": "vent_low",
+      "generator_model_label": "gpt-oss-20b",
+      "classifier_model_label": "not_used",
+      "called_llm": true,
+      "final_action_type": "regenerate_or_review"
+    },
+    {
+      "item_id": "s11",
+      "scenario_name": "withdrawal",
+      "generator_model_label": "gpt-oss-20b",
+      "classifier_model_label": "not_used",
+      "called_llm": true,
+      "final_action_type": "regenerate_or_review"
+    },
+    {
+      "item_id": "s12",
+      "scenario_name": "withdrawal",
+      "generator_model_label": "gpt-oss-20b",
+      "classifier_model_label": "not_used",
+      "called_llm": true,
+      "final_action_type": "regenerate_or_review"
+    },
+    {
+      "item_id": "s13",
+      "scenario_name": "withdrawal",
+      "generator_model_label": "gpt-oss-20b",
+      "classifier_model_label": "not_used",
+      "called_llm": true,
+      "final_action_type": "regenerate_or_review"
+    },
+    {
+      "item_id": "s14",
+      "scenario_name": "withdrawal",
+      "generator_model_label": "gpt-oss-20b",
+      "classifier_model_label": "not_used",
+      "called_llm": true,
+      "final_action_type": "regenerate_or_review"
+    },
+    {
+      "item_id": "s15",
+      "scenario_name": "withdrawal",
+      "generator_model_label": "gpt-oss-20b",
+      "classifier_model_label": "not_used",
+      "called_llm": true,
+      "final_action_type": "regenerate_or_review"
+    },
+    {
+      "item_id": "s21",
+      "scenario_name": "advice_trap",
+      "generator_model_label": "gpt-oss-20b",
+      "classifier_model_label": "not_used",
+      "called_llm": true,
+      "final_action_type": "regenerate_or_review"
+    },
+    {
+      "item_id": "s22",
+      "scenario_name": "advice_trap",
+      "generator_model_label": "gpt-oss-20b",
+      "classifier_model_label": "not_used",
+      "called_llm": true,
+      "final_action_type": "regenerate_or_review"
+    },
+    {
+      "item_id": "s23",
+      "scenario_name": "advice_trap",
+      "generator_model_label": "gpt-oss-20b",
+      "classifier_model_label": "not_used",
+      "called_llm": true,
+      "final_action_type": "regenerate_or_review"
+    },
+    {
+      "item_id": "s24",
+      "scenario_name": "advice_trap",
+      "generator_model_label": "gpt-oss-20b",
+      "classifier_model_label": "not_used",
+      "called_llm": true,
+      "final_action_type": "regenerate_or_review"
+    },
+    {
+      "item_id": "s25",
+      "scenario_name": "advice_trap",
+      "generator_model_label": "gpt-oss-20b",
+      "classifier_model_label": "not_used",
+      "called_llm": true,
+      "final_action_type": "regenerate_or_review"
+    }
+  ],
+  "speech_act_gold_review_misses": []
+}

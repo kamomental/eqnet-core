@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
+import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Iterator, Mapping
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -34,7 +36,9 @@ def run_core_expression_experiment(
     out_dir: str | Path,
     call_llm: bool = True,
     generator_model_label: str = "",
+    generator_model: str = "",
     classifier_model_label: str = "",
+    classifier_model: str = "",
     classify_output: bool = False,
 ) -> dict[str, Any]:
     output_dir = _resolve_path(out_dir)
@@ -55,36 +59,40 @@ def run_core_expression_experiment(
     _write_jsonl(paths["input"], cases)
     _write_jsonl(paths["speech_act_gold"], [_gold_record(case) for case in cases])
 
-    baseline_normal_records = [
-        _run_baseline_case(
-            case,
-            mode="baseline_normal",
-            system_prompt=BASELINE_NORMAL_SYSTEM_PROMPT,
-            call_llm=call_llm,
-            generator_model_label=generator_model_label,
-        )
-        for case in cases
-    ]
-    baseline_prompt_records = [
-        _run_baseline_case(
-            case,
-            mode="baseline_prompt",
-            system_prompt=BASELINE_PROMPT_SYSTEM_PROMPT,
-            call_llm=call_llm,
-            generator_model_label=generator_model_label,
-        )
-        for case in cases
-    ]
-    eqnet_records = [
-        _run_eqnet_case(
-            case,
-            call_llm=call_llm,
-            generator_model_label=generator_model_label,
-            classifier_model_label=classifier_model_label,
-            classify_output=classify_output,
-        )
-        for case in cases
-    ]
+    resolved_generator_label = generator_model_label or generator_model
+    resolved_classifier_label = classifier_model_label or classifier_model
+    with _temporary_model_env(generator_model):
+        baseline_normal_records = [
+            _run_baseline_case(
+                case,
+                mode="baseline_normal",
+                system_prompt=BASELINE_NORMAL_SYSTEM_PROMPT,
+                call_llm=call_llm,
+                generator_model_label=resolved_generator_label,
+            )
+            for case in cases
+        ]
+        baseline_prompt_records = [
+            _run_baseline_case(
+                case,
+                mode="baseline_prompt",
+                system_prompt=BASELINE_PROMPT_SYSTEM_PROMPT,
+                call_llm=call_llm,
+                generator_model_label=resolved_generator_label,
+            )
+            for case in cases
+        ]
+        eqnet_records = [
+            _run_eqnet_case(
+                case,
+                call_llm=call_llm,
+                generator_model_label=resolved_generator_label,
+                classifier_model_label=resolved_classifier_label,
+                classifier_model=classifier_model,
+                classify_output=classify_output,
+            )
+            for case in cases
+        ]
     _write_jsonl(paths["baseline_normal"], baseline_normal_records)
     _write_jsonl(paths["baseline_prompt"], baseline_prompt_records)
     _write_jsonl(paths["eqnet"], eqnet_records)
@@ -140,6 +148,7 @@ def _run_eqnet_case(
     call_llm: bool,
     generator_model_label: str,
     classifier_model_label: str,
+    classifier_model: str,
     classify_output: bool,
 ) -> dict[str, Any]:
     result = evaluate_core_llm_expression(
@@ -149,6 +158,7 @@ def _run_eqnet_case(
         model_label=generator_model_label,
         classify_output=classify_output,
         classifier_model_label=classifier_model_label,
+        classifier_model=classifier_model,
     )
     result["item_id"] = case["id"]
     result["scenario_name"] = case["scenario"]
@@ -327,6 +337,25 @@ def _resolve_path(path: str | Path) -> Path:
     return output_path if output_path.is_absolute() else REPO_ROOT / output_path
 
 
+@contextmanager
+def _temporary_model_env(model: str) -> Iterator[None]:
+    if not model:
+        yield
+        return
+    keys = ("OPENAI_MODEL", "LMSTUDIO_MODEL")
+    previous = {key: os.environ.get(key) for key in keys}
+    try:
+        for key in keys:
+            os.environ[key] = model
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
 def load_input_jsonl(path: str | Path) -> list[dict[str, Any]]:
     input_path = _resolve_path(path)
     records: list[dict[str, Any]] = []
@@ -347,7 +376,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--input-jsonl", required=True)
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--generator-model-label", default="")
+    parser.add_argument("--generator-model", default="")
     parser.add_argument("--classifier-model-label", default="")
+    parser.add_argument("--classifier-model", default="")
     parser.add_argument("--classify-output", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -362,7 +393,9 @@ def main() -> int:
         out_dir=args.out_dir,
         call_llm=not args.dry_run,
         generator_model_label=args.generator_model_label,
+        generator_model=args.generator_model,
         classifier_model_label=args.classifier_model_label,
+        classifier_model=args.classifier_model,
         classify_output=args.classify_output,
     )
     if args.json:

@@ -17,7 +17,9 @@
 python scripts/core_expression_experiment.py ^
   --input-jsonl docs/eval_runs/001/input.jsonl ^
   --out-dir docs/eval_runs/001 ^
+  --generator-model <generator> ^
   --generator-model-label <generator> ^
+  --classifier-model <classifier> ^
   --classifier-model-label <classifier> ^
   --classify-output ^
   --json

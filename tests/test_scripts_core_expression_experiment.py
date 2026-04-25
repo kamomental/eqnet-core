@@ -39,7 +39,10 @@ def test_core_expression_experiment_writes_comparison_package(tmp_path, monkeypa
         ],
         out_dir=tmp_path,
         call_llm=True,
+        generator_model="generator-test",
         generator_model_label="generator-test",
+        classifier_model="classifier-test",
+        classifier_model_label="classifier-test",
     )
 
     assert result["case_count"] == 2
@@ -63,6 +66,7 @@ def test_core_expression_experiment_writes_comparison_package(tmp_path, monkeypa
     ]
     assert eqnet_rows[0]["evaluation_mode"] == "eqnet"
     assert eqnet_rows[0]["run_metadata"]["generator_model_label"] == "generator-test"
+    assert eqnet_rows[0]["run_metadata"]["classifier_model_label"] == "classifier-test"
 
 
 def test_core_expression_experiment_dry_run_keeps_package_shape(tmp_path) -> None:
