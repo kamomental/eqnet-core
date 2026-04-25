@@ -59,6 +59,7 @@ def build_llm_expression_request(
     shared_presence: Mapping[str, Any] | None = None,
     subjective_scene: Mapping[str, Any] | None = None,
     self_other_attribution: Mapping[str, Any] | None = None,
+    audit_projection: Mapping[str, Any] | None = None,
     policy: LLMExpressionBridgePolicy | None = None,
 ) -> LLMExpressionRequest:
     """LLM へ渡す最小 foreground を、状態契約から構成する。"""
@@ -72,6 +73,7 @@ def build_llm_expression_request(
         shared_presence=shared_presence,
         subjective_scene=subjective_scene,
         self_other_attribution=self_other_attribution,
+        audit_projection=audit_projection,
         max_fields=active_policy.max_state_fields,
     )
     fallback_action = _build_fallback_action(contract)
@@ -138,9 +140,11 @@ def _build_state_summary(
     shared_presence: Mapping[str, Any] | None,
     subjective_scene: Mapping[str, Any] | None,
     self_other_attribution: Mapping[str, Any] | None,
+    audit_projection: Mapping[str, Any] | None,
     max_fields: int,
 ) -> dict[str, Any]:
     candidates: list[tuple[str, Any]] = []
+    candidates.extend(_audit_projection_items(audit_projection))
     candidates.extend(_prefix_items("joint", joint_state))
     candidates.extend(_prefix_items("shared_presence", shared_presence))
     candidates.extend(_prefix_items("subjective_scene", subjective_scene))
@@ -154,6 +158,21 @@ def _build_state_summary(
         if isinstance(value, (str, int, float, bool)):
             compact[key] = value
     return compact
+
+
+def _audit_projection_items(
+    audit_projection: Mapping[str, Any] | None,
+) -> list[tuple[str, Any]]:
+    if not isinstance(audit_projection, Mapping):
+        return []
+    items: list[tuple[str, Any]] = []
+    audit_axes = audit_projection.get("audit_axes")
+    if isinstance(audit_axes, Mapping):
+        items.extend(_prefix_items("audit", audit_axes))
+    source_state = audit_projection.get("surface_context_source_state")
+    if isinstance(source_state, Mapping):
+        items.extend(_prefix_items("surface_source", source_state))
+    return items
 
 
 def _prefix_items(

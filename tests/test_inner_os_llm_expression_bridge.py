@@ -14,6 +14,15 @@ def test_llm_expression_request_uses_state_contract_for_speak() -> None:
         },
         joint_state={"common_ground": 0.74, "shared_delight": 0.48},
         shared_presence={"dominant_mode": "inhabited_shared_space"},
+        audit_projection={
+            "audit_axes": {
+                "memory_ignition_mode": "primed",
+                "organism_protective_tension": 0.22,
+            },
+            "surface_context_source_state": {
+                "external_field_safety_envelope": 0.76,
+            },
+        },
     )
 
     assert request.should_call_llm is True
@@ -22,6 +31,9 @@ def test_llm_expression_request_uses_state_contract_for_speak() -> None:
     assert "質問で終えない" in request.user_prompt
     assert "断定解釈しない" in request.user_prompt
     assert "shared_delight" in request.user_prompt
+    assert request.state_summary["audit.memory_ignition_mode"] == "primed"
+    assert request.state_summary["audit.organism_protective_tension"] == 0.22
+    assert request.state_summary["surface_source.external_field_safety_envelope"] == 0.76
     assert request.fallback_action["type"] == "review_gate"
 
 

@@ -311,6 +311,15 @@ def build_core_demo_result(
         reaction_contract=reaction_contract.to_dict(),
         expectation=expectation,
     )
+    quick_audit_projection = _build_quick_audit_projection(
+        scenario=scenario,
+        contract_inputs=contract_inputs,
+        subjective_scene=subjective_scene,
+        attribution=attribution,
+        shared_presence=shared_presence,
+        joint_state=joint_state.to_dict(),
+        reaction_contract=reaction_contract.to_dict(),
+    )
     llm_expression_request = build_llm_expression_request(
         input_text=text,
         reaction_contract=reaction_contract.to_dict(),
@@ -318,6 +327,7 @@ def build_core_demo_result(
         shared_presence=shared_presence.to_dict(),
         subjective_scene=subjective_scene.to_dict(),
         self_other_attribution=attribution.to_dict(),
+        audit_projection=quick_audit_projection,
     )
 
     return {
@@ -333,15 +343,7 @@ def build_core_demo_result(
         "expected_contract": expectation.to_dict(),
         "evaluation": evaluation.to_dict(),
         "reaction_contract": reaction_contract.to_dict(),
-        "quick_audit_projection": _build_quick_audit_projection(
-            scenario=scenario,
-            contract_inputs=contract_inputs,
-            subjective_scene=subjective_scene,
-            attribution=attribution,
-            shared_presence=shared_presence,
-            joint_state=joint_state.to_dict(),
-            reaction_contract=reaction_contract.to_dict(),
-        ),
+        "quick_audit_projection": quick_audit_projection,
         "llm_expression_request": llm_expression_request.to_dict(),
         "response_guideline": _render_response_guideline(reaction_contract.to_dict()),
     }

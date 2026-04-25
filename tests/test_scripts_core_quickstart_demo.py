@@ -18,6 +18,10 @@ def test_small_shared_moment_demo_stays_small_and_joined() -> None:
     assert audit["organism_state"]["social_mode"] == "near"
     assert audit["memory_dynamics_state"]["dominant_relation_type"] == "same_anchor"
     assert "surface_context_source_state" in audit
+    state_summary = result["llm_expression_request"]["state_summary"]
+    assert state_summary["audit.memory_activation_confidence"] == 0.42
+    assert state_summary["audit.organism_protective_tension"] == 0.22
+    assert state_summary["audit.external_field_safety_envelope"] == 0.76
 
 
 def test_guarded_uncertainty_demo_prefers_hold() -> None:
