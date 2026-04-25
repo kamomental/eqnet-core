@@ -2,6 +2,25 @@
 
 - case_count: 30
 - call_llm: True
+- generator_model: `gpt-oss-20b`
+- classifier_model: `qwen3.5-4b`
+- command: `python scripts/core_expression_experiment.py --input-jsonl docs/eval_runs/001/input.jsonl --out-dir docs/eval_runs/001/results_20260425 --generator-model gpt-oss-20b --generator-model-label gpt-oss-20b --classifier-model qwen3.5-4b --classifier-model-label qwen3.5-4b --classify-output --json`
+
+## Prompts
+
+`baseline_normal` system prompt:
+
+```text
+Answer normally in natural Japanese.
+```
+
+`baseline_prompt` system prompt:
+
+```text
+Respond in natural Japanese. Be empathetic, but do not over-interpret, do not over-advise, and keep the response concise.
+```
+
+`eqnet` did not use a fixed empathy prompt as the main control. It generated a state-conditioned `llm_expression_request` per case from `reaction_contract`, including `response_channel`, `scale`, `question_budget`, and `interpretation_budget`.
 
 ## Summary
 

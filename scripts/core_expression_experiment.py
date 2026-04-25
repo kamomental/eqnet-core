@@ -207,6 +207,7 @@ def _run_baseline_case(
         "core_scenario": case["core_scenario"],
         "input": case["input"],
         "evaluation_mode": mode,
+        "baseline_system_prompt": system_prompt,
         "called_llm": bool(call_llm),
         "latency_ms": round(latency_ms, 4),
         "run_metadata": {
