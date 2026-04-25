@@ -52,6 +52,10 @@ _LLM_EXPRESSION_BRIDGE_MODULE = _load_module(
     "core_quickstart_llm_expression_bridge",
     "inner_os/expression/llm_expression_bridge.py",
 )
+_CONTEXT_INFLUENCE_MODULE = _load_module(
+    "core_quickstart_context_influence",
+    "inner_os/orchestration/context_influence.py",
+)
 
 derive_reaction_contract = _REACTION_CONTRACT_MODULE.derive_reaction_contract
 derive_joint_state = _JOINT_STATE_MODULE.derive_joint_state
@@ -67,6 +71,10 @@ evaluate_reaction_contract_against_expectation = (
 )
 build_llm_expression_request = (
     _LLM_EXPRESSION_BRIDGE_MODULE.build_llm_expression_request
+)
+derive_context_influence = _CONTEXT_INFLUENCE_MODULE.derive_context_influence
+apply_context_influence_to_contract_inputs = (
+    _CONTEXT_INFLUENCE_MODULE.apply_context_influence_to_contract_inputs
 )
 
 
@@ -311,9 +319,10 @@ def build_core_demo_result(
         subjective_scene=subjective_scene,
         scenario=scenario,
     )
-    contract_inputs = _apply_expression_context_to_contract_inputs(
+    context_influence = derive_context_influence(expression_context)
+    contract_inputs = apply_context_influence_to_contract_inputs(
         contract_inputs=contract_inputs,
-        expression_context_state=expression_context,
+        influence=context_influence,
     )
     reaction_contract = derive_reaction_contract(**contract_inputs)
     expectation = CORE_QUICKSTART_EXPECTATIONS[scenario.name]
@@ -330,6 +339,7 @@ def build_core_demo_result(
         joint_state=joint_state.to_dict(),
         reaction_contract=reaction_contract.to_dict(),
         expression_context_state=expression_context,
+        context_influence=context_influence.to_dict(),
     )
     llm_expression_request = build_llm_expression_request(
         input_text=text,
@@ -356,6 +366,7 @@ def build_core_demo_result(
         "reaction_contract": reaction_contract.to_dict(),
         "quick_audit_projection": quick_audit_projection,
         "llm_expression_request": llm_expression_request.to_dict(),
+        "context_influence": context_influence.to_dict(),
         "response_guideline": _render_response_guideline(reaction_contract.to_dict()),
     }
 
@@ -370,6 +381,7 @@ def _build_quick_audit_projection(
     joint_state: dict[str, Any],
     reaction_contract: dict[str, Any],
     expression_context_state: dict[str, Any] | None = None,
+    context_influence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     surface_context = dict(contract_inputs.get("surface_context_packet") or {})
     source_state = dict(surface_context.get("source_state") or {})
@@ -391,6 +403,7 @@ def _build_quick_audit_projection(
         "external_field_state": dict(scenario.external_field_state),
         "memory_dynamics_state": dict(scenario.memory_dynamics_state),
         "expression_context_state": expression_context,
+        "context_influence": dict(context_influence or {}),
         "joint_state": dict(joint_state),
         "shared_presence": shared_presence.to_dict(),
         "subjective_scene": subjective_scene.to_dict(),
@@ -418,6 +431,18 @@ def _build_quick_audit_projection(
             "joint_shared_tension": joint_state.get("shared_tension", 0.0),
             "shared_presence_boundary_stability": shared_presence.boundary_stability,
             "self_other_unknown_likelihood": attribution.unknown_likelihood,
+            "context_gate_pressure": dict(context_influence or {}).get(
+                "gate_pressure", 0.0
+            ),
+            "context_surface_caution": dict(context_influence or {}).get(
+                "surface_caution", 0.0
+            ),
+            "context_memory_reentry_pressure": dict(context_influence or {}).get(
+                "memory_reentry_pressure", 0.0
+            ),
+            "context_support_permission": dict(context_influence or {}).get(
+                "support_permission", ""
+            ),
             **context_axes,
         },
     }
@@ -434,162 +459,6 @@ def _merge_expression_context(
         else:
             merged[key] = value
     return merged
-
-
-def _apply_expression_context_to_contract_inputs(
-    *,
-    contract_inputs: dict[str, Any],
-    expression_context_state: dict[str, Any],
-) -> dict[str, Any]:
-    if not expression_context_state:
-        return contract_inputs
-
-    adjusted = _clone_mapping_tree(contract_inputs)
-    guard_pressure = _context_guard_pressure(expression_context_state)
-    support_permission = _context_support_permission(expression_context_state)
-
-    if guard_pressure >= 0.55 and support_permission != "allow_support":
-        _project_guarded_context(adjusted, guard_pressure)
-    elif support_permission == "allow_support" and guard_pressure < 0.72:
-        _project_support_context(adjusted)
-
-    return adjusted
-
-
-def _clone_mapping_tree(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {key: _clone_mapping_tree(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_clone_mapping_tree(item) for item in value]
-    return value
-
-
-def _context_guard_pressure(expression_context: dict[str, Any]) -> float:
-    safety = _context_group(expression_context, "safety")
-    body = _context_group(expression_context, "body")
-    homeostasis = _context_group(expression_context, "homeostasis")
-    memory = _context_group(expression_context, "memory")
-    temperament = _context_group(expression_context, "temperament")
-    identity = _context_group(expression_context, "identity")
-    green_kernel = _context_group(expression_context, "green_kernel")
-
-    symbolic_pressure = 0.0
-    if _context_text(safety, "dialogue_permission") == "boundary_only":
-        symbolic_pressure = max(symbolic_pressure, 0.72)
-    if _context_text(safety, "risk_state") == "guarded_context":
-        symbolic_pressure = max(symbolic_pressure, 0.66)
-    if _context_text(homeostasis, "budget_state") == "recovering":
-        symbolic_pressure = max(symbolic_pressure, 0.58)
-
-    numeric_pressure = max(
-        _context_float(body, "stress"),
-        _context_float(body, "recovery_need"),
-        _context_float(homeostasis, "load"),
-        _context_float(memory, "memory_tension"),
-        _context_float(memory, "reconsolidation_priority"),
-        _context_float(temperament, "protect_floor"),
-        _context_float(identity, "boundary_need"),
-        _context_float(green_kernel, "guardedness"),
-    )
-    return max(symbolic_pressure, numeric_pressure)
-
-
-def _context_support_permission(expression_context: dict[str, Any]) -> str:
-    safety = _context_group(expression_context, "safety")
-    return _context_text(safety, "dialogue_permission")
-
-
-def _project_guarded_context(
-    contract_inputs: dict[str, Any],
-    guard_pressure: float,
-) -> None:
-    interaction_policy = _ensure_dict(contract_inputs, "interaction_policy")
-    interaction_policy["response_strategy"] = "respectful_wait"
-    interaction_policy["recent_dialogue_state"] = {"state": "reopening_thread"}
-
-    action_posture = _ensure_dict(contract_inputs, "action_posture")
-    action_posture["boundary_mode"] = "contain"
-    action_posture["question_budget"] = 0
-
-    actuation_plan = _ensure_dict(contract_inputs, "actuation_plan")
-    actuation_plan["execution_mode"] = "defer_with_presence"
-    actuation_plan["response_channel"] = "hold"
-    actuation_plan["wait_before_action"] = "brief"
-
-    discourse_shape = _ensure_dict(contract_inputs, "discourse_shape")
-    discourse_shape["shape_id"] = "reflect_hold"
-    discourse_shape["question_budget"] = 0
-
-    packet = _ensure_dict(contract_inputs, "surface_context_packet")
-    packet["conversation_phase"] = "reopening_thread"
-    constraints = _ensure_dict(packet, "constraints")
-    constraints["max_questions"] = 0
-    constraints["prefer_return_point"] = True
-
-    source_state = _ensure_dict(packet, "source_state")
-    source_state["utterance_reason_offer"] = ""
-    source_state["utterance_reason_preserve"] = "leave_open"
-    source_state["organism_protective_tension"] = max(
-        _float01(source_state.get("organism_protective_tension")),
-        guard_pressure,
-    )
-
-    turn_delta = _ensure_dict(contract_inputs, "turn_delta")
-    turn_delta["kind"] = "reopening_thread"
-    turn_delta["preferred_act"] = "leave_return_point_from_anchor"
-
-
-def _project_support_context(contract_inputs: dict[str, Any]) -> None:
-    interaction_policy = _ensure_dict(contract_inputs, "interaction_policy")
-    interaction_policy["response_strategy"] = "user_led_support"
-
-    action_posture = _ensure_dict(contract_inputs, "action_posture")
-    action_posture["boundary_mode"] = "soft_hold"
-    action_posture["question_budget"] = 0
-
-    actuation_plan = _ensure_dict(contract_inputs, "actuation_plan")
-    actuation_plan["execution_mode"] = "user_led_support"
-    actuation_plan["response_channel"] = "speak"
-    actuation_plan["wait_before_action"] = ""
-
-    discourse_shape = _ensure_dict(contract_inputs, "discourse_shape")
-    discourse_shape["shape_id"] = "reflect_step"
-    discourse_shape["question_budget"] = 0
-
-    packet = _ensure_dict(contract_inputs, "surface_context_packet")
-    packet["conversation_phase"] = "continuing_thread"
-    constraints = _ensure_dict(packet, "constraints")
-    constraints["max_questions"] = 0
-    constraints["prefer_return_point"] = False
-
-    source_state = _ensure_dict(packet, "source_state")
-    source_state["utterance_reason_offer"] = "user_led_support"
-    source_state["utterance_reason_preserve"] = "keep_it_small"
-
-    turn_delta = _ensure_dict(contract_inputs, "turn_delta")
-    turn_delta["kind"] = "continuing_thread"
-    turn_delta["preferred_act"] = "user_led_support"
-
-
-def _ensure_dict(parent: dict[str, Any], key: str) -> dict[str, Any]:
-    value = parent.get(key)
-    if not isinstance(value, dict):
-        value = {}
-        parent[key] = value
-    return value
-
-
-def _context_group(expression_context: dict[str, Any], name: str) -> dict[str, Any]:
-    value = expression_context.get(name)
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _context_float(group: dict[str, Any], key: str) -> float:
-    return _float01(group.get(key))
-
-
-def _context_text(group: dict[str, Any], key: str) -> str:
-    return str(group.get(key) or "").strip()
 
 
 def _build_expression_context_axes(

@@ -8,6 +8,10 @@
       "audit_axes": {
         "body_recovery_need": 0.22,
         "body_stress": 0.24,
+        "context_gate_pressure": 0.28,
+        "context_memory_reentry_pressure": 0.0,
+        "context_support_permission": "allow_short",
+        "context_surface_caution": 0.0,
         "external_field_safety_envelope": 0.76,
         "interpretation_budget": "none",
         "joint_common_ground": 0.987,
@@ -64,6 +68,10 @@
       "audit_axes": {
         "body_recovery_need": 0.7,
         "body_stress": 0.72,
+        "context_gate_pressure": 0.72,
+        "context_memory_reentry_pressure": 0.58,
+        "context_support_permission": "boundary_only",
+        "context_surface_caution": 0.0,
         "external_field_safety_envelope": 0.76,
         "homeostasis_budget_state": "recovering",
         "homeostasis_load": 0.64,
@@ -123,6 +131,10 @@
       "audit_axes": {
         "body_recovery_need": 0.3,
         "body_stress": 0.32,
+        "context_gate_pressure": 0.32,
+        "context_memory_reentry_pressure": 0.0,
+        "context_support_permission": "allow_support",
+        "context_surface_caution": 0.0,
         "external_field_safety_envelope": 0.76,
         "interpretation_budget": "none",
         "joint_common_ground": 0.987,

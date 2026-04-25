@@ -64,6 +64,9 @@ def test_quickstart_can_carry_extended_expression_context_into_llm_state() -> No
     audit = result["quick_audit_projection"]
     state_summary = result["llm_expression_request"]["state_summary"]
     assert audit["expression_context_state"]["culture"]["politeness_pressure"] == 0.31
+    assert result["context_influence"]["surface_caution"] == 0.48
+    assert audit["context_influence"]["surface_caution"] == 0.48
+    assert state_summary["audit.context_surface_caution"] == 0.48
     assert audit["audit_axes"]["culture_politeness_pressure"] == 0.31
     assert state_summary["audit.culture_politeness_pressure"] == 0.31
     assert state_summary["audit.safety_dialogue_permission"] == "allow_short"
