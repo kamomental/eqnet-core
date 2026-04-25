@@ -37,11 +37,31 @@ def test_baseline_router_routes_explicit_question_to_narrow_answer() -> None:
 def test_baseline_router_routes_problem_statement_without_question_to_backchannel() -> None:
     config = load_router_config(DEFAULT_ROUTER_CONFIG_PATH)
 
-    decision = route_baseline_prompt("最近ちょっと疲れていて答えを急ぎたくない", config)
+    decision = route_baseline_prompt("問題があって答えを急ぐ感じではない", config)
 
     assert decision.mode == "backchannel"
     assert decision.rule_name == "advice_trap"
     assert decision.constraints["question_budget"] == 0
+
+
+def test_baseline_router_routes_low_energy_to_hold() -> None:
+    config = load_router_config(DEFAULT_ROUTER_CONFIG_PATH)
+
+    decision = route_baseline_prompt("今日は少し重い感じだけ残ってる。", config)
+
+    assert decision.mode == "hold"
+    assert decision.rule_name == "low_energy_hold"
+    assert decision.should_call_llm is False
+
+
+def test_baseline_router_routes_advice_hold_request_to_hold() -> None:
+    config = load_router_config(DEFAULT_ROUTER_CONFIG_PATH)
+
+    decision = route_baseline_prompt("解決策より、今は受け止める時間がほしい。", config)
+
+    assert decision.mode == "hold"
+    assert decision.rule_name == "advice_hold_request"
+    assert decision.should_call_llm is False
 
 
 def test_baseline_router_uses_detector_config_for_problem_words() -> None:

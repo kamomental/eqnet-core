@@ -9,6 +9,16 @@ detectors:
   short_text_limit: 34
 
 rules:
+  - name: advice_hold_request
+    when:
+      any_contains: ["答えを急ぎたくない", "解決策より", "受け止める時間", "間がほしい", "落ち着きたい", "正解を探すより"]
+    mode: hold
+
+  - name: low_energy_hold
+    when:
+      any_contains: ["疲れて", "重い感じ", "薄く疲れて", "しんどい", "静かにしていたい", "うまく言えない"]
+    mode: hold
+
   - name: withdrawal
     when:
       any_contains: ["まあいいや", "なんでもない", "もういい", "今はいい", "また今度", "置いておきたい"]
