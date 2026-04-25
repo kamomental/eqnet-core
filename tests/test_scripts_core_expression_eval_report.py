@@ -14,10 +14,14 @@ def _record(
     final_action_type: str = "speak",
     violation_codes: list[str] | None = None,
     raw_text: str = "Share the next part when ready.",
+    router_mode: str = "",
+    router_rule_name: str = "",
 ) -> dict:
     return {
         "scenario_name": scenario_name,
         "raw_text": raw_text,
+        "router_mode": router_mode,
+        "router_rule_name": router_rule_name,
         "run_metadata": {
             "generator_model_label": generator_model_label,
             "classifier_model_label": classifier_model_label,
@@ -123,3 +127,19 @@ def test_core_expression_eval_report_fail_threshold_respects_min_samples() -> No
         fail_on_violation_rate=0.4,
         min_samples=1,
     ) is True
+
+
+def test_core_expression_eval_report_groups_router_mode() -> None:
+    report = build_core_expression_eval_report(
+        [
+            _record(
+                scenario_name="withdrawal",
+                router_mode="hold",
+                router_rule_name="withdrawal",
+            )
+        ],
+        group_by=("scenario_name", "router_mode", "router_rule_name"),
+    )
+
+    assert report["groups"][0]["key"]["router_mode"] == "hold"
+    assert report["groups"][0]["key"]["router_rule_name"] == "withdrawal"

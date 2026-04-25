@@ -102,6 +102,12 @@ def _normalize_record(record: Mapping[str, Any]) -> dict[str, Any]:
             or ""
         ),
         "classifier_model_label": str(run_metadata.get("classifier_model_label") or ""),
+        "router_mode": str(
+            record.get("router_mode") or run_metadata.get("router_mode") or ""
+        ),
+        "router_rule_name": str(
+            record.get("router_rule_name") or run_metadata.get("router_rule_name") or ""
+        ),
         "response_channel": response_channel,
         "called_llm": called_llm,
         "review_ok": bool(review.get("ok", True)),
