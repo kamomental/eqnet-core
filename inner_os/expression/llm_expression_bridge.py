@@ -4,6 +4,11 @@ from dataclasses import dataclass, field
 import json
 from typing import Any, Mapping
 
+try:
+    from .surface_policy import compile_surface_policy
+except ImportError:  # pragma: no cover - supports script-level dynamic loading.
+    from inner_os.expression.surface_policy import compile_surface_policy
+
 
 @dataclass(frozen=True)
 class LLMExpressionBridgePolicy:
@@ -27,6 +32,7 @@ class LLMExpressionRequest:
     system_prompt: str
     user_prompt: str
     contract: dict[str, Any]
+    surface_policy: dict[str, Any]
     state_summary: dict[str, Any]
     blocked_reason: str = ""
     fallback_action: dict[str, Any] = field(default_factory=dict)
@@ -38,6 +44,7 @@ class LLMExpressionRequest:
             "system_prompt": self.system_prompt,
             "user_prompt": self.user_prompt,
             "contract": dict(self.contract),
+            "surface_policy": dict(self.surface_policy),
             "state_summary": dict(self.state_summary),
             "blocked_reason": self.blocked_reason,
             "fallback_action": dict(self.fallback_action),
@@ -58,6 +65,7 @@ def build_llm_expression_request(
 
     active_policy = policy or LLMExpressionBridgePolicy()
     contract = _compact_contract(reaction_contract)
+    surface_policy = compile_surface_policy(contract).to_dict()
     channel = str(contract.get("response_channel") or "speak")
     state_summary = _build_state_summary(
         joint_state=joint_state,
@@ -75,6 +83,7 @@ def build_llm_expression_request(
             system_prompt="",
             user_prompt="",
             contract=contract,
+            surface_policy=surface_policy,
             state_summary=state_summary,
             blocked_reason="reaction_contract.response_channel is not speak",
             fallback_action=fallback_action,
@@ -84,6 +93,7 @@ def build_llm_expression_request(
     user_prompt = _render_user_prompt(
         input_text=input_text,
         contract=contract,
+        surface_policy=surface_policy,
         state_summary=state_summary,
         include_raw_observation=active_policy.include_raw_observation,
     )
@@ -93,6 +103,7 @@ def build_llm_expression_request(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         contract=contract,
+        surface_policy=surface_policy,
         state_summary=state_summary,
         fallback_action=fallback_action,
     )
@@ -158,17 +169,20 @@ def _render_user_prompt(
     *,
     input_text: str,
     contract: Mapping[str, Any],
+    surface_policy: Mapping[str, Any],
     state_summary: Mapping[str, Any],
     include_raw_observation: bool,
 ) -> str:
     question_budget = int(contract.get("question_budget") or 0)
     interpretation_budget = str(contract.get("interpretation_budget") or "")
     scale = str(contract.get("scale") or "small")
+    max_sentences = int(surface_policy.get("max_sentences") or 0)
 
     constraints = [
         "出力は日本語の自然な会話文だけにする。",
         "内部状態、スコア、JSON、分析文、注釈は出さない。",
         f"反応の大きさは {scale} に保つ。",
+        f"最大文数は {max_sentences} 文。",
     ]
     if question_budget <= 0:
         constraints.append("質問で終えない。聞き出しに行かない。")
@@ -180,6 +194,7 @@ def _render_user_prompt(
     payload = {
         "user_input": input_text,
         "reaction_contract": dict(contract),
+        "surface_policy": dict(surface_policy),
         "state_summary": dict(state_summary),
         "constraints": constraints,
     }

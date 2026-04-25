@@ -58,6 +58,8 @@ LLM 表出評価は、次の 3 段比較を正規の最小比較にします。
 
 hold 評価は `hold_execution_violation`、`under_hold_error`、`over_hold_error` に分けます。単に話さない能力ではなく、止まるべき時に止まることと、戻るべき時に戻ることを別々に測ります。
 
+`inner_os/expression/surface_policy.py` は `reaction_contract` から派生する発話制約 view です。判断の正本ではなく、LLM prompt と評価ログへ出すための監査可能な投影として扱います。
+
 ### Main Path
 
 EQNet の正規入口は、次の core loop です。

@@ -67,6 +67,7 @@ def test_core_expression_experiment_writes_comparison_package(tmp_path, monkeypa
     assert eqnet_rows[0]["evaluation_mode"] == "eqnet"
     assert eqnet_rows[0]["run_metadata"]["generator_model_label"] == "generator-test"
     assert eqnet_rows[0]["run_metadata"]["classifier_model_label"] == "classifier-test"
+    assert "surface_policy" in eqnet_rows[0]["llm_expression_request"]
 
     router_rows = _read_jsonl(tmp_path / "baseline_router.jsonl")
     assert router_rows[0]["evaluation_mode"] == "baseline_router"

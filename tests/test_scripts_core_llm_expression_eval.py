@@ -20,6 +20,8 @@ def test_core_llm_expression_eval_dry_run_exposes_state_conditioned_request() ->
     assert result["run_metadata"]["model_label"] == "unconfigured"
     assert request["should_call_llm"] is True
     assert request["contract"]["response_channel"] == "speak"
+    assert request["surface_policy"]["response_channel"] == "speak"
+    assert "surface_policy" in request["user_prompt"]
     assert "reaction_contract" in request["user_prompt"]
     assert result["review"]["ok"] is True
 
@@ -32,6 +34,8 @@ def test_core_llm_expression_eval_skips_llm_for_hold_contract() -> None:
 
     assert result["called_llm"] is False
     assert result["llm_expression_request"]["should_call_llm"] is False
+    assert result["llm_expression_request"]["surface_policy"]["response_channel"] == "hold"
+    assert result["llm_expression_request"]["surface_policy"]["max_sentences"] == 0
     assert result["final_action"]["type"] == "nonverbal"
     assert result["final_action"]["name"] == "presence_hold"
 
