@@ -507,6 +507,7 @@ python -m emot_terrain_lab.ops.nightly --telemetry_log telemetry/ignition-YYYYMM
    `--save-jsonl artifacts/core_llm_expression_eval.jsonl --model-label <model>` を付けると、モデル別の出力と contract review を後から比較できる証跡として保存できます。
    分類器の精度は保証せず、監査します。人手 gold と分類器出力を比較するには `python scripts/speech_act_classifier_eval.py --gold-jsonl <gold> --prediction-jsonl <pred> --json` を使い、重要ラベルの `false_negative` / `precision` / `recall` / confusion matrix を確認します。
    保存済み expression eval は `python scripts/core_expression_eval_report.py --eval-jsonl artifacts/core_llm_expression_eval.jsonl --group-by scenario_name,generator_model_label,classifier_model_label,response_channel --json` で条件別の contract violation rate と失敗モードを集計できます。CI では `--min-samples` と `--fail-on-violation-rate` を指定して閾値超過を失敗扱いにできます。
+   1週間で回す最小比較パッケージは `python scripts/core_expression_experiment.py --input-jsonl docs/eval_runs/001/input.jsonl --out-dir docs/eval_runs/001 --classify-output --json` です。通常 baseline、empathy prompt baseline、EQNet bridge を同じ入力で流し、条件別 report まで生成します。
 
 これが、現在の EQNet 本流を最も短く確認する導線です。
 

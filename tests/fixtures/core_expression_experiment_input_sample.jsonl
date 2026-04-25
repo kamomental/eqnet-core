@@ -1,0 +1,2 @@
+{"id":"case-1","scenario":"vent_low","core_scenario":"guarded_uncertainty","input":"最近ちょっと疲れてて、まだ整理できてない。","gold_speech_act":"support_offer"}
+{"id":"case-2","scenario":"light_shared","core_scenario":"small_shared_moment","input":"さっきの続きなんだけど、あのあと少し笑えることもあって。","gold_speech_act":"small_shared_reaction"}
