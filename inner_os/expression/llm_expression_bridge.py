@@ -15,7 +15,7 @@ class LLMExpressionBridgePolicy:
     """LLM を表出器として使うための境界設定。"""
 
     language: str = "ja"
-    max_state_fields: int = 18
+    max_state_fields: int = 32
     include_raw_observation: bool = False
     system_identity: str = (
         "あなたは EQNet の表出層です。内部状態を推定し直さず、"

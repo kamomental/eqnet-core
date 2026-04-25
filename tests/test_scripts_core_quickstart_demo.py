@@ -37,3 +37,35 @@ def test_guarded_uncertainty_demo_prefers_hold() -> None:
     assert audit["audit_axes"]["response_channel"] == "hold"
     assert audit["audit_axes"]["organism_protective_tension"] == 0.64
     assert audit["audit_axes"]["memory_tension"] == 0.52
+
+
+def test_quickstart_can_carry_extended_expression_context_into_llm_state() -> None:
+    result = build_core_demo_result(
+        scenario_name="small_shared_moment",
+        expression_context_state={
+            "culture": {
+                "politeness_pressure": 0.31,
+                "directness_ceiling": 0.52,
+            },
+            "safety": {
+                "risk_state": "ordinary_context",
+                "dialogue_permission": "allow_short",
+            },
+            "temperament": {
+                "protect_floor": 0.28,
+                "bond_drive": 0.62,
+            },
+            "body": {
+                "stress": 0.18,
+            },
+        },
+    )
+
+    audit = result["quick_audit_projection"]
+    state_summary = result["llm_expression_request"]["state_summary"]
+    assert audit["expression_context_state"]["culture"]["politeness_pressure"] == 0.31
+    assert audit["audit_axes"]["culture_politeness_pressure"] == 0.31
+    assert state_summary["audit.culture_politeness_pressure"] == 0.31
+    assert state_summary["audit.safety_dialogue_permission"] == "allow_short"
+    assert state_summary["audit.temperament_bond_drive"] == 0.62
+    assert state_summary["audit.body_stress"] == 0.18

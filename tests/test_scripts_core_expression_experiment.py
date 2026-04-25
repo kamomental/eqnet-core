@@ -37,6 +37,11 @@ def test_core_expression_experiment_writes_comparison_package(tmp_path, monkeypa
                 "core_scenario": "small_shared_moment",
                 "input": "That was a little funny.",
                 "gold_speech_act": "small_shared_reaction",
+                "expression_context_state": {
+                    "culture": {"politeness_pressure": 0.22},
+                    "green_kernel": {"guardedness": 0.14},
+                    "identity": {"continuity_pull": 0.51},
+                },
             },
         ],
         out_dir=tmp_path,
@@ -68,6 +73,18 @@ def test_core_expression_experiment_writes_comparison_package(tmp_path, monkeypa
     assert eqnet_rows[0]["run_metadata"]["generator_model_label"] == "generator-test"
     assert eqnet_rows[0]["run_metadata"]["classifier_model_label"] == "classifier-test"
     assert "surface_policy" in eqnet_rows[0]["llm_expression_request"]
+    assert (
+        eqnet_rows[1]["llm_expression_request"]["state_summary"][
+            "audit.culture_politeness_pressure"
+        ]
+        == 0.22
+    )
+    assert (
+        eqnet_rows[1]["quick_audit_projection"]["audit_axes"][
+            "identity_continuity_pull"
+        ]
+        == 0.51
+    )
 
     router_rows = _read_jsonl(tmp_path / "baseline_router.jsonl")
     assert router_rows[0]["evaluation_mode"] == "baseline_router"

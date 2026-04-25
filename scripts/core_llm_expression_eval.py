@@ -41,10 +41,12 @@ def evaluate_core_llm_expression(
     classifier_base_url: str = "",
     classifier_api_key: str = "",
     speech_act_analysis: Mapping[str, Any] | None = None,
+    expression_context_state: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     result = build_core_demo_result(
         scenario_name=scenario_name,
         input_text=text or None,
+        expression_context_state=dict(expression_context_state or {}),
     )
     request = result["llm_expression_request"]
     run_metadata = _build_run_metadata(

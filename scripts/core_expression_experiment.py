@@ -189,6 +189,7 @@ def _run_eqnet_case(
         classify_output=classify_output,
         classifier_model_label=classifier_model_label,
         classifier_model=classifier_model,
+        expression_context_state=dict(case.get("expression_context_state") or {}),
     )
     result["item_id"] = case["id"]
     result["scenario_name"] = case["scenario"]
@@ -211,6 +212,7 @@ def _run_baseline_case(
     core_result = build_core_demo_result(
         scenario_name=str(case["core_scenario"]),
         input_text=str(case["input"]),
+        expression_context_state=dict(case.get("expression_context_state") or {}),
     )
     request = core_result["llm_expression_request"]
     contract = request["contract"]
@@ -318,7 +320,7 @@ def _selected_channel_from_final_action(record: Mapping[str, Any]) -> str:
     return ""
 
 
-def _normalize_case(record: Mapping[str, Any]) -> dict[str, str]:
+def _normalize_case(record: Mapping[str, Any]) -> dict[str, Any]:
     item_id = str(record.get("id") or record.get("item_id") or "").strip()
     if not item_id:
         raise ValueError("input record requires id or item_id")
@@ -335,6 +337,7 @@ def _normalize_case(record: Mapping[str, Any]) -> dict[str, str]:
         "input": input_text,
         "gold_speech_act": str(record.get("gold_speech_act") or "other"),
         "expected_response_channel": str(record.get("expected_response_channel") or ""),
+        "expression_context_state": dict(record.get("expression_context_state") or {}),
     }
 
 

@@ -4,7 +4,7 @@ import argparse
 import importlib.util
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -86,6 +86,7 @@ class CoreDemoScenario:
     live_engagement_state: dict[str, Any]
     meaning_update_state: dict[str, Any]
     memory_dynamics_state: dict[str, Any]
+    expression_context_state: dict[str, Any] = field(default_factory=dict)
 
 
 SCENARIOS: dict[str, CoreDemoScenario] = {
@@ -250,9 +251,14 @@ def build_core_demo_result(
     *,
     scenario_name: str,
     input_text: str | None = None,
+    expression_context_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     scenario = SCENARIOS[scenario_name]
     text = (input_text or scenario.input_text).strip()
+    expression_context = _merge_expression_context(
+        scenario.expression_context_state,
+        expression_context_state,
+    )
 
     subjective_scene = derive_subjective_scene_state(
         camera_observation=scenario.camera_observation,
@@ -319,6 +325,7 @@ def build_core_demo_result(
         shared_presence=shared_presence,
         joint_state=joint_state.to_dict(),
         reaction_contract=reaction_contract.to_dict(),
+        expression_context_state=expression_context,
     )
     llm_expression_request = build_llm_expression_request(
         input_text=text,
@@ -358,11 +365,14 @@ def _build_quick_audit_projection(
     shared_presence: SharedPresenceState,
     joint_state: dict[str, Any],
     reaction_contract: dict[str, Any],
+    expression_context_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     surface_context = dict(contract_inputs.get("surface_context_packet") or {})
     source_state = dict(surface_context.get("source_state") or {})
     action_posture = dict(contract_inputs.get("action_posture") or {})
     actuation_plan = dict(contract_inputs.get("actuation_plan") or {})
+    expression_context = dict(expression_context_state or {})
+    context_axes = _build_expression_context_axes(expression_context)
     return {
         "schema_version": "quick_audit_projection.v1",
         "route": "core_quickstart",
@@ -376,6 +386,7 @@ def _build_quick_audit_projection(
         "organism_state": dict(scenario.organism_state),
         "external_field_state": dict(scenario.external_field_state),
         "memory_dynamics_state": dict(scenario.memory_dynamics_state),
+        "expression_context_state": expression_context,
         "joint_state": dict(joint_state),
         "shared_presence": shared_presence.to_dict(),
         "subjective_scene": subjective_scene.to_dict(),
@@ -401,8 +412,70 @@ def _build_quick_audit_projection(
             "joint_shared_tension": joint_state.get("shared_tension", 0.0),
             "shared_presence_boundary_stability": shared_presence.boundary_stability,
             "self_other_unknown_likelihood": attribution.unknown_likelihood,
+            **context_axes,
         },
     }
+
+
+def _merge_expression_context(
+    base: dict[str, Any] | None,
+    override: dict[str, Any] | None,
+) -> dict[str, Any]:
+    merged = dict(base or {})
+    for key, value in dict(override or {}).items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = {**dict(merged[key]), **value}
+        else:
+            merged[key] = value
+    return merged
+
+
+def _build_expression_context_axes(
+    expression_context: dict[str, Any],
+) -> dict[str, Any]:
+    axes: dict[str, Any] = {}
+    for group_name in (
+        "memory",
+        "green_kernel",
+        "identity",
+        "temporal_memory",
+        "culture",
+        "norm",
+        "safety",
+        "emergency",
+        "environment",
+        "temperament",
+        "development",
+        "growth",
+        "body",
+        "homeostasis",
+    ):
+        payload = expression_context.get(group_name)
+        if isinstance(payload, dict):
+            axes.update(_compact_axis_group(group_name, payload))
+    return axes
+
+
+def _compact_axis_group(prefix: str, payload: dict[str, Any]) -> dict[str, Any]:
+    axes: dict[str, Any] = {}
+    for key, value in payload.items():
+        if not _is_compact_axis_value(value):
+            continue
+        axis_key = f"{prefix}_{key}"
+        axes[axis_key] = value
+    return axes
+
+
+def _is_compact_axis_value(value: Any) -> bool:
+    if value is None or value == "":
+        return False
+    if isinstance(value, bool):
+        return True
+    if isinstance(value, (int, float)):
+        return True
+    if isinstance(value, str):
+        return len(value) <= 80
+    return False
 
 
 def _build_contract_inputs(
