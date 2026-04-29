@@ -78,8 +78,92 @@ def test_compile_surface_policy_does_not_guard_non_bright_speak_contract() -> No
     assert policy.fallback_shape_id == "plain_ack_minimal"
 
 
-def test_render_surface_fallback_returns_low_inference_ack_text() -> None:
-    assert (
-        render_surface_fallback({"fallback_shape_id": "low_inference_ack"})
-        == "今は、そのまま受け取っておきます。"
+def test_compile_surface_policy_carries_surface_style() -> None:
+    policy = compile_surface_policy(
+        {
+            "response_channel": "speak",
+            "scale": "micro",
+        },
+        surface_style="soft",
     )
+
+    assert policy.surface_style == "soft"
+
+
+def test_render_surface_fallback_returns_low_inference_ack_candidate() -> None:
+    assert (
+        render_surface_fallback(
+            {
+                "fallback_shape_id": "low_inference_ack",
+                "fallback_variant_seed": "stable-case",
+            }
+        )
+        in {
+            "うん、そうだね。",
+            "そうなのかなぁ。",
+            "ああ、そういうことあるね。",
+            "あるある、そういうこと。",
+            "そういう時あるよね。",
+        }
+    )
+
+
+def test_render_surface_fallback_uses_style_specific_candidates() -> None:
+    assert (
+        render_surface_fallback(
+            {
+                "fallback_shape_id": "bright_bounce_minimal",
+                "surface_style": "soft",
+                "fallback_variant_seed": "light-shared",
+            }
+        )
+        in {
+            "それはちょっと笑うね。",
+            "あ、それは笑っちゃうね。",
+            "あるある、そういうこと。",
+            "そういうの、ちょっとあるよね。",
+        }
+    )
+
+
+def test_render_surface_fallback_supports_friendly_character_style() -> None:
+    assert (
+        render_surface_fallback(
+            {
+                "fallback_shape_id": "bright_bounce_minimal",
+                "surface_style": "friendly",
+                "fallback_variant_seed": "friendly-light",
+            }
+        )
+        in {
+            "あ、それはちょっと笑っちゃうね。",
+            "ふふ、それはあるね。",
+            "あー、そういうの地味に笑うやつだ。",
+        }
+    )
+
+
+def test_render_surface_fallback_supports_warm_playful_character_style() -> None:
+    assert (
+        render_surface_fallback(
+            {
+                "fallback_shape_id": "minimal_ack",
+                "surface_style": "warm_playful",
+                "fallback_variant_seed": "warm-minimal",
+            }
+        )
+        in {
+            "うんうん、ちゃんと聞いてる。",
+            "そっかそっか、そういう流れね。",
+            "あー、なるほどねぇ。",
+        }
+    )
+
+
+def test_render_surface_fallback_seed_is_stable() -> None:
+    policy = {
+        "fallback_shape_id": "minimal_ack",
+        "fallback_variant_seed": "same-seed",
+    }
+
+    assert render_surface_fallback(policy) == render_surface_fallback(policy)

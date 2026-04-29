@@ -4,7 +4,8 @@ from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
-from typing import Any, Mapping
+import random
+from typing import Any, Mapping, Sequence
 
 DEFAULT_SURFACE_FALLBACK_PATH = (
     Path(__file__).resolve().parents[2] / "config" / "eval" / "surface_fallbacks.json"
@@ -22,6 +23,8 @@ class SurfacePolicy:
     allowed_acts: tuple[str, ...] = field(default_factory=tuple)
     prohibited_acts: tuple[str, ...] = field(default_factory=tuple)
     fallback_shape_id: str = "minimal_ack"
+    surface_style: str = "plain"
+    surface_style_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -34,34 +37,49 @@ class SurfacePolicy:
             "allowed_acts": list(self.allowed_acts),
             "prohibited_acts": list(self.prohibited_acts),
             "fallback_shape_id": self.fallback_shape_id,
+            "surface_style": self.surface_style,
+            "surface_style_reason": self.surface_style_reason,
         }
 
 
-def load_surface_fallback_texts(path: str | Path | None = None) -> dict[str, str]:
+def load_surface_fallback_texts(path: str | Path | None = None) -> dict[str, Any]:
     fallback_path = Path(path) if path is not None else DEFAULT_SURFACE_FALLBACK_PATH
     payload = json.loads(fallback_path.read_text(encoding="utf-8"))
     if not isinstance(payload, MappingABC):
         raise ValueError("surface fallback config must be a JSON object")
-    return {
-        str(key): str(value)
-        for key, value in payload.items()
-        if str(key).strip()
-    }
+    return {str(key): value for key, value in payload.items() if str(key).strip()}
 
 
 def render_surface_fallback(
     surface_policy: Mapping[str, Any] | None,
     *,
-    fallback_texts: Mapping[str, str] | None = None,
+    fallback_texts: Mapping[str, Any] | None = None,
 ) -> str:
     policy = dict(surface_policy or {})
     shape_id = _text(policy.get("fallback_shape_id"))
+    style_id = _text(policy.get("surface_style") or policy.get("style_id")) or "plain"
+    seed = _text(policy.get("fallback_variant_seed"))
     texts = dict(fallback_texts) if fallback_texts is not None else load_surface_fallback_texts()
-    return str(texts.get(shape_id) or texts.get("minimal_ack") or "")
+    candidates = _fallback_candidates(texts, style_id=style_id, shape_id=shape_id)
+    if not candidates and style_id != "plain":
+        candidates = _fallback_candidates(texts, style_id="plain", shape_id=shape_id)
+    if not candidates and shape_id != "minimal_ack":
+        candidates = _fallback_candidates(texts, style_id=style_id, shape_id="minimal_ack")
+    if not candidates:
+        candidates = _fallback_candidates(texts, style_id="plain", shape_id="minimal_ack")
+    if not candidates:
+        return ""
+    if seed:
+        index = random.Random(seed).randrange(len(candidates))
+        return candidates[index]
+    return random.choice(candidates)
 
 
 def compile_surface_policy(
     reaction_contract: Mapping[str, Any] | None,
+    *,
+    surface_style: str = "plain",
+    surface_style_reason: str = "",
 ) -> SurfacePolicy:
     contract = dict(reaction_contract or {})
     response_channel = _text(contract.get("response_channel")) or "speak"
@@ -158,6 +176,8 @@ def compile_surface_policy(
         allowed_acts=tuple(_dedupe(allowed)),
         prohibited_acts=tuple(_dedupe(prohibited)),
         fallback_shape_id=fallback_shape_id,
+        surface_style=_text(surface_style) or "plain",
+        surface_style_reason=_text(surface_style_reason),
     )
 
 
@@ -201,6 +221,38 @@ def _has_forward_brightness_contradiction(
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _fallback_candidates(
+    texts: Mapping[str, Any],
+    *,
+    style_id: str,
+    shape_id: str,
+) -> list[str]:
+    if not shape_id:
+        return []
+    styles = texts.get("styles")
+    if isinstance(styles, MappingABC):
+        style_payload = styles.get(style_id)
+        if isinstance(style_payload, MappingABC):
+            candidates = _coerce_text_candidates(style_payload.get(shape_id))
+            if candidates:
+                return candidates
+    fallbacks = texts.get("fallbacks")
+    if isinstance(fallbacks, MappingABC):
+        candidates = _coerce_text_candidates(fallbacks.get(shape_id))
+        if candidates:
+            return candidates
+    return _coerce_text_candidates(texts.get(shape_id))
+
+
+def _coerce_text_candidates(value: Any) -> list[str]:
+    if isinstance(value, str):
+        stripped = value.strip()
+        return [stripped] if stripped else []
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [candidate for item in value if (candidate := _text(item))]
+    return []
 
 
 def _dedupe(values: list[str]) -> list[str]:

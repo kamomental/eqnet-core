@@ -6,8 +6,10 @@ from typing import Any, Mapping
 
 try:
     from .surface_policy import compile_surface_policy
+    from .surface_style import derive_surface_style_decision
 except ImportError:  # pragma: no cover - supports script-level dynamic loading.
     from inner_os.expression.surface_policy import compile_surface_policy
+    from inner_os.expression.surface_style import derive_surface_style_decision
 
 
 @dataclass(frozen=True)
@@ -17,6 +19,7 @@ class LLMExpressionBridgePolicy:
     language: str = "ja"
     max_state_fields: int = 32
     include_raw_observation: bool = False
+    surface_style: str = "auto"
     system_identity: str = (
         "あなたは EQNet の表出層です。内部状態を推定し直さず、"
         "渡された状態契約に従って自然な日本語の一言だけを生成します。"
@@ -66,7 +69,17 @@ def build_llm_expression_request(
 
     active_policy = policy or LLMExpressionBridgePolicy()
     contract = _compact_contract(reaction_contract)
-    surface_policy = compile_surface_policy(contract).to_dict()
+    surface_style_decision = _resolve_surface_style_decision(
+        configured_style=active_policy.surface_style,
+        audit_projection=audit_projection,
+        joint_state=joint_state,
+        shared_presence=shared_presence,
+    )
+    surface_policy = compile_surface_policy(
+        contract,
+        surface_style=surface_style_decision.style_id,
+        surface_style_reason=surface_style_decision.reason,
+    ).to_dict()
     channel = str(contract.get("response_channel") or "speak")
     state_summary = _build_state_summary(
         joint_state=joint_state,
@@ -132,6 +145,24 @@ def _compact_contract(reaction_contract: Mapping[str, Any]) -> dict[str, Any]:
         for key in keys
         if key in reaction_contract and reaction_contract[key] not in {None, ""}
     }
+
+
+def _resolve_surface_style_decision(
+    *,
+    configured_style: str,
+    audit_projection: Mapping[str, Any] | None,
+    joint_state: Mapping[str, Any] | None,
+    shared_presence: Mapping[str, Any] | None,
+):
+    style = str(configured_style or "auto").strip() or "auto"
+    if style != "auto":
+        return derive_surface_style_decision(default_style=style)
+    return derive_surface_style_decision(
+        audit_projection=audit_projection,
+        joint_state=joint_state,
+        shared_presence=shared_presence,
+        default_style="plain",
+    )
 
 
 def _build_state_summary(
