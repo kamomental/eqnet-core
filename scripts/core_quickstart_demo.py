@@ -32,6 +32,10 @@ _JOINT_STATE_MODULE = _load_module(
     "core_quickstart_joint_state",
     "inner_os/joint_state.py",
 )
+_CLOSURE_PACKET_MODULE = _load_module(
+    "core_quickstart_closure_packet",
+    "inner_os/closure_packet.py",
+)
 _ATTRIBUTION_MODULE = _load_module(
     "core_quickstart_self_other_attribution",
     "inner_os/self_model/self_other_attribution_state.py",
@@ -67,6 +71,7 @@ _PROTECTIVE_TRACE_PALACE_MODULE = _load_module(
 
 derive_reaction_contract = _REACTION_CONTRACT_MODULE.derive_reaction_contract
 derive_joint_state = _JOINT_STATE_MODULE.derive_joint_state
+derive_closure_packet = _CLOSURE_PACKET_MODULE.derive_closure_packet
 SelfOtherAttributionState = _ATTRIBUTION_MODULE.SelfOtherAttributionState
 derive_self_other_attribution_state = _ATTRIBUTION_MODULE.derive_self_other_attribution_state
 SharedPresenceState = _SHARED_PRESENCE_MODULE.SharedPresenceState
@@ -331,6 +336,13 @@ def build_core_demo_result(
         self_other_attribution_state=attribution.to_dict(),
         shared_presence_state=shared_presence.to_dict(),
     )
+    closure_packet = derive_closure_packet(
+        memory_dynamics_state=scenario.memory_dynamics_state,
+        subjective_scene_state=subjective_scene.to_dict(),
+        self_other_attribution_state=attribution.to_dict(),
+        shared_presence_state=shared_presence.to_dict(),
+        joint_state=joint_state.to_dict(),
+    )
 
     contract_inputs = _build_contract_inputs(
         joint_state=joint_state.to_dict(),
@@ -338,6 +350,7 @@ def build_core_demo_result(
         attribution=attribution,
         subjective_scene=subjective_scene,
         scenario=scenario,
+        closure_packet=closure_packet.to_dict(),
     )
     context_influence = derive_context_influence(expression_context)
     contract_inputs = apply_context_influence_to_contract_inputs(
@@ -371,6 +384,7 @@ def build_core_demo_result(
         shared_presence=shared_presence,
         joint_state=joint_state.to_dict(),
         reaction_contract=reaction_contract.to_dict(),
+        closure_packet=closure_packet.to_dict(),
         expression_context_state=expression_context,
         context_influence=context_influence.to_dict(),
         stimulus_history_influence=stimulus_history_influence.to_dict(),
@@ -395,6 +409,7 @@ def build_core_demo_result(
         "subjective_scene": subjective_scene.to_dict(),
         "self_other_attribution": attribution.to_dict(),
         "shared_presence": shared_presence.to_dict(),
+        "closure_packet": closure_packet.to_dict(),
         "joint_state": joint_state.to_dict(),
         "expected_contract": expectation.to_dict(),
         "evaluation": evaluation.to_dict(),
@@ -417,6 +432,7 @@ def _build_quick_audit_projection(
     shared_presence: SharedPresenceState,
     joint_state: dict[str, Any],
     reaction_contract: dict[str, Any],
+    closure_packet: dict[str, Any] | None = None,
     expression_context_state: dict[str, Any] | None = None,
     context_influence: dict[str, Any] | None = None,
     stimulus_history_influence: dict[str, Any] | None = None,
@@ -441,6 +457,7 @@ def _build_quick_audit_projection(
         "organism_state": dict(scenario.organism_state),
         "external_field_state": dict(scenario.external_field_state),
         "memory_dynamics_state": dict(scenario.memory_dynamics_state),
+        "closure_packet": dict(closure_packet or {}),
         "expression_context_state": expression_context,
         "context_influence": dict(context_influence or {}),
         "stimulus_history_influence": dict(stimulus_history_influence or {}),
@@ -460,6 +477,15 @@ def _build_quick_audit_projection(
                 "activation_confidence", 0.0
             ),
             "memory_tension": scenario.memory_dynamics_state.get("memory_tension", 0.0),
+            "closure_basis_confidence": dict(closure_packet or {}).get(
+                "basis_confidence", 0.0
+            ),
+            "closure_tension": dict(closure_packet or {}).get(
+                "closure_tension", 0.0
+            ),
+            "closure_reconstruction_risk": dict(closure_packet or {}).get(
+                "reconstruction_risk", 0.0
+            ),
             "organism_protective_tension": source_state.get(
                 "organism_protective_tension",
                 scenario.organism_state.get("protective_tension", 0.0),
@@ -605,6 +631,7 @@ def _build_contract_inputs(
     attribution: SelfOtherAttributionState,
     subjective_scene: SubjectiveSceneState,
     scenario: CoreDemoScenario,
+    closure_packet: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     common_ground = _float01(joint_state.get("common_ground"))
     shared_delight = _float01(joint_state.get("shared_delight"))
@@ -654,6 +681,7 @@ def _build_contract_inputs(
         },
         "surface_context_packet": {
             "conversation_phase": conversation_phase,
+            "closure_packet": dict(closure_packet or {}),
             "constraints": {
                 "max_questions": question_budget,
                 "prefer_return_point": guarded,

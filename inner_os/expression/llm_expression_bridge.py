@@ -195,6 +195,7 @@ def _prefix_items(
 
 def _is_expression_safe_audit_key(key: str) -> bool:
     hidden_prefixes = (
+        "closure_",
         "protective_trace_",
     )
     return not key.startswith(hidden_prefixes)

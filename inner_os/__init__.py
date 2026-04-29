@@ -60,6 +60,11 @@ from .memory_dynamics import (
     coerce_memory_dynamics_state,
     derive_memory_dynamics_state,
 )
+from .closure_packet import (
+    ClosurePacket,
+    coerce_closure_packet,
+    derive_closure_packet,
+)
 from .external_field_state import (
     ExternalFieldFrame,
     ExternalFieldState,

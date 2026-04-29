@@ -17,6 +17,10 @@ def test_small_shared_moment_demo_stays_small_and_joined() -> None:
     assert audit["audit_axes"]["response_channel"] == "speak"
     assert audit["organism_state"]["social_mode"] == "near"
     assert audit["memory_dynamics_state"]["dominant_relation_type"] == "same_anchor"
+    assert result["closure_packet"]["generated_affordances"]
+    assert "shared_anchor" in result["closure_packet"]["generated_affordances"]
+    assert audit["closure_packet"]["basis_confidence"] > 0.0
+    assert audit["audit_axes"]["closure_basis_confidence"] > 0.0
     assert "surface_context_source_state" in audit
     state_summary = result["llm_expression_request"]["state_summary"]
     assert state_summary["audit.memory_activation_confidence"] == 0.42
@@ -37,6 +41,8 @@ def test_guarded_uncertainty_demo_prefers_hold() -> None:
     assert audit["audit_axes"]["response_channel"] == "hold"
     assert audit["audit_axes"]["organism_protective_tension"] == 0.64
     assert audit["audit_axes"]["memory_tension"] == 0.52
+    assert "do_not_overinterpret" in result["closure_packet"]["generated_constraints"]
+    assert "closure:do_not_overinterpret" in contract["reason_tags"]
 
 
 def test_quickstart_can_carry_extended_expression_context_into_llm_state() -> None:

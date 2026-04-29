@@ -60,6 +60,26 @@ def _dedupe(values: list[str]) -> list[str]:
     return ordered
 
 
+def _closure_reason_tags(value: Any) -> list[str]:
+    if not isinstance(value, Mapping):
+        return []
+    tags: list[str] = []
+    for key in (
+        "generated_constraints",
+        "generated_affordances",
+        "inhibition_reasons",
+        "uncertainty_reasons",
+    ):
+        raw_values = value.get(key)
+        if not isinstance(raw_values, (list, tuple)):
+            continue
+        for raw_value in raw_values:
+            text = _clean_text(raw_value)
+            if text:
+                tags.append(f"closure:{text}")
+    return _dedupe(tags)
+
+
 @dataclass(frozen=True)
 class ReactionContract(MappingABC[str, object]):
     stance: str = ""
@@ -145,6 +165,7 @@ def derive_reaction_contract(
     constraints = dict(packet.get("constraints") or {})
     source_state = dict(packet.get("source_state") or {})
     packet_surface_profile = dict(packet.get("surface_profile") or {})
+    closure_packet = dict(packet.get("closure_packet") or {})
 
     strategy = _clean_text(policy.get("response_strategy"))
     execution_mode = _clean_text(actuation.get("execution_mode"))
@@ -192,6 +213,9 @@ def derive_reaction_contract(
     social_topology = _clean_text(posture.get("social_topology_name"))
     shared_presence_mode = _clean_text(source_state.get("shared_presence_mode"))
     shared_presence_co_presence = _float01(source_state.get("shared_presence_co_presence"))
+    has_shared_presence_boundary_stability = (
+        "shared_presence_boundary_stability" in source_state
+    )
     shared_presence_boundary_stability = _float01(
         source_state.get("shared_presence_boundary_stability")
     )
@@ -213,7 +237,9 @@ def derive_reaction_contract(
     )
     guarded_self_view_signal = max(
         self_other_unknown_likelihood,
-        max(0.0, 1.0 - shared_presence_boundary_stability),
+        max(0.0, 1.0 - shared_presence_boundary_stability)
+        if has_shared_presence_boundary_stability
+        else 0.0,
     )
 
     scale = "medium"
@@ -355,6 +381,7 @@ def derive_reaction_contract(
             _clean_text(source_state.get("utterance_reason_relation_frame")),
             _clean_text(source_state.get("utterance_reason_causal_frame")),
             _clean_text(source_state.get("utterance_reason_memory_frame")),
+            *_closure_reason_tags(closure_packet),
             _clean_text(delta.get("kind")),
             _clean_text(delta.get("preferred_act")),
         ]
@@ -373,6 +400,7 @@ def derive_reaction_contract(
         "subjective_scene_shared_scene_potential": subjective_scene_shared_scene_potential,
         "subjective_scene_familiarity": subjective_scene_familiarity,
         "subjective_scene_anchor_frame": subjective_scene_anchor_frame,
+        "closure_packet": closure_packet,
     }
 
     return ReactionContract(

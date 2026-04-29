@@ -64,6 +64,9 @@ docs と実装では、以後この言い方で役割をそろえます。
 - Development transition policy: `docs/core/development_transition_policy.md`
 - Epistemic state: `docs/core/epistemic_state.md`
 - Memory dynamics: `docs/core/memory_dynamics.md`
+- Generative closure packet: `docs/core/generative_closure_packet.md`
+- Closure packet explainer: `docs/core/closure_packet_explainer.md`
+- Memory dynamics closure article: `docs/core/memory_dynamics_closure_article.md`
 - Relation reason chain (2026-04-02): `docs/core/relation_reason_chain_2026_04_02.md`
 - Relation field reconstruction summary (2026-04-02): `docs/core/relation_field_reconstruction_summary_2026_04_02.md`
 - Terrain relation strategy bridge (2026-04-03): `docs/core/terrain_relation_strategy_bridge_2026_04_03.md`
